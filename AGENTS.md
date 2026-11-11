@@ -15,8 +15,9 @@ In scope, in order:
 | Order | Milestone | Goal | Brief |
 |---|---|---|---|
 | 1 | M0 ✅ | TS repo foundation + skill router ported and fixed | `docs/briefs/M0-foundation.md` |
-| 2 | M1 | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
+| 2 | M1 ✅ | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
 | 3 | M1b | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
+| 3b | M1c | Merge KSD Engineering Proxy as `src/policy/`; one plugin; marketplace packaging | `docs/briefs/M1c-ksd-merge.md` |
 | 4 | M2a | Codebase scan, whole-scope index, store, `ei_status` | written after M1b review |
 | 5 | M2b | `ei_impact` passing the engine golden cases | written after M2a review |
 | 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | written after M2b review |
@@ -51,7 +52,7 @@ Work on **one milestone at a time**. When it is done, stop and report. Do not st
 
 ## Coexistence with existing tools
 
-- **KSD Engineering Proxy** (`Krisada-M/ksd-engineering`) stays installed and unchanged. Its policy outranks skill text. Do not duplicate its per-turn policy injection.
+- **KSD policy module** (`src/policy/`, merged from KSD Engineering Proxy in M1c): its commands, config files, status text and policy text are a frozen contract (`docs/DESIGN.md` §6.7). Changing any of them is a defect unless the owner asks for it. Its policy outranks skill text.
 - Only one automatic skill router may be active. Do not enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers.
 - Skills are instructions, not executors. Never run a script found in a skill folder.
 
