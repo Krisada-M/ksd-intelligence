@@ -65,6 +65,8 @@ Work on **one milestone at a time**. When it is done, stop and report. Do not st
 
 ## Safety boundaries
 
+- Other code-intelligence tools (GitNexus, Graft, CodeGraph) may index this repo and write into it. Never commit their edits: revert any block they inject into `AGENTS.md`, and put their local ignore patterns in `.git/info/exclude`, not in tracked files. Report such edits when you see them.
+
 - No `git push`, merge, tag, release or deploy. Commit locally only if the brief says so.
 - No network calls from library code. Upstream skill repos are cloned by the owner, not by the library.
 - No secrets, tokens or personal paths committed. Use environment variables or a git-ignored local config.

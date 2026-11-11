@@ -15,7 +15,7 @@ The index design depends on things nobody has checked inside OMP's extension run
 
 ## Part A — inside a loaded extension
 
-Write a throwaway extension `spikes/m1b/probe-extension.mjs` that registers one read-only tool, `ei_probe`, and load it with `omp --extension`. If OMP has a non-interactive mode (found in M1), use it; otherwise prepare the script and checklist and report `PARTIAL — owner run required`.
+Write a throwaway extension `spikes/m1b/probe-extension.mjs` that registers one read-only tool, `ei_probe`, and run it yourself non-interactively, as M1 did: `omp -p --model claude-haiku-4-5 -e spikes/m1b/probe-extension.mjs '<prompt asking the agent to call ei_probe and show the raw result>'`. Do not change any OMP config. Record the raw tool result from the session transcript, not the model's paraphrase (Caveman may compress the displayed output). If this route stops working, report what failed and prepare a script for the owner instead.
 
 `ei_probe` reports, as text:
 
@@ -25,7 +25,7 @@ Write a throwaway extension `spikes/m1b/probe-extension.mjs` that registers one 
 | A2 | Worker threads | start a `node:worker_threads` worker that echoes a message, then terminate it; report success, startup time, and whether `resourceLimits` is honoured (allocate past a small cap and observe) |
 | A3 | Loading `typescript` | `import('typescript')` resolved from the extension's own location; report version and resolved path; then the same inside the worker |
 | A4 | Built-in SQLite | try `node:sqlite`, then `bun:sqlite`; open an in-memory database; create an FTS5 table, insert, `MATCH` query; report which module worked, SQLite version, WAL support on a temp file |
-| A5 | Progress streaming | call the `onUpdate` callback three times one second apart before returning; report whether the session showed the updates and what the callback's argument shape must be (from the installed types) |
+| A5 | Progress streaming | call the `onUpdate` callback three times one second apart before returning; report what the callback's argument shape must be (from the installed types) and whether the updates appear in the session transcript. Whether they are visible in the interactive TUI is for the owner to check |
 | A6 | Blocking tolerance | a call that returns after 20 s and one after 60 s: does OMP time out, cancel, or wait? Is `signal` aborted? |
 | A7 | Module format and paths | does the extension load as ESM from `dist/`; do relative imports and `new URL(…, import.meta.url)` for the worker file work |
 

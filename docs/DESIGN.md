@@ -2,7 +2,7 @@
 
 > **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
 > **Owner/user:** one person, personal non-commercial use.
-> **Host:** Oh My Pi (OMP) 18.18.2 on WSL2. Node >= 20 (owner runs v24). Owner shell: fish.
+> **Host:** Oh My Pi (OMP) 18.18.8 on WSL2 (verified 18.18.2 on 2026-11-09, re-verified 18.18.8 on 2026-11-11). Node >= 20 (owner runs v24). Owner shell: fish.
 > **Labels:** `DONE` = built and verified · `NEXT` = current or next milestone · `PLANNED` = designed; starts at its milestone (M4–M6, owner-directed) or when its entry gate is met (V2) · `NEVER` = explicitly out of scope.
 > **Review record:** `docs/reviews/2026-11-11-senior-review.md`. Its decisions are applied here; what still needs measurement is gated by milestone M1b.
 
@@ -548,7 +548,20 @@ Invalid config: log the error, fall back to defaults for that section, keep runn
 
 ### 10.1 OMP
 
-Verified on 2026-11-09 (prototype, OMP 18.18.2): load via `omp --extension <file>`; register with `pi.registerTool({ name, label, approval: 'read', description, parameters: pi.zod…, execute })`; the agent discovers and calls the tool unprompted. Documented `execute(toolCallId, params, signal, onUpdate, ctx)`; the library uses the first three. Persistent loading method: recorded in M1. Re-run the M1 smoke after every OMP upgrade.
+Verified on 2026-11-09 (prototype, OMP 18.18.2) and on 2026-11-11 (TS adapter, OMP 18.18.8, M1): load via `omp --extension <file>` (or `-e`); register with `pi.registerTool({ name, label, approval: 'read', description, parameters: pi.zod…, execute })`; the agent discovers and calls the tool unprompted. Documented `execute(toolCallId, params, signal, onUpdate, ctx)`; the library uses the first three. Re-run the M1 smoke after every OMP upgrade.
+
+**Facts from M1 (2026-11-11, OMP 18.18.8):**
+
+| Fact | Consequence |
+|---|---|
+| Non-interactive runs work with `omp -p --model <anthropic model> -e <extension> '<prompt>'`; the default Google provider rejected another MCP tool's schema (400). `--config <overlay>` with `disabledServers` is a documented alternative | Agents can run live OMP checks themselves; briefs say so |
+| In 18.18.8 the model reaches extension tools through a device dispatch (`write` to `xd://ei_workflow`) | Discovery still worked unprompted; watch for changes on upgrade |
+| Error results: after an `isError` from `ei_workflow` the agent called it again in the same session and recovered (S6, S8; one model, claude-haiku-4-5) | First counter-evidence to the "agents abandon tools after errors" report. D24 stays (guidance is harmless), but it is no longer treated as established |
+| Skills load from `~/.omp/agent/skills`, `~/.claude/skills`, `~/.agents/skills`, `~/.codex/skills` and project `.omp/skills` (135 found). `poteto-mode` is present but `disable-model-invocation: true` (hidden, slash-command only); `ask-matt` and `using-agent-skills` absent | D05 holds; re-check after installing skills |
+| Caveman (`caveman@4.0.1`) is active and wraps long tool output in a compressed presentation (`[155 lines compressed …]`); the raw result in the transcript is complete | What the model reads may be shortened. Tool text keeps the verdict in the first lines (TOOLS.md rule 3); measure in M3 |
+| GitNexus and Graft index this repository and write into it: GitNexus injects a managed block into `AGENTS.md`; Graft adds `.gitignore` and `.ignore` entries | Third-party indexer edits never get committed. Local-only ignores go in `.git/info/exclude`; an injected `AGENTS.md` block is reverted |
+
+**Persistent loading (decided, D38):** user-level OMP config (`~/.omp/agent/config.yml`) points at the **stable worktree** (`docs/RISK.md` §4, R8), a separate `git worktree` checked out at the last accepted milestone tag and built there. Not project-level `.omp/config.yml`: the tools are meant for every repository the owner works on, and a project file would load a development build only inside this repo.
 
 ### 10.2 KSD
 
@@ -684,12 +697,13 @@ Order if several gates pass: context → GitLab → verification → KSD bridge 
 | D35 | First call blocks up to 60 s with streamed progress; only the lock holder builds, other sessions read the published index | 2026-11-11 |
 | D36 | Acceptance adds a differential test against TypeScript find-references and a seeded randomised incremental-equals-full test | 2026-11-11 |
 | D37 | `docs/RISK.md` R1–R9 confirmed (R5 amended by D30); name cross-check is part of engine correctness (M2b). Golden file contract refreshed to match | 2026-11-11 |
+| D38 | Persistent loading from user-level OMP config pointing at a stable worktree on the last accepted tag; third-party indexer edits (GitNexus, Graft) are never committed | 2026-11-11 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
 ## 16. Open questions
 
-1. How OMP 18.18.2 loads an extension persistently (M1 answers).
+1. Exact config key for persistent loading in 18.18.8 (M1's README proposal; applied when the stable worktree is set up).
 2. Runtime facts and real-project memory (M1b answers; D31 is provisional until then).
 3. Which real GitLab project to clone read-only for M3 dogfooding.
 4. Whether GitNexus is active for repos the owner works in; if so, how its answers compare on the same M3 tasks.
