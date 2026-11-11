@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "providers": {
+    "matt": {
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
+      "rootSubpath": "skills/engineering",
+      "skills": {
+        "matt:diagnosing-bugs": {
+          "sha256": "849198df88cdb65fd0d97236604c1fca7ff2f22d2f705f9724a800d0266b118d"
+        },
+        "matt:codebase-design": {
+          "sha256": "2c20617f87ec8af6a434859f381b2f061a69b530444e74eb39e78bb016a6d1e2"
+        },
+        "matt:tdd": {
+          "sha256": "5505d25bbaa8fc14a79e4d20163936958992a2995b7f1dd1d6197edc9ed722e0"
+        },
+        "matt:code-review": {
+          "sha256": "9c921a8d88138a41401d8897ca1bb852088ab1b7b605cdd04edc13e3e8aab6dd"
+        }
+      }
+    },
+    "poteto": {
+      "repo": "https://github.com/cursor/plugins.git",
+      "commit": "6b0300214a09fd6029cfb7077043125758cd1fd2",
+      "rootSubpath": "pstack/skills",
+      "skills": {
+        "poteto:how": {
+          "sha256": "08a00079bb15b4258874ac3ff62d4ca7e94350ffedb521d0fd296dc9dd21904e"
+        },
+        "poteto:why": {
+          "sha256": "144d42e7712723d763e607bc0a969e5f1cdf83ec7228519d87677cc534571bed"
+        },
+        "poteto:blast-radius": {
+          "sha256": "2e10745b97f5862323dcda3b29ca60d56b5c3c98e37020085d26b48efbe0a436"
+        }
+      }
+    },
+    "osmani": {
+      "repo": "https://github.com/addyosmani/agent-skills.git",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "rootSubpath": "skills",
+      "skills": {
+        "osmani:spec-driven-development": {
+          "sha256": "b9d05b4259c14550bbffbaafd8201492129926d37ede716db352c6e4f91b404d"
+        },
+        "osmani:incremental-implementation": {
+          "sha256": "df66536610071727feae1ca95f3c391c248ad828041750ccd3699cce763aa00b"
+        },
+        "osmani:code-review-and-quality": {
+          "sha256": "a47551daf26e3cc5670f5286f9e4850c2fc662d5ba08b86eee895254f3851797"
+        },
+        "osmani:security-and-hardening": {
+          "sha256": "358566859a3d791c474eb9fa36939b45875c7480d7d4650eaa092dceae2c1c37"
+        },
+        "osmani:performance-optimization": {
+          "sha256": "82af71540457cf853893685211f64509cd1e781c0de09d0186f16960f2d6eeba"
+        },
+        "osmani:frontend-ui-engineering": {
+          "sha256": "93a0ebffbb6075340d85255ae50724bc5e5e19b0fcbf2ae5d5857b9c5ddf9498"
+        },
+        "osmani:browser-testing-with-devtools": {
+          "sha256": "e28dd45416e6df93f0db6fffeb3aa2477a0e48a22f8e05fd5bb1892484115bb6"
+        },
+        "osmani:shipping-and-launch": {
+          "sha256": "92fec446ec4e947a7b8aac88b851aa5743ff8cb39d5987fb53df08ba8a160d64"
+        }
+      }
+    }
+  }
+}

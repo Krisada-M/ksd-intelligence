@@ -1,0 +1,9 @@
+dist/
+dist-test/
+node_modules/
+.gitnexus/
+*.local.json
+.env
+.env.*
+*:Zone.Identifier
+!AGENTS.md
