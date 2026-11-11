@@ -1,10 +1,10 @@
 /**
  * Experimental OMP adapter for the `ei_workflow` tool.
  *
- * STATUS: NOT VERIFIED against OMP at runtime (M1 does the live smoke test).
+ * STATUS: VERIFIED live in OMP 18.18.8 on 2026-11-11: S1-S6 and S8 observed via `omp -p --model <claude> -e dist/adapters/omp/extension.js` (agent reaches the tool through `write` to `xd://ei_workflow`); S7 PARTIAL (plugins/skills checked read-only, no interactive TUI). Re-run scripts/m1-smoke.sh after every OMP upgrade.
  *
  * What was read to write this (see README "OMP adapter"):
- *  - OMP binary on this machine: omp/18.18.2 (`omp --version`).
+ *  - OMP binary on this machine: omp/18.18.8 (`omp --version`).
  *  - Docs bundled in that binary: `omp://extensions.md` (registerTool, `execute` signature, `approval`).
  *  - Type source from the globally installed npm package @oh-my-pi/pi-coding-agent 18.14.0
  *    (older than the binary): src/extensibility/extensions/types.ts (`ToolDefinition`, `ExtensionAPI`),

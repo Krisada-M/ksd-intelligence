@@ -70,7 +70,7 @@ node dist/adapters/cli/main.js load  --task 'auth vulnerability' --stage verify 
 - `--type bug|feature|refactor|security|performance|ui`: caller-asserted task type, reported as `classifiedBy: "caller"`. An invalid value is an error. Without it, an English keyword classifier runs (`"keyword"`) and falls back to `feature` (`"default"`). A `"default"` guess is shown in the rendered output; non-English or security-sensitive tasks should pass `--type`.
 - `--stage` defaults to `plan`, `--risk` to `normal`.
 
-## 5. OMP adapter (experimental)
+## 5. OMP adapter
 
 `src/adapters/omp/extension.ts` registers a read-only (`approval: "read"`) `ei_workflow` tool with `task`, `stage`, optional `risk` and optional `type`. After `npm run build`:
 
@@ -78,8 +78,32 @@ node dist/adapters/cli/main.js load  --task 'auth vulnerability' --stage verify 
 omp --extension ./dist/adapters/omp/extension.js
 ```
 
-**Verification status: NOT VERIFIED against OMP.** The adapter was written against `omp://extensions.md` from the installed binary (omp/18.18.2) and the type source of the installed npm package `@oh-my-pi/pi-coding-agent` 18.14.0 (older than the binary). Only a hand-written mock of the OMP API is tested (MOCK-ONLY). Loading it in a real OMP session is M1.
+Or run scenarios interactively via the M1 smoke test runner:
 
+```bash
+bash scripts/m1-smoke.sh <s1|s2|s3|s4|s5|s6|s7|s8|checklist>
+```
+
+**Verification status (M1, 2026-11-11):** S1–S6 and S8 VERIFIED live on `omp/18.18.8` non-interactively (`omp -p --model claude-haiku-4-5 -e dist/adapters/omp/extension.js …`; the default Gemini provider rejected an unrelated MCP tool's schema, Claude did not). S7 PARTIAL: plugin list and skill sources checked read-only; the KSD indicator check needs an interactive TUI session. Full evidence: M1 report.
+
+Known interaction: Caveman (`caveman@4.0.1`) is active in sessions on this machine and can compress how the agent *presents* `ei_workflow` output ("[155 lines compressed …]"); the raw tool result in the session transcript stays complete. Check this during dogfooding.
+
+### Persistence proposal (not applied)
+
+`omp://extension-loading.md` offers two persistent load paths; either would remove the per-run `--extension` flag:
+
+1. Project-level, `<repo>/.omp/config.yml`:
+   ```yaml
+   extensions:
+     - ./dist/adapters/omp/extension.js
+   ```
+2. User-level, `~/.omp/agent/config.yml`:
+   ```yaml
+   extensions:
+     - /home/mezn/workspace/private/ksd-intelligence/dist/adapters/omp/extension.js
+   ```
+
+Native auto-discovery directories (`<repo>/.omp/extensions/`, `~/.omp/agent/extensions/`) are an alternative (symlink or copy there). Per repo rules, nothing in `~/.omp/**` or OMP config was changed; the owner applies whichever path they prefer.
 ## Rules this router follows
 
 - One router: do not also enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers. KSD Engineering Proxy policy outranks skill text; rendered output always starts with a precedence header before any skill text.
