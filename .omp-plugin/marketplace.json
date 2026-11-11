@@ -11,7 +11,7 @@
     {
       "name": "ksd-intelligence",
       "description": "KSD engineering policy (balanced/adaptive, status segment, /engineering-review) plus the ei_* tools",
-      "source": ".",
+      "source": "./",
       "version": "0.1.0"
     }
   ]
