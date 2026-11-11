@@ -6,20 +6,30 @@ Standing rules for any coding agent working in this repository. Read this file a
 
 A personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). One owner, one user. OMP is the host and stays in charge of permissions, model routing and sessions. This library adds evidence-backed TS/JS code understanding, a single skill workflow router, and (later) context, knowledge and verification adapters.
 
-Background and full design: `docs/reference/knowledge-export.md`. That document is **reference, not a task list**. Do only what the current milestone brief asks.
+Authoritative design: `docs/DESIGN.md` (contracts, codes, decisions, gates), with `docs/TOOLS.md` (agent-facing tool text), `docs/RISK.md` (risk containment, in force), `docs/adr/` (stable keys, indexed declarations) and `tests/golden/` (owner-confirmed oracle). Historical background: `docs/reference/knowledge-export.md`. Neither is a task list. Do only what the current milestone brief asks. If a brief conflicts with `docs/DESIGN.md`, stop and ask.
 
 ## Current scope (V1)
 
 In scope, in order:
 
-| Milestone | Goal | Brief |
-|---|---|---|
-| M0 | TS repo foundation + skill router ported and fixed | `docs/briefs/M0-foundation.md` |
-| M1 | `ei_workflow` smoke-tested in the real installed OMP | written after M0 review |
-| M2 | Read-only `ei_impact` on a fixture monorepo with golden tests | `tests/golden/M2-impact-cases.md` |
-| M3 | Dogfood on the oh-my-pi repository | written after M2 review |
+| Order | Milestone | Goal | Brief |
+|---|---|---|---|
+| 1 | M0 ✅ | TS repo foundation + skill router ported and fixed | `docs/briefs/M0-foundation.md` |
+| 2 | M1 | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
+| 3 | M1b | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
+| 4 | M2a | Codebase scan, whole-scope index, store, `ei_status` | written after M1b review |
+| 5 | M2b | `ei_impact` passing the engine golden cases | written after M2a review |
+| 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | written after M2b review |
+| 7 | M4a | Route detection (Next.js, Expo Router, Hono) | written when scheduled |
+| 8 | M2c | Risk zones, `ei_changes`, audit log | written when scheduled |
+| 9 | M6a | `ei_search`, lexical | written when scheduled |
+| 10 | M4b | Heuristic bridges, one flow at a time | written when scheduled |
+| 11 | M5 | Session watcher, worktree seeding | written when scheduled |
+| 12 | M6b | Semantic search (optional local embeddings) | written when scheduled |
 
-Out of scope until the owner says otherwise: MCP adapter, multi-OS CI, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, vector search, graph databases, Rust, SQLite (M2 starts in-memory with a content-hash cache).
+A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
+
+Out of scope until the owner says otherwise: MCP adapter, multi-OS CI, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
 
 Work on **one milestone at a time**. When it is done, stop and report. Do not start the next milestone.
 
@@ -48,7 +58,7 @@ Work on **one milestone at a time**. When it is done, stop and report. Do not st
 ## Engineering conventions
 
 - TypeScript `strict`, ESM, Node >= 20. Small focused files; one module per concern.
-- **Runtime dependencies: none** without asking the owner first. Allowed dev dependencies: `typescript`, `@types/node`. Ask before adding anything else.
+- **Runtime dependencies: none** without asking the owner first. Approved: `typescript`, pinned to an exact version (from M1b). Anticipated, still needing the owner's yes in its milestone: an optional local embedding runtime (M6b). The runtime's built-in SQLite is not a dependency. Allowed dev dependencies: `typescript`, `@types/node`. Ask before adding anything else.
 - Tests use `node:test` + `node:assert/strict`.
 - Explicit error types or messages that say what failed and where (e.g. "provider root not found" vs "skill file not found").
 - Comments explain **why**, not what.
