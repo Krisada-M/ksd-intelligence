@@ -109,7 +109,25 @@ Distinguish, with distinct error codes/messages:
 - `loader.ts` verifies the hash when the lock has one for that skill; a mismatch fails closed with `HASH_MISMATCH`.
 - If you cannot reach the upstream repos (no network, no checkouts), leave `commit` and `sha256` as `null`, implement and test the logic with temp-dir fixtures, and list "real SHAs not pinned" under NOT VERIFIED. **Do not invent SHAs.**
 
-Known install-doc bug to fix in README: the prototype's README sparse-checks out `pstack` at the top of `cursor/plugins` but sets `EI_POTETO_ROOT=…/cursor-plugins/plugins`, so the loader looks for `…/plugins/pstack/skills/…`. Make the documented root and `rootSubpath` agree, and state that the real pstack location must be confirmed against the checkout with `sources check`.
+Known install-doc bug to fix in README: the prototype's README sets `EI_POTETO_ROOT=…/cursor-plugins/plugins`, but pstack lives at the top of the `cursor/plugins` repo. The correct root is `$HOME/ei-skill-sources/cursor-plugins` (verified below). Fix the README and keep the catalog path `pstack/skills/<id>/SKILL.md`.
+
+#### Owner-verified source facts (2026-11-09, owner's machine)
+
+Checkouts live under `$HOME/ei-skill-sources/`. All 15 catalog paths exist at these commits. Use these values in `skills.lock.json`. `sha256` values stay `null` until the owner runs `sources check --write` locally.
+
+| Provider | Env var → root | Repo | Commit |
+|---|---|---|---|
+| matt | `EI_MATT_ROOT` → `…/matt` | https://github.com/mattpocock/skills | `4ae2317ddb22b046e26455e4f9c9b3aaaf62212d` |
+| poteto | `EI_POTETO_ROOT` → `…/cursor-plugins` | https://github.com/cursor/plugins (sparse: `pstack`) | `6b0300214a09fd6029cfb7077043125758cd1fd2` |
+| osmani | `EI_OSMANI_ROOT` → `…/osmani` | https://github.com/addyosmani/agent-skills | `301b02b12bff98e4688e6984af6556802322bbde` |
+
+Observed in the checkouts, relevant to router rules (do not change the catalog in M0; note them in the ADR):
+
+- `matt/skills/engineering/ask-matt` exists: an upstream meta-router. Must never be enabled as an automatic router alongside this one.
+- `cursor-plugins/pstack/skills/tdd` exists alongside `matt:tdd`. The catalog uses only `matt:tdd`; never select both in one stage.
+- pstack also ships `automations/benny/skills/*` (Cursor automations). Not in the catalog; out of scope.
+
+Owner's shell is **fish**. README commands for setting env vars should show fish syntax (`set -Ux EI_MATT_ROOT …`) next to bash/zsh `export`, and any multi-line shell snippet should be bash-wrapped or fish-compatible.
 
 ### 6. Prompt-injection posture (test what is actually enforced)
 
@@ -125,8 +143,12 @@ Add tests for those three, including a fixture skill containing text like "ignor
 
 Port `omp/extension.mjs` to `src/adapters/omp/extension.ts`, adding the optional `type` parameter.
 
-- If OMP is installed on this machine: read its extension type definitions and docs for the installed version first, match the real `registerTool` and schema API, and record the version and files read.
-- If OMP is not installed (e.g. cloud sandbox): keep the prototype's shape behind a typed local interface, mark the file header `NOT VERIFIED against OMP`, and keep the mock test. Real verification is M1, not M0.
+**Owner-verified on 2026-11-09 (live OMP, owner's machine, OMP version: `<owner fills: omp --version>`):** the prototype `omp/extension.mjs` loaded with `omp --extension ./omp/extension.mjs`; the tool registered through `pi.zod` + `pi.registerTool({ name, label, approval: 'read', description, parameters, execute })`; the OMP agent discovered and called `ei_workflow` on its own and received the real `matt:diagnosing-bugs` SKILL.md text. So:
+
+- **Keep the prototype's API shape exactly** (`pi.zod`, `registerTool` fields, `execute(id, params, signal)`, return `{ content, details }` / `{ isError, content }`). Do not "correct" it from guesses or from docs of another version.
+- Add the optional `type` parameter as `z.enum([...]).optional()` in the same style.
+- Type the `pi` object with a small local interface that matches this verified shape. If installed OMP type definitions are available, check against them and report any difference instead of silently switching.
+- Mark the adapter `VERIFIED (prototype shape, live OMP 2026-11-09)`; the TS port itself is `MOCK-ONLY` until the owner reloads it in OMP (that reload is M1).
 
 ### 8. Unchanged behavior to preserve
 
