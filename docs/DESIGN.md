@@ -1,6 +1,6 @@
 # ksd-intelligence — Final Design
 
-> **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
+> **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37); KSD merged into the library and packaging decided (D39–D40). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
 > **Owner/user:** one person, personal non-commercial use.
 > **Host:** Oh My Pi (OMP) 18.18.8 on WSL2 (verified 18.18.2 on 2026-11-09, re-verified 18.18.8 on 2026-11-11). Node >= 20 (owner runs v24). Owner shell: fish.
 > **Labels:** `DONE` = built and verified · `NEXT` = current or next milestone · `PLANNED` = designed; starts at its milestone (M4–M6, owner-directed) or when its entry gate is met (V2) · `NEVER` = explicitly out of scope.
@@ -24,10 +24,10 @@ The library **informs**. The agent decides and acts. The owner approves anything
 1. **Correctness over savings.** A wrong "low risk" is worse than a slow answer.
 2. **Evidence or `unknown`.** Every claim carries file, span, extractor and strength. Gaps are named, never hidden.
 3. **Read-only by default.** No tool edits code, runs skill scripts, or calls the network. The only network actions in the whole library are owner-run CLI commands (`ei embeddings install`) and the GitLab adapter when enabled.
-4. **OMP stays in charge** of models, permissions, sessions and approvals. KSD stays in charge of style and policy.
+4. **OMP stays in charge** of models, permissions, sessions and approvals. The KSD policy module (merged from KSD Engineering Proxy, D39) stays in charge of style and per-turn policy, with its behaviour unchanged.
 5. **Fail open for advice, fail closed for trust.** A broken index never breaks a session. A tampered skill is never delivered.
 6. **Add a module only on evidence.** Each V2 module has an entry gate (§13). If it does not pass, the module is not built. Exception: the six V1.5 items the owner brought forward (D28).
-7. **Small and boring.** TypeScript, no servers, no daemons, no always-on hooks. Runtime dependencies only when justified and approved: `typescript` (impact engine) and an optional local embedding runtime (M6) are the anticipated ones.
+7. **Small and boring.** TypeScript, no servers, no daemons. The only always-on hook is the KSD policy module's existing per-turn injection, carried over unchanged; intelligence capabilities add none. Runtime dependencies only when justified and approved: `typescript` (impact engine) and an optional local embedding runtime (M6) are the anticipated ones.
 
 ## 3. System context
 
@@ -38,7 +38,7 @@ The library **informs**. The agent decides and acts. The owner approves anything
                 │    │  ▲                       │        │            │            │             │
                 │    │  └── tool results ───────┘        │            │            │             │
                 │    │                                   ▼            ▼            ▼             │
-                │    ├── KSD Engineering Proxy    ~/ei-skill-sources  workspace    cache dir      │
+                │    ├── Ponytail, Caveman        ~/ei-skill-sources  workspace    cache dir      │
                 │    │   (separate plugin;        (pinned checkouts)  (git repo    (~/.cache/     │
                 │    │    read-only bridge)                            being worked ksd-intelli-  │
                 │    └── GitNexus (if present;                         on)          gence/)       │
@@ -50,7 +50,8 @@ The library **informs**. The agent decides and acts. The owner approves anything
 | Neighbour | Relationship | Rule |
 |---|---|---|
 | OMP | Host. Loads the extension, owns approvals | Use only verified extension APIs (§10.1). Never patch OMP or `~/.omp/**` |
-| KSD Engineering Proxy | Separate plugin, unchanged | Never duplicate its injection or mutate its config. Read its mode only (§10.2) |
+| KSD Engineering Proxy | **Merged into this library** as the `policy` module (D39); the old plugin is uninstalled on cut-over | Commands, config files, status text and policy text unchanged (§6.7, §10.2) |
+| Ponytail, Caveman | Other installed OMP plugins | Coexist; never mutate their state. Caveman may compress tool output (§10.1) |
 | Skill sources (Matt, poteto/pstack, Osmani) | Instruction text | Loaded from pinned checkouts with sha256 lock. Never bundled, never executed |
 | GitNexus | Possibly installed (`.gitnexus/` seen) | Not a dependency. Used only as a comparison baseline in M3 |
 | GitLab | Where real projects live | PLANNED read-only adapter, after M3 |
@@ -60,9 +61,9 @@ The library **informs**. The agent decides and acts. The owner approves anything
 
 | Tier | Contents |
 |---|---|
-| **V1** (M0–M3) | Skill workflow router · codebase scan + whole-scope index · TS/JS impact engine · OMP adapter · CLI · golden + freshness tests · dogfood log |
+| **V1** (M0–M3) | Skill workflow router · KSD policy module (merged, M1c) · codebase scan + whole-scope index · TS/JS impact engine · OMP adapter · CLI · golden + freshness tests · dogfood log |
 | **V1.5** (M4–M6, owner-directed, D28) | Framework route detection · heuristic bridges across dynamic dispatch · built-in SQLite store · session file watcher · git-worktree seeding · code search (lexical, optional local embeddings) |
-| **V2** (each gated, §13) | Context packs (built on search) · KSD mode bridge · GitLab adapter · verification adapters · anchored learnings · recoverable compression |
+| **V2** (each gated, §13) | Context packs (built on search) · GitLab adapter · verification adapters · anchored learnings · recoverable compression |
 | **NEVER** | New agent runtime or model router · always-on proxy · graph DB server · external vector DB or embedding service · auto-merge/deploy · auto-promoting model guesses to knowledge · replacing KSD · running skill scripts |
 
 ## 5. Architecture
@@ -72,7 +73,7 @@ The library **informs**. The agent decides and acts. The owner approves anything
 ```text
   adapters/        omp · cli · (gitlab · uimatch · runners)        ← entry points, no business logic
       │
-  capabilities/    workflow · impact · bridges · search · watch · (context · compression · knowledge · verification · policy-bridge)
+  capabilities/    workflow · impact · bridges · search · watch · policy · (context · compression · knowledge · verification)
       │
   core/            kernel (contracts, errors, config) · evidence · workspace · indexing · graph
       │
@@ -105,7 +106,8 @@ ksd-intelligence/
 │   ├── compression/       classify.ts · codecs/ · ccr.ts                               (V2)
 │   ├── knowledge/         learnings.ts · anchors.ts · staleness.ts                     (V2)
 │   ├── verification/      report.ts · runners/                                         (V2)
-│   ├── policy-bridge/     ksd-mode.ts                                                  (V2)
+│   ├── policy/            KSD Engineering Proxy, moved with history: runtime · policy · sdlc · config · commands ·
+│   │                      status · change-scope · check-changed · review-verdict · eslint-rules     (M1c)
 │   ├── storage/           store.ts · sqlite.ts · json-shards.ts · cas.ts               (store M2a; CAS V2)
 │   ├── adapters/
 │   │   ├── omp/extension.ts
@@ -248,9 +250,25 @@ Learnings are reviewable claims anchored to a symbol or file, stored in the repo
 
 Runs or reads existing tools (repo test/lint scripts, `tsc`, GitLab pipeline results, uiMatch) and returns what actually happened: command, revision, exit code, artifacts, timestamp, and `PASS · FAIL · SKIPPED · ERROR · NOT_VERIFIED`. Never infers PASS. Running commands goes through OMP's approval.
 
-### 6.7 KSD mode bridge — `PLANNED` (V2)
+### 6.7 KSD policy module — `NEXT` (M1c, D39)
 
-Reads KSD's effective mode (`balanced`/`adaptive`) from its documented config precedence (session > project `.engineering-proxy.json` > global `~/.omp/agent/engineering-proxy.json` > default). Read-only. Used as an input to workflow risk and verification strictness. If KSD is absent or its config is invalid, it reports `unknown` and the library continues.
+KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one install provides the skill router, the code intelligence tools and the personal engineering policy. The move is a migration, not a rewrite: what the owner sees and types does not change.
+
+**Frozen contract (must be byte- or behaviour-identical to KSD 0.6.0 at commit `73fc916`):**
+
+| Surface | Detail |
+|---|---|
+| Commands | `/engineering-proxy` with `status`, `adaptive`, `balanced`, `reset`, `global …`, `repo …`; `/engineering-review [scope]`; their output text |
+| Config | Global `~/.omp/agent/engineering-proxy.json`; project `.engineering-proxy.json` at the nearest `.git`/`.omp` root; keys `enabled`, `enforcement: balanced \| adaptive`; precedence session > project > global > built-in balanced; `enabled` merges separately; invalid config fails open (injection off, error shown only in status) |
+| Session state | The custom session entries KSD writes, so existing sessions restore their override after the cut-over |
+| Status segment | `○ 🛡 KSD: BALANCED` / `● 🛡 KSD: ADAPTIVE` and its show/clear rules |
+| Policy text | The per-turn style profile and the `/engineering-review` SDLC text, byte-identical per mode |
+| Kill switch | `ENGINEERING_PROXY_DISABLED=1` (independent of `EI_DISABLED`: each disables only its own part) |
+| Opt-in tools | `ksd-check-changed`, `ksd-review-verdict` CLIs and the ESLint rules export, same behaviour |
+
+**Proof:** KSD's 148 tests come over unchanged except for import paths and run in this repo's `npm test`; snapshots of policy text and status strings taken from 0.6.0 must match byte for byte.
+
+**Interaction with the rest of the library:** the module reads its own config only. Workflow and impact may later read the effective KSD mode through the module's exported function (a direct import, not a bridge), only when the dogfood log shows a case for it. KSD config stays in its own files and is not folded into `ei.config.json`, so existing files keep working.
 
 ### 6.8 GitLab adapter — `PLANNED` (V2)
 
@@ -561,11 +579,11 @@ Verified on 2026-11-09 (prototype, OMP 18.18.2) and on 2026-11-11 (TS adapter, O
 | Caveman (`caveman@4.0.1`) is active and wraps long tool output in a compressed presentation (`[155 lines compressed …]`); the raw result in the transcript is complete | What the model reads may be shortened. Tool text keeps the verdict in the first lines (TOOLS.md rule 3); measure in M3 |
 | GitNexus and Graft index this repository and write into it: GitNexus injects a managed block into `AGENTS.md`; Graft adds `.gitignore` and `.ignore` entries | Third-party indexer edits never get committed. Local-only ignores go in `.git/info/exclude`; an injected `AGENTS.md` block is reverted |
 
-**Persistent loading (decided, D38):** user-level OMP config (`~/.omp/agent/config.yml`) points at the **stable worktree** (`docs/RISK.md` §4, R8), a separate `git worktree` checked out at the last accepted milestone tag and built there. Not project-level `.omp/config.yml`: the tools are meant for every repository the owner works on, and a project file would load a development build only inside this repo.
+**Persistent loading (D40, supersedes D38):** the library is packaged as an OMP marketplace plugin, the same way KSD was: `.omp-plugin/marketplace.json` plus `package.json#omp.extensions`, with the built JavaScript committed and a drift check (`npm run build && git diff --exit-code dist/`). Daily use installs it with `omp plugin marketplace add Krisada-M/ksd-intelligence` and `omp plugin install ksd-intelligence@ksd-intelligence`; upgrades use `omp plugin upgrade`. The marketplace version is bumped only when a milestone is accepted, which makes the installed plugin the stable channel (`docs/RISK.md` R8). Development builds are loaded explicitly with `omp -e dist/adapters/omp/extension.js`. How the marketplace resolves a version (default-branch head or a tag) is checked in M1c; if it follows the branch head, accepted versions are published on a `release` branch.
 
-### 10.2 KSD
+### 10.2 KSD (merged)
 
-Coexists unchanged. The library never injects per-turn policy, never edits `.engineering-proxy.json`, never touches the KSD status indicator. Precedence header in workflow output defers to KSD. V2 bridge reads mode only.
+Merged as the policy module (§6.7). The extension entry registers the KSD hooks and commands and the `ei_*` tools from one module. Cut-over: uninstall the old `engineering-proxy@engineering-proxy` plugin before or together with installing this one, so the policy is never injected twice; rollback is reinstalling the old plugin at 0.6.0. The `Krisada-M/ksd-engineering` repository is archived (not deleted) after the cut-over and its README points here.
 
 ### 10.3 Skill sources
 
@@ -613,8 +631,9 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | Order | Milestone | Deliverable | Exit gate |
 |---|---|---|---|
 | 1 | **M0** ✅ | TS repo, router fixed, sources lock | 56/56 tests; real 15/15 hashes; done 2026-11-09 |
-| 2 | **M1** | TS adapter live in OMP; S1–S8 | All scenarios observed in OMP 18.18.2; persistence method documented |
+| 2 | **M1** ✅ | TS adapter live in OMP; S1–S8 | S1–S6, S8 verified on 18.18.8; S7 owner check in TUI |
 | 3 | **M1b** | Runtime spike, facts only (`docs/briefs/M1b-runtime-spike.md`): runtime identity, worker threads, `typescript` loading, built-in SQLite + FTS5, memory on a real project with `node_modules`, update-callback streaming | One page of measured facts; §6.2.1 and §11 adjusted once from them. **No M2a code before this** |
+| 3b | **M1c** | Merge KSD Engineering Proxy as `src/policy/` with history; one extension entry; marketplace packaging; cut-over from the old plugin (`docs/briefs/M1c-ksd-merge.md`) | KSD's 148 tests and this repo's tests all pass; policy and status snapshots byte-identical to 0.6.0; live OMP: one install, commands work, policy injected once, `ei_workflow` still works; rollback tested |
 | 4 | **M2a** | Scan · fingerprint · extract-local · resolve · verify · publish · store · `ei index`, `ei_status` | Scan census accounts for every fixture file; **randomised incremental == full** passes; **differential test** against TypeScript find-references passes on the fixture and one real repo; probe listing cost measured |
 | 5 | **M2b** | `ei_impact`: targets, guidance, reach, factors, base verdict, name cross-check, text per `docs/TOOLS.md` | All confirmed engine golden and freshness cases pass; rendering snapshots reviewed by owner; mutation smoke |
 | 6 | **M3** | Dogfood on oh-my-pi repo + one real GitLab project (read-only clone). Starts when M2b is accepted and continues alongside later milestones | 2 weeks of `docs/dogfood-log.md`; ≥ 10 real tasks logged |
@@ -634,13 +653,12 @@ Items 7 and 9–12 are in scope by owner decision D28, ahead of the dogfood gate
 | Module | Gate (from the dogfood log) |
 |---|---|
 | Context packs | ≥ 3 logged tasks where the agent read clearly irrelevant files or missed a relevant one that impact knew about |
-| KSD bridge | A logged case where skill choice or strictness should have differed by KSD mode |
 | GitLab adapter | Real work is on GitLab MRs and copying MR/pipeline info by hand is logged as friction |
 | Verification | A logged case of the agent claiming a check passed without evidence |
 | Knowledge | ≥ 2 logged cases of re-explaining the same project decision to the agent |
 | Compression | Measured context pressure with OMP compaction on, plus a fixture showing a safe saving |
 
-Order if several gates pass: context → GitLab → verification → KSD bridge → knowledge → compression.
+Order if several gates pass: context → GitLab → verification → knowledge → compression.
 
 ## 14. Quality and testing
 
@@ -663,7 +681,7 @@ Order if several gates pass: context → GitLab → verification → KSD bridge 
 | D01 | One owned TS package; OMP primary host + CLI; MCP deferred indefinitely | 2026-11-08 |
 | D02 | Personal non-commercial use; keep `PROVENANCE.md`; no full license matrix/SBOM | 2026-11-08 |
 | D03 | Repo name `ksd-intelligence`; tool prefix `ei_`; CLI `ei` | 2026-11-09 |
-| D04 | KSD stays a separate plugin; V2 read-only mode bridge only | 2026-11-09 |
+| D04 | KSD stays a separate plugin; V2 read-only mode bridge only (**superseded by D39**) | 2026-11-09 |
 | D05 | Exactly one automatic skill router; upstream meta-routers off; `matt:tdd` only | 2026-11-09 |
 | D06 | Caller-supplied task type; keyword fallback; `classifiedBy` always reported | 2026-11-09 |
 | D07 | Skills loaded from pinned checkouts with sha256 + commit lock; never bundled | 2026-11-09 |
@@ -674,7 +692,7 @@ Order if several gates pass: context → GitLab → verification → KSD bridge 
 | D12 | Public export surface is a risk factor, not a completeness gap | 2026-11-09 |
 | D13 | Completeness gaps scoped to reachable targets; risk on full traversal | 2026-11-09 |
 | D14 | Routes declared in `ei.config.json`; framework detection added in M4 by D28, config stays as override | 2026-11-09 |
-| D15 | All tools read-only; no OMP hooks or context injection | 2026-11-10 |
+| D15 | All tools read-only; intelligence capabilities add no OMP hooks or context injection (the merged KSD module keeps its own, D39) | 2026-11-10 |
 | D16 | GitLab integration is a read-only V2 adapter; token from env only | 2026-11-10 |
 | D17 | Learnings stored in repo (`.ksd/learnings/`), owner-approved writes only | 2026-11-10 |
 | D18 | Generated data lives in `~/.cache/ksd-intelligence/<repo-id>/`, never in the repo | 2026-11-10 |
@@ -692,18 +710,20 @@ Order if several gates pass: context → GitLab → verification → KSD bridge 
 | D30 | `typescript` is a runtime dependency: bundled and pinned by default; a project's own copy only by explicit opt-in. Engine runs in a worker with time and memory budgets (RISK R5 as amended, R6) | 2026-11-11 |
 | D31 | Program lifetime: sequential builds, compiler state kept for at most two recently touched projects; cap set from M1b (provisional) | 2026-11-11 |
 | D32 | No engine "risk" word. Results carry completeness, reach and factors; one derived verdict (level + action). New factors `cross-package`, `many-callers` | 2026-11-11 |
-| D33 | Milestone order: M1 → M1b → M2a → M2b → M3 starts → M4a → M2c → M6a → M4b → M5 → M6b | 2026-11-11 |
+| D33 | Milestone order: M1 → M1b → M1c (D39) → M2a → M2b → M3 starts → M4a → M2c → M6a → M4b → M5 → M6b | 2026-11-11 |
 | D34 | Stable key grammar and the set of indexed declarations and uses fixed by ADR 0002 and 0003 | 2026-11-11 |
 | D35 | First call blocks up to 60 s with streamed progress; only the lock holder builds, other sessions read the published index | 2026-11-11 |
 | D36 | Acceptance adds a differential test against TypeScript find-references and a seeded randomised incremental-equals-full test | 2026-11-11 |
 | D37 | `docs/RISK.md` R1–R9 confirmed (R5 amended by D30); name cross-check is part of engine correctness (M2b). Golden file contract refreshed to match | 2026-11-11 |
-| D38 | Persistent loading from user-level OMP config pointing at a stable worktree on the last accepted tag; third-party indexer edits (GitNexus, Graft) are never committed | 2026-11-11 |
+| D38 | Persistent loading from user-level OMP config pointing at a stable worktree (**superseded by D40**); third-party indexer edits (GitNexus, Graft) are never committed (still in force) | 2026-11-11 |
+| D39 | **Owner decision:** merge KSD Engineering Proxy into this library as `src/policy/` with its git history; frozen behaviour contract (§6.7); no bridge. Supersedes D04 | 2026-11-11 |
+| D40 | Package as an OMP marketplace plugin with committed build output; marketplace version bumped only on accepted milestones. Supersedes D38 | 2026-11-11 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
 ## 16. Open questions
 
-1. Exact config key for persistent loading in 18.18.8 (M1's README proposal; applied when the stable worktree is set up).
+1. How the OMP marketplace resolves a plugin version (branch head or tag); M1c answers.
 2. Runtime facts and real-project memory (M1b answers; D31 is provisional until then).
 3. Which real GitLab project to clone read-only for M3 dogfooding.
 4. Whether GitNexus is active for repos the owner works in; if so, how its answers compare on the same M3 tasks.
