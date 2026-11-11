@@ -1,23 +1,22 @@
 /**
- * Experimental OMP adapter for the `ei_workflow` tool.
+ * OMP extension entry: KSD policy module + `ei_workflow` tool in one plugin.
  *
- * STATUS: VERIFIED live in OMP 18.18.8 on 2026-11-11: S1-S6 and S8 observed via `omp -p --model <claude> -e dist/adapters/omp/extension.js` (agent reaches the tool through `write` to `xd://ei_workflow`); S7 PARTIAL (plugins/skills checked read-only, no interactive TUI). Re-run scripts/m1-smoke.sh after every OMP upgrade.
+ * STATUS: live-verified pieces — policy module migrated byte-identical from KSD 0.6.0
+ * (73fc916) in M1c, ei_workflow verified live in OMP 18.18.8 in M1.
  *
- * What was read to write this (see README "OMP adapter"):
- *  - OMP binary on this machine: omp/18.18.8 (`omp --version`).
- *  - Docs bundled in that binary: `omp://extensions.md` (registerTool, `execute` signature, `approval`).
- *  - Type source from the globally installed npm package @oh-my-pi/pi-coding-agent 18.14.0
- *    (older than the binary): src/extensibility/extensions/types.ts (`ToolDefinition`, `ExtensionAPI`),
- *    ../pi-agent-core/src/types.ts (`AgentToolResult`, `ToolApproval`), ../omptype/src/zod.ts.
- *
- * The OMP types are copied below as a minimal local interface because this repo has no OMP dependency.
- * If OMP changes these shapes, this file will not notice until it is loaded in OMP.
+ * Registration order is KSD first, then ei_* (docs/DESIGN.md §10.1). A failure in
+ * either part must not prevent the other from registering. Kill switches are
+ * independent: ENGINEERING_PROXY_DISABLED=1 (checked inside the policy module)
+ * disables only policy injection and /engineering-review; EI_DISABLED=1 disables
+ * only the ei_* tools.
  */
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
 import { defaultLockPath, readLock } from '../../workflow/sources.js';
 import { RISKS, STAGES, TASK_TYPES } from '../../workflow/types.js';
+import { createExtension as createPolicyExtension } from '../../policy/index.js';
+import { SECTION_KEY } from '../../policy/policy.js';
 
 interface SchemaLike {
   optional(): SchemaLike;
@@ -60,17 +59,23 @@ export interface OmpExtensionApi {
 export interface ExtensionDeps {
   env?: NodeJS.ProcessEnv;
   lockPath?: string;
+  /** Injectable for tests; defaults to the real KSD policy entry. */
+  createPolicyExtension?: (pi: OmpExtensionApi) => void;
 }
 
 function errorResult(message: string): ToolResult {
   return { isError: true, content: [{ type: 'text', text: message }] };
 }
 
-// Advisory tool: every failure becomes an error result for the agent, never a crashed session.
-export default function eiWorkflowExtension(pi: OmpExtensionApi, deps: ExtensionDeps = {}): void {
+// Load-time errors have no ctx.ui yet; console.error with KSD's SECTION_KEY tag is
+// the closest equivalent of KSD's own warning channel (`ctx.ui.notify(msg, "warning")`).
+function warnLoad(stage: string, error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`ksd-intelligence: ${stage} failed to register (${SECTION_KEY}): ${message}`);
+}
+
+function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPath: string): void {
   const z = pi.zod;
-  const env = deps.env ?? process.env;
-  const lockPath = deps.lockPath ?? defaultLockPath();
 
   pi.registerTool({
     name: 'ei_workflow',
@@ -109,4 +114,24 @@ export default function eiWorkflowExtension(pi: OmpExtensionApi, deps: Extension
       }
     },
   });
+}
+
+// Advisory tool: every failure becomes an error result for the agent, never a crashed session.
+export default function ksdIntelligenceExtension(pi: OmpExtensionApi, deps: ExtensionDeps = {}): void {
+  const env = deps.env ?? process.env;
+  const startPolicy = deps.createPolicyExtension ?? ((api: OmpExtensionApi) => createPolicyExtension(api));
+
+  try {
+    startPolicy(pi);
+  } catch (error) {
+    warnLoad('KSD policy module', error);
+  }
+
+  if (env.EI_DISABLED === '1') return;
+
+  try {
+    registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath());
+  } catch (error) {
+    warnLoad('ei_workflow tool', error);
+  }
 }
