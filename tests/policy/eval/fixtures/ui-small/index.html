@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Client portal</title>
+    </head>
+    <body>
+        <main>
+            <h1>Client portal</h1>
+            <form id="portal-form">
+                <label for="entry">Entry</label>
+                <input id="entry" name="entry">
+                <!-- As shipped: both accessible name and label read "Save".
+                     The task changes them to "Save draft" without touching anything else. -->
+                <button type="button" id="save-btn" aria-label="Save">Save</button>
+                <span id="save-status" aria-live="polite"></span>
+            </form>
+        </main>
+        <script>
+            (function () {
+                var button = document.getElementById("save-btn");
+                var status = document.getElementById("save-status");
+                button.addEventListener("click", function () {
+                    status.textContent = "Draft saved";
+                    console.log("save-button clicked");
+                });
+            })();
+        </script>
+    </body>
+</html>

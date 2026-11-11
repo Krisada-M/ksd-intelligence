@@ -1,0 +1,1 @@
+Engineering Proxy: OFF; mode: BALANCED (global); project default: UNSET; global default: BALANCED; session: INHERIT; Ponytail command: not detected/unknown; Ponytail mode: not inspected; WARNING: Cannot parse .engineering-proxy.json: Expected property name or '}' in JSON at position 2 (line 1 column 3)

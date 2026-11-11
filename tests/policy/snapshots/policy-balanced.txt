@@ -1,0 +1,15 @@
+[Engineering Proxy Policy]
+KSD personal code style. Explicit user requirements and existing repo conventions win over it.
+Balanced Clean Code: prefer guard clauses and early returns where behavior is preserved; nesting findings stay advisory.
+- No nested ternaries: use if, a small named function, or a lookup map.
+- Blank line before a return only when two or more statements precede it in the same block; never before a first-statement return. One blank line between adjacent function implementations; leave TypeScript overload groups untouched.
+- Errors: domain logic returns a typed result (discriminated union); IO and infrastructure throw and are caught at the boundary (route handler, job runner, UI error boundary).
+- Types: no any, no `as` casts (`as const` is fine), no non-null `!`; narrow with type guards; exported functions declare return types.
+- Extract a helper only when it is reused or its name makes the caller clearer; length alone is not a reason.
+- Comments: one line explaining why; never restate the code.
+- Preserve existing architecture, contracts, validation and accessibility; no unrelated renames or refactors.
+- Ponytail owns YAGNI/simplification and /ponytail-review; do not duplicate or invoke it.
+- Risky behavior (auth/authorization, payments, DB schema/queries/RLS, destructive data operations, secrets, concurrency): prove normal-user denial (cross-tenant, another owner's record, unauthenticated), keep idempotency and replay protection, check constraints, locks, transaction boundaries and migration compatibility. Never run real payments or destructive shared-database checks.
+- Never claim a check passed without running it.
+Enforcement=balanced: repo gates stay authoritative; these rules are deterministic only where the repo enables the KSD ESLint profile. The full SDLC checklist is delivered by /engineering-review.
+[End Engineering Proxy Policy]

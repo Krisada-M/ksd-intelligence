@@ -1,18 +1,41 @@
 {
   "name": "ksd-intelligence",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
+  "license": "MIT",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node scripts/copy-policy-to-dist.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.json --noEmit",
-    "test": "npm run build && tsc -p tests/tsconfig.json && node --test dist-test/tests/workflow/*.test.js"
+    "test": "npm run build && tsc -p tests/tsconfig.json && node scripts/copy-policy-to-dist.mjs --test-tree && node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/workflow/*.test.js tests/policy/*.test.js",
+    "check:dist": "npm run build && git diff --exit-code dist/"
+  },
+  "bin": {
+    "ksd-check-changed": "./dist/policy/check-changed.js",
+    "ksd-review-verdict": "./dist/policy/review-verdict.js"
+  },
+  "exports": {
+    ".": "./dist/adapters/omp/extension.js",
+    "./eslint": "./dist/policy/eslint-rules/index.js"
+  },
+  "omp": {
+    "extensions": [
+      "./dist/adapters/omp/extension.js"
+    ]
+  },
+  "pi": {
+    "extensions": [
+      "./dist/adapters/omp/extension.js"
+    ]
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
-    "typescript": "^5.9.0"
+    "eslint": "10.13.0",
+    "typescript": "^5.9.0",
+    "typescript-eslint": "8.72.1"
   }
 }

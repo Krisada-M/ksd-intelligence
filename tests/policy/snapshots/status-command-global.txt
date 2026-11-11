@@ -1,0 +1,1 @@
+Engineering Proxy: ON; mode: ADAPTIVE (global); project default: UNSET; global default: ADAPTIVE; session: INHERIT; Ponytail command: not detected/unknown; Ponytail mode: not inspected

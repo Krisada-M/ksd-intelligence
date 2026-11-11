@@ -1,0 +1,17 @@
+# CI configuration the repo declares. The presence of this file alone is NOT
+# proof that its checks passed for the current commit.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test tests/

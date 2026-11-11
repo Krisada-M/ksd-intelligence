@@ -24,6 +24,8 @@ function schema(kind: string, values?: readonly string[]): MockSchema {
   return self;
 }
 
+const noPolicy = () => {};
+
 function mockPi(): { pi: OmpExtensionApi; registered: Parameters<OmpExtensionApi['registerTool']>[0][] } {
   const registered: Parameters<OmpExtensionApi['registerTool']>[0][] = [];
   const pi: OmpExtensionApi = {
@@ -35,10 +37,25 @@ function mockPi(): { pi: OmpExtensionApi; registered: Parameters<OmpExtensionApi
 
 it('registers one read-only ei_workflow tool', () => {
   const { pi, registered } = mockPi();
-  extension(pi, { env: {} });
+  extension(pi, { env: {}, createPolicyExtension: noPolicy });
   assert.equal(registered.length, 1);
   assert.equal(registered[0]?.name, 'ei_workflow');
   assert.equal(registered[0]?.approval, 'read');
+});
+
+it('EI_DISABLED=1 skips the ei_* tools only', () => {
+  const { pi, registered } = mockPi();
+  let policyStarted = false;
+  extension(pi, { env: { EI_DISABLED: '1' }, createPolicyExtension: () => { policyStarted = true; } });
+  assert.equal(policyStarted, true, 'policy module must still start');
+  assert.equal(registered.length, 0);
+});
+
+it('a failing policy module does not prevent ei_workflow from registering', () => {
+  const { pi, registered } = mockPi();
+  extension(pi, { env: {}, createPolicyExtension: () => { throw new Error('policy boom'); } });
+  assert.equal(registered.length, 1);
+  assert.equal(registered[0]?.name, 'ei_workflow');
 });
 
 it('missing provider roots return an error result instead of throwing', async () => {
@@ -47,7 +64,7 @@ it('missing provider roots return an error result instead of throwing', async ()
   try {
     const lockPath = join(dir, 'skills.lock.json');
     await writeFile(lockPath, JSON.stringify(emptyLock()));
-    extension(pi, { env: {}, lockPath });
+    extension(pi, { env: {}, lockPath, createPolicyExtension: noPolicy });
     const result = await registered[0]?.execute('call', { task: 'fix payment race condition', stage: 'investigate' }, undefined);
     assert.equal(result?.isError, true);
     assert.match(result?.content[0]?.text ?? '', /SKILLS_UNAVAILABLE.*PROVIDER_ROOT_MISSING/);
@@ -58,7 +75,7 @@ it('missing provider roots return an error result instead of throwing', async ()
 
 it('an unreadable lock file returns an error result', async () => {
   const { pi, registered } = mockPi();
-  extension(pi, { env: {}, lockPath: '/nonexistent/skills.lock.json' });
+  extension(pi, { env: {}, lockPath: '/nonexistent/skills.lock.json', createPolicyExtension: noPolicy });
   const result = await registered[0]?.execute('call', { task: 'x', stage: 'plan' }, undefined);
   assert.equal(result?.isError, true);
   assert.match(result?.content[0]?.text ?? '', /LOCK_INVALID/);
@@ -72,7 +89,7 @@ it('passes the caller type through and reports classifiedBy', async () => {
     const lockPath = join(dir, 'skills.lock.json');
     await writeFile(lockPath, JSON.stringify(emptyLock()));
     await writeSkillFile(root, 'matt:diagnosing-bugs', FRONTMATTER_BODY('diagnosing-bugs', 'BODY'));
-    extension(pi, { env: { EI_MATT_ROOT: root }, lockPath });
+    extension(pi, { env: { EI_MATT_ROOT: root }, lockPath, createPolicyExtension: noPolicy });
     const result = await registered[0]?.execute('call', { task: 'แก้บั๊กการชำระเงิน', stage: 'investigate', type: 'bug' }, undefined);
     assert.equal(result?.isError, undefined);
     assert.match(result?.content[0]?.text ?? '', /classifiedBy: caller/);
@@ -84,7 +101,7 @@ it('passes the caller type through and reports classifiedBy', async () => {
 
 it('an aborted call returns Cancelled', async () => {
   const { pi, registered } = mockPi();
-  extension(pi, { env: {} });
+  extension(pi, { env: {}, createPolicyExtension: noPolicy });
   const result = await registered[0]?.execute('call', { task: 'x', stage: 'plan' }, AbortSignal.abort());
   assert.equal(result?.isError, true);
   assert.equal(result?.content[0]?.text, 'Cancelled');

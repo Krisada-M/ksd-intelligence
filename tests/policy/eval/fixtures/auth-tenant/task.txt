@@ -1,0 +1,1 @@
+Fix canRead to enforce authenticated user AND same tenant AND record ownership; no admin bypass exists.

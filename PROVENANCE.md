@@ -22,3 +22,16 @@ No upstream `SKILL.md` content is stored in this repo. `skills.lock.json` pins t
 | osmani | https://github.com/addyosmani/agent-skills.git | `301b02b12bff98e4688e6984af6556802322bbde` | MIT (`LICENSE` in repo) |
 
 Use is personal and non-commercial.
+
+## Merged code (M1c)
+
+| Source | What was moved | Where |
+|---|---|---|
+| `https://github.com/Krisada-M/ksd-engineering` commit `73fc916` (v0.6.0, MIT, owner's own repository), path `plugins/engineering-proxy/` | Runtime and modules, file names unchanged: `index.js`, `config.js`, `policy.js`, `sdlc.js`, `change-scope.js`, `check-changed.js`, `review-verdict.js`, `eslint-rules/`, `src/*.ts` + committed `dist/`, `package.json`, `tsconfig.json`, `.npmignore` | `src/policy/` |
+| same | `test/*.test.js`, `test/helpers/`, `test/eval/fixtures/` — unchanged except import paths (`../x.js` → `../../src/policy/x.js`, validate-release and CLI-script path fixes) | `tests/policy/` |
+| same, path `docs/ACCEPTANCE.md` | acceptance notes | `docs/policy/ACCEPTANCE.md` |
+| same, path `examples/` | `.engineering-proxy.json`, `eslint.config.mjs` | `examples/` |
+| same, path `validate-release.js` | release validation (used by `tests/policy/release.test.js`) | `validate-release.js` |
+| same, path `.omp-plugin/marketplace.json` | marketplace manifest shape; rewritten for `ksd-intelligence` 0.1.0, source `.` | `.omp-plugin/marketplace.json` |
+
+Copied at `73fc916` without git history (the M1c no-commit rule blocks `git subtree add`, which creates commits). Frozen-contract proof: `tests/policy/contract.test.js` against snapshots generated from the same clone (`tests/policy/snapshots/`).

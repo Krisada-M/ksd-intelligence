@@ -1,0 +1,18 @@
+{
+  "name": "ksd-intelligence",
+  "owner": {
+    "name": "Krisada-M"
+  },
+  "metadata": {
+    "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "ksd-intelligence",
+      "description": "KSD engineering policy (balanced/adaptive, status segment, /engineering-review) plus the ei_* tools",
+      "source": ".",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -88,22 +88,39 @@ bash scripts/m1-smoke.sh <s1|s2|s3|s4|s5|s6|s7|s8|checklist>
 
 Known interaction: Caveman (`caveman@4.0.1`) is active in sessions on this machine and can compress how the agent *presents* `ei_workflow` output ("[155 lines compressed …]"); the raw tool result in the session transcript stays complete. Check this during dogfooding.
 
-### Persistence proposal (not applied)
+### Persistent install (marketplace, D40)
 
-`omp://extension-loading.md` offers two persistent load paths; either would remove the per-run `--extension` flag:
+This repository is itself the OMP plugin (`.omp-plugin/marketplace.json`, plugin `ksd-intelligence@ksd-intelligence`). Development loads are explicit (`omp -e dist/adapters/omp/extension.js`); daily use installs it once (see §6) and the marketplace serves upgrades (`omp plugin upgrade`).
 
-1. Project-level, `<repo>/.omp/config.yml`:
-   ```yaml
-   extensions:
-     - ./dist/adapters/omp/extension.js
-   ```
-2. User-level, `~/.omp/agent/config.yml`:
-   ```yaml
-   extensions:
-     - /home/mezn/workspace/private/ksd-intelligence/dist/adapters/omp/extension.js
-   ```
+## 6. KSD policy module (merged from Engineering Proxy 0.6.0)
 
-Native auto-discovery directories (`<repo>/.omp/extensions/`, `~/.omp/agent/extensions/`) are an alternative (symlink or copy there). Per repo rules, nothing in `~/.omp/**` or OMP config was changed; the owner applies whichever path they prefer.
+Everything the separate KSD Engineering Proxy v0.6.0 provided ships unchanged in `src/policy/` (frozen contract: `docs/DESIGN.md` §6.7, provenance: `PROVENANCE.md`, proof: `tests/policy/contract.test.js`). One extension registers it and the `ei_*` tools together.
+
+**Commands:** `/engineering-proxy [status|balanced|adaptive|reset|global <mode|reset>|repo <mode|reset>]` and `/engineering-review [scope]`, with their 0.6.0 output text.
+
+**Config:** global `~/.omp/agent/engineering-proxy.json`, project `.engineering-proxy.json` at the nearest `.git`/`.omp` root; keys `enabled` and `enforcement: balanced | adaptive`. Precedence: session > project > global > built-in balanced; `enabled` merges separately. An invalid config fails open (no injection; error only in `/engineering-proxy status`).
+
+**Status segment:** `○ 🛡 KSD: BALANCED` (idle) / `● 🛡 KSD: ADAPTIVE` (active), with its 0.6.0 show/clear rules.
+
+**Kill switches:** `ENGINEERING_PROXY_DISABLED=1` disables policy injection and `/engineering-review` only; `EI_DISABLED=1` disables the `ei_*` tools only.
+
+**Opt-in tools:** `ksd-check-changed` and `ksd-review-verdict` (npm `bin` entries) and the ESLint rules export (`ksd-intelligence/eslint`) — same behaviour as 0.6.0.
+
+### Install (owner)
+
+```text
+cut-over:  omp plugin uninstall engineering-proxy@engineering-proxy
+           omp plugin marketplace add Krisada-M/ksd-intelligence
+           omp plugin install ksd-intelligence@ksd-intelligence
+           (restart OMP; confirm the 🛡 KSD status segment and /engineering-proxy status)
+upgrade:   omp plugin marketplace update ksd-intelligence
+           omp plugin upgrade ksd-intelligence@ksd-intelligence
+rollback:  omp plugin uninstall ksd-intelligence@ksd-intelligence
+           omp plugin install engineering-proxy@engineering-proxy
+```
+
+Never run both plugins at once (the policy would be injected twice). The old `Krisada-M/ksd-engineering` repository is archived, not deleted, after the cut-over.
+
 ## Rules this router follows
 
 - One router: do not also enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers. KSD Engineering Proxy policy outranks skill text; rendered output always starts with a precedence header before any skill text.
