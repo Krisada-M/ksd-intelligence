@@ -10,9 +10,40 @@ function rule(type, words, stems) {
 }
 // Order is priority: the first rule that matches wins.
 const RULES = [
-    rule('security', ['auth', 'cve', 'xss', 'csrf', 'ssrf', 'sqli'], ['secur', 'authenticat', 'authoriz', 'permission', 'vulnerab', 'secret', 'injection', 'exploit', 'credential', 'privilege']),
-    rule('performance', [], ['performance', 'performant', 'latenc', 'slow', 'benchmark', 'bottleneck', 'leak', 'throughput', 'speed']),
-    rule('ui', ['ui', 'ux', 'css'], ['figma', 'visual', 'layout', 'frontend', 'front-end', 'responsive', 'tailwind', 'pixel', 'stylesheet']),
+    rule('security', ['auth', 'cve', 'xss', 'csrf', 'ssrf', 'sqli'], [
+        'secur',
+        'authenticat',
+        'authoriz',
+        'permission',
+        'vulnerab',
+        'secret',
+        'injection',
+        'exploit',
+        'credential',
+        'privilege',
+    ]),
+    rule('performance', [], [
+        'performance',
+        'performant',
+        'latenc',
+        'slow',
+        'benchmark',
+        'bottleneck',
+        'leak',
+        'throughput',
+        'speed',
+    ]),
+    rule('ui', ['ui', 'ux', 'css'], [
+        'figma',
+        'visual',
+        'layout',
+        'frontend',
+        'front-end',
+        'responsive',
+        'tailwind',
+        'pixel',
+        'stylesheet',
+    ]),
     rule('refactor', [], ['refactor', 'cleanup', 'clean up', 'simplif', 'architectur', 'migrat', 'restructur']),
     rule('bug', ['fix', 'fixes', 'fixed', 'fixing'], ['bug', 'crash', 'fail', 'regression', 'broken', 'debug', 'flak', 'race condition']),
 ];

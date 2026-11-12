@@ -12,7 +12,12 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-policy-to-dist.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.json --noEmit",
     "test": "npm run build && tsc -p tests/tsconfig.json && node scripts/copy-policy-to-dist.mjs --test-tree && node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/workflow/*.test.js tests/policy/*.test.js tests/packaging/*.test.js",
-    "check:dist": "npm run build && git diff --exit-code dist/"
+    "check:dist": "npm run build && git diff --exit-code dist/",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "prepare": "husky"
   },
   "bin": {
     "ksd-check-changed": "./dist/policy/check-changed.js",
@@ -35,6 +40,9 @@
   "devDependencies": {
     "@types/node": "^20.19.0",
     "eslint": "10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "prettier": "^3.10.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "8.72.1"
   }

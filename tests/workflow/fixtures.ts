@@ -6,7 +6,8 @@ import { sha256Hex } from '../../src/workflow/loader.js';
 import type { SkillsLock } from '../../src/workflow/sources.js';
 import { WorkflowError, type ProviderId, type SkillId } from '../../src/workflow/types.js';
 
-export const FRONTMATTER_BODY = (name: string, body: string): string => `---\nname: ${name}\n---\n${body}`;
+export const FRONTMATTER_BODY = (name: string, body: string): string =>
+  `---\nname: ${name}\n---\n${body}`;
 
 export async function tempDir(prefix: string): Promise<string> {
   return mkdtemp(resolve(tmpdir(), `ksd-${prefix}-`));
@@ -37,7 +38,10 @@ export function emptyLock(): SkillsLock {
     rootSubpath: PROVIDERS[id].rootSubpath,
     skills: Object.fromEntries(skillIdsOf(id).map((skillId) => [skillId, { sha256: null }])),
   });
-  return { version: 1, providers: { matt: provider('matt'), poteto: provider('poteto'), osmani: provider('osmani') } };
+  return {
+    version: 1,
+    providers: { matt: provider('matt'), poteto: provider('poteto'), osmani: provider('osmani') },
+  };
 }
 
 export function lockWithHash(id: SkillId, content: string): SkillsLock {
@@ -46,4 +50,3 @@ export function lockWithHash(id: SkillId, content: string): SkillsLock {
   lock.providers[entry.provider].skills[id] = { sha256: sha256Hex(Buffer.from(content)) };
   return lock;
 }
-
