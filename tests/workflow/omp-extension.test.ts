@@ -10,14 +10,17 @@ import { join } from 'node:path';
 interface MockSchema {
   kind: string;
   values?: readonly string[];
+  /** Object schemas: the declared property names. */
+  keys?: string[];
   optional(): MockSchema;
   describe(text: string): MockSchema;
 }
 
-function schema(kind: string, values?: readonly string[]): MockSchema {
+function schema(kind: string, values?: readonly string[], keys?: string[]): MockSchema {
   const self: MockSchema = {
     kind,
     ...(values ? { values } : {}),
+    ...(keys ? { keys } : {}),
     optional: () => self,
     describe: () => self,
   };
@@ -35,7 +38,7 @@ function mockPi(): {
     zod: {
       string: () => schema('string'),
       enum: (values) => schema('enum', values),
-      object: () => schema('object'),
+      object: (shape) => schema('object', undefined, Object.keys(shape)),
     },
     registerTool: (tool) => {
       registered.push(tool);
@@ -44,12 +47,19 @@ function mockPi(): {
   return { pi, registered };
 }
 
-it('registers one read-only ei_workflow tool', () => {
+it('registers read-only ei_workflow and ei_status tools', () => {
   const { pi, registered } = mockPi();
   extension(pi, { env: {}, createPolicyExtension: noPolicy });
-  assert.equal(registered.length, 1);
-  assert.equal(registered[0]?.name, 'ei_workflow');
-  assert.equal(registered[0]?.approval, 'read');
+  assert.deepEqual(
+    registered.map((tool) => [tool.name, tool.approval]),
+    [
+      ['ei_workflow', 'read'],
+      ['ei_status', 'read'],
+    ],
+  );
+  const params = registered[1]?.parameters;
+  assert.ok(params && 'keys' in params);
+  assert.deepEqual(params.keys, [], 'ei_status takes no input');
 });
 
 it('EI_DISABLED=1 skips the ei_* tools only', () => {
@@ -65,7 +75,7 @@ it('EI_DISABLED=1 skips the ei_* tools only', () => {
   assert.equal(registered.length, 0);
 });
 
-it('a failing policy module does not prevent ei_workflow from registering', () => {
+it('a failing policy module does not prevent the ei_* tools from registering', () => {
   const { pi, registered } = mockPi();
   extension(pi, {
     env: {},
@@ -73,8 +83,33 @@ it('a failing policy module does not prevent ei_workflow from registering', () =
       throw new Error('policy boom');
     },
   });
-  assert.equal(registered.length, 1);
-  assert.equal(registered[0]?.name, 'ei_workflow');
+  assert.deepEqual(
+    registered.map((tool) => tool.name),
+    ['ei_workflow', 'ei_status'],
+  );
+});
+
+it('ei_status reports a degraded state with its fix, success-shaped, for the session cwd', async () => {
+  const { pi, registered } = mockPi();
+  const repo = await tempDir('status-repo');
+  try {
+    extension(pi, { env: process.env, createPolicyExtension: noPolicy });
+    // The test HOME is empty, so the pinned TypeScript runtime is not provisioned.
+    const result = await registered[1]?.execute('call', {}, undefined, undefined, { cwd: repo });
+    assert.equal(result?.isError, undefined);
+    const text = result?.content[0]?.text ?? '';
+    assert.equal(
+      text.split('\n')[0],
+      'STATUS degraded (typescript runtime missing) · run: ei setup',
+    );
+    assert.match(text, /^Index {7}none · run: ei index$/m);
+    assert.ok(text.length <= 3000);
+    const details = result?.details;
+    assert.ok(typeof details === 'object' && details !== null && 'root' in details);
+    assert.equal(details.root, repo);
+  } finally {
+    await cleanup(repo);
+  }
 });
 
 it('missing provider roots return an error result instead of throwing', async () => {

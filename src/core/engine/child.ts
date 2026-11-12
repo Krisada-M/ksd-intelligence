@@ -1,0 +1,151 @@
+// Engine child process entry (D45). Reads requests from stdin, answers on stdout, one JSON per line.
+import { setTimeout as delay } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
+import { isRecord } from '../kernel/guards.js';
+import { isTypescriptApi } from '../workspace/scan.js';
+import { beginBuild, writeFiles, type FileRecord } from '../../storage/sqlite.js';
+import { runIndex } from './indexer.js';
+import { encode, lineReader, parseMessage, type Message } from './protocol.js';
+
+type Progress = (message: string, data?: unknown) => void;
+type Op = (args: Record<string, unknown>, progress: Progress) => unknown;
+
+class OpError extends Error {
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+// stdout is the protocol channel; anything a dependency logs goes to stderr instead.
+console.log = console.error;
+
+function send(message: Message): void {
+  process.stdout.write(encode(message));
+}
+
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key];
+  if (typeof value !== 'string' || value === '') {
+    throw new OpError('INVALID_INPUT', `${key} must be a non-empty string`);
+  }
+  return value;
+}
+
+// D44: TypeScript is always loaded by absolute path; a bare specifier does not resolve here.
+async function importByPath(path: string): Promise<unknown> {
+  const loaded: unknown = await import(pathToFileURL(path).href);
+  return isRecord(loaded) && isRecord(loaded.default) ? loaded.default : loaded;
+}
+
+// A Map, not an object literal: an op name such as `constructor` must not reach a prototype member.
+const ops = new Map<string, Op>([
+  [
+    'ping',
+    () => ({
+      pid: process.pid,
+      runtime: process.versions.bun === undefined ? 'node' : 'bun',
+      version: process.versions.bun ?? process.versions.node,
+      rssMb: Math.round(process.memoryUsage().rss / 2 ** 20),
+    }),
+  ],
+  [
+    'typescript',
+    async (args) => {
+      const ts = await importByPath(stringArg(args, 'path'));
+      if (!isRecord(ts) || typeof ts.version !== 'string') {
+        throw new OpError('typescript-invalid', 'module at path has no string `version` export');
+      }
+      return { version: ts.version };
+    },
+  ],
+  [
+    'index',
+    async (args, progress) => {
+      const typescriptPath = stringArg(args, 'typescriptPath');
+      const ts = await importByPath(typescriptPath);
+      if (!isTypescriptApi(ts)) {
+        throw new OpError('typescript-invalid', `${typescriptPath} is not a TypeScript compiler`);
+      }
+      const root = stringArg(args, 'root');
+      const cacheDir = stringArg(args, 'cacheDir');
+      return runIndex({ root, cacheDir, typescriptPath }, ts, progress);
+    },
+  ],
+]);
+
+// Test-only ops: memory pressure and a build interrupted mid-write. Read once at start-up from
+// this process's own environment, which only the parent's spawn call sets; requests cannot.
+if (process.env.EI_ENGINE_TEST_OPS === '1') {
+  ops.set('allocate', async (_args, progress) => {
+    const held: number[][] = [];
+    for (let mb = 1; mb <= 1024; mb++) {
+      held.push(new Array<number>(131_072).fill(mb)); // ~1 MB of heap, every page touched
+      if (mb % 32 === 0) {
+        progress('allocated', { mb });
+        await delay(5);
+      }
+    }
+    return { allocatedMb: held.length };
+  });
+
+  ops.set('stage-and-hang', (args, progress) => {
+    const db = beginBuild(stringArg(args, 'cacheDir'));
+    const records: FileRecord[] = Array.isArray(args.paths)
+      ? args.paths.map((path) => ({
+          path: String(path),
+          size: 0,
+          mtimeMs: 0,
+          hash: null,
+          kind: 'ts',
+          package: null,
+          tsconfig: null,
+          status: 'indexable',
+          reason: null,
+        }))
+      : [];
+    writeFiles(db, records);
+    progress('staged', { rows: records.length });
+    return new Promise(() => undefined); // never publishes; the test kills this process
+  });
+}
+
+async function handle(id: string, op: string, args: unknown): Promise<void> {
+  const run = ops.get(op);
+  if (!run) {
+    send({ type: 'error', id, code: 'INVALID_INPUT', message: `unknown engine op: ${op}` });
+    return;
+  }
+  try {
+    const value = await run(isRecord(args) ? args : {}, (message, data) =>
+      send({ type: 'progress', id, message, data }),
+    );
+    send({ type: 'result', id, value });
+  } catch (error) {
+    const code = error instanceof OpError ? error.code : 'index-failed';
+    send({
+      type: 'error',
+      id,
+      code,
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+process.stdin.on(
+  'data',
+  lineReader((line) => {
+    const message = parseMessage(line);
+    if (typeof message === 'string' || message.type !== 'request') {
+      console.error(
+        `engine: ignored line (${typeof message === 'string' ? message : message.type})`,
+      );
+      return;
+    }
+    void handle(message.id, message.op, message.args);
+  }),
+);
+// The parent closes stdin to retire an idle child, and the pipe closes if the parent dies.
+process.stdin.on('end', () => process.exit(0));

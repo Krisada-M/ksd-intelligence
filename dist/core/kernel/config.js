@@ -1,3 +1,4 @@
+import { isRecord } from './guards.js';
 export const DEFAULT_RISK_ZONES = [
     {
         zone: 'payments',
@@ -33,6 +34,7 @@ export function defaultConfig(inferred) {
             watch: true,
             manyCallers: 10,
             useWorkspaceTypescript: false,
+            maxMemoryMb: null,
         },
         bridges: {
             B1: true,
@@ -55,11 +57,11 @@ export function defaultConfig(inferred) {
         },
     };
 }
-function isRecord(value) {
-    return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 function isStringArray(value) {
     return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+function isPositiveInteger(value) {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 function parseToggle(section, fallback, name, errors) {
     if (section === undefined)
@@ -94,6 +96,9 @@ function parseImpact(section, fallback, errors) {
     const useWorkspaceTypescript = typeof section.useWorkspaceTypescript === 'boolean'
         ? section.useWorkspaceTypescript
         : fallback.useWorkspaceTypescript;
+    const maxMemoryMb = section.maxMemoryMb === null || isPositiveInteger(section.maxMemoryMb)
+        ? section.maxMemoryMb
+        : fallback.maxMemoryMb;
     if (section.enabled !== undefined && typeof section.enabled !== 'boolean') {
         errors.push('impact.enabled must be boolean');
     }
@@ -126,6 +131,11 @@ function parseImpact(section, fallback, errors) {
         typeof section.useWorkspaceTypescript !== 'boolean') {
         errors.push('impact.useWorkspaceTypescript must be boolean');
     }
+    if (section.maxMemoryMb !== undefined &&
+        section.maxMemoryMb !== null &&
+        !isPositiveInteger(section.maxMemoryMb)) {
+        errors.push('impact.maxMemoryMb must be a positive integer or null');
+    }
     return {
         enabled,
         include,
@@ -136,6 +146,7 @@ function parseImpact(section, fallback, errors) {
         watch,
         manyCallers,
         useWorkspaceTypescript,
+        maxMemoryMb,
     };
 }
 function parseBridges(section, fallback, errors) {

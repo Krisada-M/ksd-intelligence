@@ -102,6 +102,28 @@ describe('config core', () => {
     assert.equal(config.search.enabled, true);
   });
 
+  it('parses impact.maxMemoryMb: null by default, positive integers kept, others rejected', () => {
+    assert.equal(defaultConfig().impact.maxMemoryMb, null);
+
+    const set = parseProjectConfig(JSON.stringify({ impact: { maxMemoryMb: 4096 } }));
+    assert.deepEqual(set.errors, []);
+    assert.equal(set.config.impact.maxMemoryMb, 4096);
+
+    const explicitNull = parseProjectConfig(JSON.stringify({ impact: { maxMemoryMb: null } }));
+    assert.deepEqual(explicitNull.errors, []);
+    assert.equal(explicitNull.config.impact.maxMemoryMb, null);
+
+    for (const bad of [0, -512, 1.5, '4096', true]) {
+      const parsed = parseProjectConfig(JSON.stringify({ impact: { maxMemoryMb: bad } }));
+      assert.deepEqual(
+        parsed.errors,
+        ['impact.maxMemoryMb must be a positive integer or null'],
+        `value ${JSON.stringify(bad)}`,
+      );
+      assert.equal(parsed.config.impact.maxMemoryMb, null, `falls back for ${JSON.stringify(bad)}`);
+    }
+  });
+
   it('provides default risk zones matching docs/RISK.md §2.1', () => {
     assert.equal(DEFAULT_RISK_ZONES.length, 4);
     assert.equal(DEFAULT_RISK_ZONES[0]?.zone, 'payments');
