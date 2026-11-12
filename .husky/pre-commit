@@ -1,3 +1,9 @@
 npm run typecheck
 npm run lint
 npm run format:check
+# Other indexers (GitNexus, Graft, CodeGraph) inject managed blocks into agent instruction files.
+# Those must never be committed (AGENTS.md, safety boundaries).
+if git diff --cached -- AGENTS.md CLAUDE.md | grep -qiE '^\+.*(gitnexus:start|codegraph_start|graft:start)'; then
+  echo "pre-commit: AGENTS.md/CLAUDE.md contains a block injected by another indexer. Run: git checkout -- AGENTS.md" >&2
+  exit 1
+fi
