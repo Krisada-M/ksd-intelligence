@@ -50,3 +50,21 @@ export type {
   Workflow,
   WorkflowErrorCode,
 } from './workflow/types.js';
+export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig } from './core/kernel/config.js';
+export type {
+  GitlabConfig,
+  ImpactConfig,
+  ProjectConfig,
+  RiskZoneConfig,
+  SearchConfig,
+  ToggleConfig,
+} from './core/kernel/config.js';
+export {
+  computeRepoId,
+  detectProjectLayout,
+  discoverTsconfigs,
+  findGitRoot,
+  initProject,
+  resolveCacheDir,
+} from './core/workspace/init.js';
+export type { InitProjectOptions, InitProjectResult } from './core/workspace/init.js';

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { PROVIDERS, catalog, lookupSkill, skillIdsOf } from '../../src/workflow/catalog.js';
@@ -10,7 +10,8 @@ export const FRONTMATTER_BODY = (name: string, body: string): string =>
   `---\nname: ${name}\n---\n${body}`;
 
 export async function tempDir(prefix: string): Promise<string> {
-  return mkdtemp(resolve(tmpdir(), `ksd-${prefix}-`));
+  const dir = await mkdtemp(resolve(tmpdir(), `ksd-${prefix}-`));
+  return realpath(dir);
 }
 
 export async function cleanup(...dirs: string[]): Promise<void> {
