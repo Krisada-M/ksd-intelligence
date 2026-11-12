@@ -16,9 +16,9 @@ In scope, in order:
 |---|---|---|---|
 | 1 | M0 ✅ | TS repo foundation + skill router ported and fixed | `docs/briefs/M0-foundation.md` |
 | 2 | M1 ✅ | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
-| 3 | M1b | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
+| 3 | M1b ✅ | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
 | 3b | M1c | Merge KSD Engineering Proxy as `src/policy/`; one plugin; marketplace packaging | `docs/briefs/M1c-ksd-merge.md` |
-| 4 | M2a | Codebase scan, whole-scope index, store, `ei_status` | written after M1b review |
+| 4 | M2a | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
 | 5 | M2b | `ei_impact` passing the engine golden cases | written after M2a review |
 | 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | written after M2b review |
 | 7 | M4a | Route detection (Next.js, Expo Router, Hono) | written when scheduled |
@@ -66,7 +66,7 @@ Work on **one milestone at a time**. When it is done, stop and report. Do not st
 
 ## Safety boundaries
 
-- Other code-intelligence tools (GitNexus, Graft, CodeGraph) may index this repo and write into it. Never commit their edits: revert any block they inject into `AGENTS.md`, and put their local ignore patterns in `.git/info/exclude`, not in tracked files. Report such edits when you see them.
+- Other code-intelligence tools (GitNexus, Graft, CodeGraph) may index this repo and write into it. (Owner: run GitNexus here with `gitnexus analyze --index-only` so it stops injecting into `AGENTS.md`/`CLAUDE.md`.) Never commit their edits: revert any block they inject into `AGENTS.md`, and put their local ignore patterns in `.git/info/exclude`, not in tracked files. Report such edits when you see them.
 
 - No `git push`, merge, tag, release or deploy. Commit locally only if the brief says so.
 - No network calls from library code. Upstream skill repos are cloned by the owner, not by the library.
