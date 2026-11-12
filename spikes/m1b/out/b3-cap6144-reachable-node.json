@@ -1,0 +1,46 @@
+{
+  "runtime": "node",
+  "capMb": 6144,
+  "set": "reachable",
+  "phases": [],
+  "completed": true,
+  "oom": false,
+  "phase": "done",
+  "heapLimitMB": 6644,
+  "totalMs": 30993.8,
+  "totals": {
+    "programMs": 6540.3,
+    "checkerMs": 3076.1,
+    "resolvePassMs": 21234.8,
+    "declPassMs": 82.7
+  },
+  "per": [
+    {
+      "alias": "workspace",
+      "programMs": 3874.5,
+      "checkerMs": 2264.7,
+      "declPassMs": 43.1,
+      "resolvePassMs": 20974.7,
+      "ownFiles": 6695,
+      "programFiles": 7895,
+      "maxRssMB": 5347,
+      "rssAfterReleaseMB": 5347,
+      "recordsStored": 400743
+    },
+    {
+      "alias": "tools",
+      "programMs": 2665.8,
+      "checkerMs": 811.4,
+      "declPassMs": 39.6,
+      "resolvePassMs": 260.1,
+      "ownFiles": 34,
+      "programFiles": 3283,
+      "maxRssMB": 5456,
+      "rssAfterReleaseMB": 1980,
+      "recordsStored": 2017
+    }
+  ],
+  "workerExitCode": 0,
+  "wallMs": 31081.3,
+  "mainThreadMaxRssMB": 5456
+}

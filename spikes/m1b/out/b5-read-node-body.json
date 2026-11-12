@@ -1,0 +1,26 @@
+{
+  "runtime": "node",
+  "mode": "read",
+  "edit": "body",
+  "target": "packages/catalog/src/build.ts#buildModel",
+  "buildinfoBytes": 2314664,
+  "oldBuilderProgramFiles": null,
+  "biReadMs": 0,
+  "createMs": 8637.7,
+  "affectedMs": 3767.3,
+  "affectedCount": 7833,
+  "affectedNonDts": 6973,
+  "affectedSample": [
+    "node_modules/@ark/schema/out/config.d.ts",
+    "node_modules/@ark/schema/out/constraint.d.ts",
+    "node_modules/@ark/schema/out/generic.d.ts",
+    "node_modules/@ark/schema/out/index.d.ts",
+    "node_modules/@ark/schema/out/intrinsic.d.ts",
+    "node_modules/@ark/schema/out/kinds.d.ts",
+    "node_modules/@ark/schema/out/module.d.ts",
+    "node_modules/@ark/schema/out/node.d.ts"
+  ],
+  "resolveAffectedMs": 26350.4,
+  "resolveAffectedFiles": 6733,
+  "maxRssMB": 3204
+}

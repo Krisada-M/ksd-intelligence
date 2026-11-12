@@ -1,0 +1,110 @@
+{
+  "runtime": "node",
+  "chain": "check",
+  "tsconfig": "packages/tsconfig.workspace.json",
+  "typescript": "5.9.3",
+  "target": {
+    "rel": "packages/catalog/src/build.ts",
+    "fn": "buildModel",
+    "importers": 478,
+    "retType": "Model<TApi>"
+  },
+  "maxRssMB": 4679,
+  "hostStats": {
+    "parses": 7900,
+    "reads": 7893,
+    "cacheHits": 47365
+  },
+  "rounds": [
+    {
+      "round": "cold",
+      "createMs": 9666.9,
+      "affectedMs": 32565.6,
+      "affectedCount": 7833,
+      "affectedNonDts": 6973,
+      "diags": 4428,
+      "sample": [
+        "packages/omptype/src/errors.ts",
+        "packages/omptype/src/keywords.ts",
+        "packages/omptype/src/ir.ts",
+        "packages/omptype/src/local-ref.ts",
+        "packages/omptype/src/jsonschema/resolve.ts",
+        "packages/omptype/src/jsonschema/runtime.ts"
+      ]
+    },
+    {
+      "round": "nochange",
+      "createMs": 219.4,
+      "affectedMs": 0,
+      "affectedCount": 0,
+      "affectedNonDts": 0,
+      "diags": 0,
+      "sample": []
+    },
+    {
+      "round": "body edit",
+      "createMs": 170.5,
+      "affectedMs": 66.6,
+      "affectedCount": 1,
+      "affectedNonDts": 1,
+      "diags": 0,
+      "sample": [
+        "packages/catalog/src/build.ts"
+      ]
+    },
+    {
+      "round": "signature edit",
+      "createMs": 142.1,
+      "affectedMs": 38.7,
+      "affectedCount": 1,
+      "affectedNonDts": 1,
+      "diags": 0,
+      "sample": [
+        "packages/catalog/src/build.ts"
+      ]
+    },
+    {
+      "round": "return type edit",
+      "createMs": 145.1,
+      "affectedMs": 29.3,
+      "affectedCount": 1,
+      "affectedNonDts": 1,
+      "diags": 1,
+      "sample": [
+        "packages/catalog/src/build.ts"
+      ]
+    },
+    {
+      "round": "global d.ts edit",
+      "createMs": 134.3,
+      "affectedMs": 48884.6,
+      "affectedCount": 7823,
+      "affectedNonDts": 6973,
+      "diags": 6588,
+      "sample": [
+        "types/assets/index.d.ts",
+        "packages/omptype/src/errors.ts",
+        "packages/omptype/src/keywords.ts",
+        "packages/omptype/src/ir.ts",
+        "packages/omptype/src/local-ref.ts",
+        "packages/omptype/src/jsonschema/resolve.ts"
+      ]
+    },
+    {
+      "round": "ambient module member edit",
+      "createMs": 248.6,
+      "affectedMs": 61586.2,
+      "affectedCount": 7823,
+      "affectedNonDts": 6973,
+      "diags": 6588,
+      "sample": [
+        "types/assets/index.d.ts",
+        "packages/omptype/src/errors.ts",
+        "packages/omptype/src/keywords.ts",
+        "packages/omptype/src/ir.ts",
+        "packages/omptype/src/local-ref.ts",
+        "packages/omptype/src/jsonschema/resolve.ts"
+      ]
+    }
+  ]
+}

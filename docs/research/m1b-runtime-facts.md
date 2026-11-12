@@ -84,46 +84,54 @@ Key observations:
 
 ### B3 — Worker threads with `resourceLimits.maxOldGenerationSizeMb`
 
-Commands: `node spikes/m1b/b3-worker.cjs <capMb> reachable` / `bun …` → `out/b3-cap*.json`.
+Commands: `node spikes/m1b/b3-worker.cjs <capMb> reachable` / `bun …` → `out/b3-cap*.json`. Workload: workspace + tools, sequential, one worker.
 
-| Memory Cap | Node | Bun | Label |
+| Memory cap | Node 24 | Bun 1.4.2 | Label |
 |---|---|---|---|
-| 1,536 MB | **DIED** `ERR_WORKER_OUT_OF_MEMORY` after 5.9 s (during program/checker init) | **COMPLETED** in 55.2 s; worker reported `heap_size_limit` = **17,180 MB**, peak RSS **5,283 MB** (cap completely ignored) | VERIFIED |
-| 3,072 MB | Not run (skipped after 4608 MB failed) | — | NOT VERIFIED |
-| 4,608 MB | **DIED** `ERR_WORKER_OUT_OF_MEMORY` after 36.5 s (during workspace resolve pass) | — | VERIFIED |
-| 6,144 MB | Not run inside worker; main-thread runs at 6144 MB completed reliably | — | NOT VERIFIED (in worker) |
+| 1,536 MB | **DIED** `ERR_WORKER_OUT_OF_MEMORY` after 5.9 s | **COMPLETED** 55.2 s; `heap_size_limit` 17,180 MB, peak RSS 5,283 MB (cap ignored) | VERIFIED |
+| 3,072 MB | **DIED** `ERR_WORKER_OUT_OF_MEMORY` after 10.5 s | not run | VERIFIED (Node) |
+| 4,608 MB | **DIED** after 36.5 s (workspace resolve pass) | not run | VERIFIED (Node) |
+| 6,144 MB | **COMPLETED** 31.0 s (program 6.5 s + resolve 21.2 s), worker peak RSS 5,456 MB, 400,743 records | not run | VERIFIED (Node) |
+| 8,192 MB | **COMPLETED** 30.0 s, peak RSS 4,659 MB | not run | VERIFIED (Node) |
 
-Result: Bun does not honour `resourceLimits` on this workload; Node strictly enforces it and fails below ~5 GB heap for this project.
+Result: Node enforces the cap and needs between 4.6 and 6.1 GB heap for this project (smallest passing cap measured: 6,144 MB). Bun ignores the cap.
 
 ### B4 — Builder program with in-memory overlays
 
-Target: `packages/catalog/src/build.ts` function `buildModel` / `Model<TApi>` (**478 importing files**).
-Command: `node --max-old-space-size=6144 spikes/m1b/b4-builder.cjs rounds --chain=affected`.
+Target: `packages/catalog/src/build.ts` `buildModel` (**478 importing files**). Command: `node --max-old-space-size=12288 spikes/m1b/b4-builder.cjs rounds --chain=check` → `out/b4-check-node.json` (full chain: no `ignoreSourceFile`, diagnostics really computed; peak RSS 4,679 MB).
 
-| Round (chain: affected-only, `ignoreSourceFile: true`) | createBuilder ms | affected-set ms | affected count | resolve affected ms | Label |
-|---|---|---|---|---|---|
-| cold build | 5,858 | 37 | 7,833 (6,973 non-.d.ts) | 20,831 (full pass) | VERIFIED |
-| no change | 173 | 0 | 0 | — | VERIFIED |
-| (a) body edit | 135 | 13 | **1** | 66 | VERIFIED |
-| (b) signature edit (+optional param) | 136 | 8 | 1 ⚠ | 57 | VERIFIED (artifact of ignoreSourceFile) |
-| (c) return-type edit (`\| undefined`) | 132 | 6 | 1 ⚠ | 49 | VERIFIED (artifact of ignoreSourceFile) |
-| (d) global .d.ts edit (added member to `types/assets/index.d.ts`) | 132 | 3,226 | **7,823 (whole program)** | 21,186 | VERIFIED |
+| Round | createBuilder ms | affected-set ms | affected files | Label |
+|---|---|---|---|---|
+| cold | 9,667 | 32,566 | 7,833 (6,973 non-.d.ts) | VERIFIED |
+| no change | 219 | 0 | 0 | VERIFIED |
+| (a) body edit | 171 | 67 | 1 | VERIFIED |
+| (b) signature edit (+optional param) | 142 | 39 | **1** | VERIFIED, but see below |
+| (c) return-type edit | 145 | 29 | **1** (1 new diagnostic) | VERIFIED, but see below |
+| (d) global `.d.ts` member added | 134 | 48,885 | 7,823 (whole program) | VERIFIED |
+| (e) ambient module member added | 249 | 61,586 | 7,823 | VERIFIED |
 
-⚠ Critical finding: Passing `ignoreSourceFile: () => true` to `getSemanticDiagnosticsOfNextAffectedFile` stops change propagation through importers. It quickly returns the edited file, but omits downstream importers from the affected set on signature/return-type changes. Full check chain (without ignore) OOM'd at 6,144 MB before finishing round (d2).
-Bun run for B4: NOT VERIFIED (script bug on Bun platform fixed after allocated test window).
+(b) and (c) did **not** reach the 478 importers. Cause found with `spikes/m1b/b4-verbatim-affected.cjs` (4 files, `a ← b ← c`, TypeScript 5.9.3, return type of `a.f` changed):
+
+| Compiler options | Files re-checked after return-type edit |
+|---|---|
+| defaults | a, b, c |
+| `isolatedModules: true` | **a only** |
+| `verbatimModuleSyntax: true` | **a only** |
+| `verbatimModuleSyntax: true, isolatedModules: false` | **a only** |
+
+oh-my-pi sets `verbatimModuleSyntax: true`. With it (or `isolatedModules`), the builder does not propagate a shape change through importers, so using the project's own options silently undercounts the affected set. Also earlier finding: `ignoreSourceFile: () => true` stops propagation (round 1 of this spike, `chain=affected`). Both VERIFIED. Bun run of B4: NOT VERIFIED (not re-run).
 
 ### B5 — Persisting build info (`.tsbuildinfo`)
 
-Command: `node|bun --max-old-space-size=6144 spikes/m1b/b5-buildinfo.cjs write` → `out/b5-write-*.json`.
+Commands (Node, `--max-old-space-size=12288`): `spikes/m1b/b5-buildinfo.cjs write|read|cold <alias> [none|body|sig]`. The first attempt (earlier in this spike) wrote state without draining semantic diagnostics, so the saved state marked every file pending and the read-back re-checked all 7,833; that was a script fault, not a TypeScript limit. Fixed: drain all semantic diagnostics, then emit.
 
-| Metric / Step | Node | Bun | Label |
-|---|---|---|---|
-| P1 `createIncrementalProgram` (workspace, `incremental+noEmit+tsBuildInfoFile` in `$TMPDIR`) | 6,155 ms | 4,683 ms | VERIFIED |
-| Emit and write `.tsbuildinfo` | 73 ms | 60 ms | VERIFIED |
-| `.tsbuildinfo` file size | 2,314,664 bytes (2.3 MB) | 2,314,664 bytes (identical) | VERIFIED |
-| P2 `readBuilderProgram` + one-file edit in fresh process | Threw "Not implemented" from host integration | Threw "Not implemented" | NOT VERIFIED (host mismatch) |
+| Project | Write: create / drain-all-diagnostics / emit | `.tsbuildinfo` | Fresh process read-back: create program | affected after no edit / body edit | Label |
+|---|---|---|---|---|---|
+| tools (3,221 files) | 3.0 s / 15.5 s / 32 ms | 817,083 B | 2.9–3.4 s | 0 / 1 file (resolve of it: 3 ms) | VERIFIED |
+| workspace (7,833 files) | 17.3 s / 223.4 s / 106 ms (peak RSS 4.9 GB) | 2,754,136 B | 10.8 s / 12.1 s | 0 / 1 file (resolve of it: 27 ms) | VERIFIED |
+| tools, cold baseline (no build info) | create 2.5 s, resolve 0.3 s | — | — | — | VERIFIED |
 
-Finding: `.tsbuildinfo` is 2.3 MB and fast to write (60–73 ms), but it stores only program versions and signatures. A new process still requires 5–6 s to run `createProgram` and re-parse files before it can instantiate a type checker.
+Findings: builder state **can** be written and read back (the "Not implemented" failure came from calling `readBuilderProgram` with a non-compiler host; `createIncrementalProgram` reads it itself). What it saves is the diagnostics drain (the 32.6 s cold affected-set pass in B4) and it makes "which files changed" answerable. It does **not** save `createProgram`: a new process still parses and binds the whole program (3–12 s). Timings on workspace were taken while another heavy job was running on the same machine, so treat as upper bounds. The write step costs a full semantic check once (223 s here, memory-bound), so it only pays off if later sessions are many. TypeScript's `.tsbuildinfo` does not contain our resolved edges; those stay in the library's own store.
 
 ### B6 — Synthetic project references + `paths` workspace
 
@@ -206,7 +214,7 @@ Ratio: **14.6% of identifier use sites become stored records** (400,743 records 
 
 ### 3. What memory cap is realistic for the measured project?
 **6 GB heap / ~5.5–6.0 GB RSS.**
-- The workspace project (6,851 TS/JS files, 2.27M lines) died with OOM under Node at 1.5 GB and 4.6 GB; it completed reliably at 6,144 MB heap, peaking at 5,038 MB RSS.
+- The workspace project (6,851 TS/JS files, 2.27M lines) in a Node worker: died at caps of 1.5, 3.0 and 4.6 GB (`ERR_WORKER_OUT_OF_MEMORY`); completed at 6.0 GB (peak RSS 5.5 GB) and 8.0 GB (4.7 GB). Smallest passing cap measured: 6,144 MB. Between 4.6 and 6.1 GB was not bisected.
 - Under Bun, peak RSS reached 5,283 MB for the workspace and 7,914 MB during sequential package analysis.
 - A 1–1.5 GB cap is completely inadequate for large real-world TS codebases with `node_modules`.
 
@@ -226,11 +234,12 @@ Do not edit `docs/DESIGN.md` directly (the owner applies changes). Lines that ho
 - **Lines 183–188 (Affected set / builder program):**
   - Line 187: "Checked in a sandbox on TypeScript 6.0.3... To be re-verified in M2 with project references and `paths`." -> **HOLDS.** B6 confirmed that cross-package calls resolve to the declaring source `.ts` file across all `references` and `paths` configurations.
   - BUT add note: Using `ignoreSourceFile=true` in `getSemanticDiagnosticsOfNextAffectedFile` stops downstream importer propagation. Affected-set collection cannot suppress semantic diagnostics without undercounting importers on signature changes.
+  - **New (B4):** the builder does not propagate a return-type or signature change through importers when the program options contain `verbatimModuleSyntax: true` or `isolatedModules: true` (4-file proof, TypeScript 5.9.3; oh-my-pi sets `verbatimModuleSyntax`). The engine must build its program with both options forced off, or compute its own affected set. The sandbox claim at line 187 ("return-type change re-affected direct and transitive importers") holds only for default options.
 - **Lines 192–202 (Freshness probe):**
   - Line 196: "Probe: list the visible files... one stat each... Listing cost on a large repo is measured in M2a" -> **HOLDS.** B7 measured 10,502 files: `git ls-files` + `stat` takes 94 ms (Bun) / 220 ms (Node). The probe is fast enough for every query.
 - **Lines 203–215 (When it runs):**
   - Line 208: "First query with no active index: blocks for up to 60 s, streaming progress... returns the real answer" -> **HOLDS in principle, but RISKY on Bun.** A6 verified OMP waits 60 s without timeout. However, B2 showed a cold resolve on Bun takes **83 s** on a 2.2M-line repo. The 60 s blocking budget will expire and trigger `index-building` guidance on large projects unless accelerated.
-  - Line 212: "M2 evaluates persisting TypeScript's build info to avoid a full RESOLVE" -> **REVISE.** B5 showed `.tsbuildinfo` is 2.3 MB and writes in ~70 ms, but it only stores signatures/versions. A fresh process still requires 5–6 s for `createProgram` before type checking can begin.
+  - Line 212: "M2 evaluates persisting TypeScript's build info to avoid a full RESOLVE" -> **ANSWERED, REVISE.** Builder state writes and reads back (tools: 817 KB, workspace: 2.75 MB; fresh process reports 0 affected with no edit and 1 with a body edit). It saves the diagnostics drain, not `createProgram` (3-12 s per fresh process). The one-time write needs a full semantic check (223 s on workspace). It holds no resolved edges. A new session with changed files is therefore: createProgram (3-12 s) + builder affected set + resolve of only the affected files, provided the build info was written.
 - **Lines 226–236 (Program lifetime and memory):**
   - Lines 226–235: "Program lifetime and memory (D31, provisional until M1b measures a real project with node_modules)... peak memory 0.6–0.8 GB... So a cold build is on the order of 10 s per few hundred thousand lines and needs most of a gigabyte." -> **MUST CHANGE.** With `node_modules` and 2.27M lines, cold build takes 28.5 s (Node) / 83.3 s (Bun) and requires **5.0–5.3 GB RSS**. The 0.6–0.8 GB sandbox estimate was an artifact of missing `node_modules`.
 

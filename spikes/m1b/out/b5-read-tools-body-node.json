@@ -1,0 +1,16 @@
+{
+  "runtime": "node",
+  "mode": "read",
+  "alias": "tools",
+  "edit": "body",
+  "target": "scripts/bazel-natives.ts",
+  "buildinfoBytes": 817083,
+  "createMs": 2907.1,
+  "affectedMs": 76.2,
+  "affectedCount": 1,
+  "affectedNonDts": 1,
+  "resolveAffectedMs": 3,
+  "resolveAffectedFiles": 1,
+  "ownFiles": 34,
+  "maxRssMB": 1869
+}
