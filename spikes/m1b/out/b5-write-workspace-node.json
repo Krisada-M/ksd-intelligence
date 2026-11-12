@@ -1,0 +1,12 @@
+{
+  "runtime": "node",
+  "mode": "write",
+  "alias": "workspace",
+  "createMs": 17303.5,
+  "drainMs": 223421.5,
+  "drainedFiles": 7833,
+  "emitMs": 106.4,
+  "emitDiags": 0,
+  "buildinfoBytes": 2754136,
+  "maxRssMB": 4901
+}

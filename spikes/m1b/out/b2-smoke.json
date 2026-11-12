@@ -1,0 +1,52 @@
+{
+  "runtime": "node",
+  "mode": "fresh",
+  "set": "tools",
+  "repeat": 1,
+  "rows": [
+    {
+      "rep": 1,
+      "wallMs": 3977.2,
+      "timeMaxRssMB": 1947,
+      "alias": "tools",
+      "runtime": "node",
+      "startedAtUptimeS": 0.1,
+      "configMs": 9,
+      "rootNames": 34,
+      "configErrors": [],
+      "programMs": 2634.9,
+      "programFiles": 3283,
+      "programFilesInNodeModules": 494,
+      "checkerMs": 860.3,
+      "ownFiles": 34,
+      "declPassMs": 31.8,
+      "resolvePassMs": 307,
+      "identifierMs": 306.7,
+      "importMs": 0.3,
+      "totalMs": 3843.9,
+      "coldIndexMs": 3834,
+      "maxRssMB": 1856,
+      "uses": {
+        "edge": 3169,
+        "edge-module": 1,
+        "local:binding": 7127,
+        "local:member": 336,
+        "external": 5423,
+        "no-declaration": 120,
+        "unresolved-name-match": 61,
+        "unresolved-other": 27
+      },
+      "recordsStored": 2017,
+      "identifiers": 16264,
+      "lines": 12215,
+      "imports": {
+        "total": 104,
+        "resolved": 43,
+        "resolved-external": 24,
+        "ambient": 61,
+        "unresolved-import": 0,
+        "external-unresolved": 0
+      }
+    }
+  ]
+}

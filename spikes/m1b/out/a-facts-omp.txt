@@ -1,0 +1,55 @@
+--- tool_execution_start tool=read id=toolu_01Y7uLb63Qmdw3KeWSdwqMpX 
+args={"path":"xd://ei_probe"}
+--- tool_execution_end tool=read id=toolu_01Y7uLb63Qmdw3KeWSdwqMpX 
+isError=false
+# ei_probe — M1b runtime probe
+
+Throwaway M1b runtime probe. section "facts" reports runtime, worker, typescript, sqlite and module facts; "progress" emits three progress updates one second apart; "block" waits `seconds` seconds, emitting progress every 5 s.
+
+## Schema
+```ts
+type Args = {
+  section: "facts" | "progress" | "block";
+  /** Only for section "block" */
+  seconds?: number;
+};
+```
+Execute by writing JSON to xd://ei_probe.
+--- tool_execution_start tool=write id=toolu_013C7KCC4Lt4b443ADrrTgjB 
+args={"path":"xd://ei_probe","content":"{\"section\": \"facts\"}"}
+--- tool_execution_end tool=write id=toolu_013C7KCC4Lt4b443ADrrTgjB 
+isError=false
+ei_probe section=facts toolCallId=toolu_013C7KCC4Lt4b443ADrrTgjB
+execute args: signal=AbortSignal onUpdate=function ctx=object
+elapsedMs=451
+## A1 runtime
+typeof Bun=object typeof Deno=undefined
+Bun.version=1.4.4 Bun.revision=38afee6c84fcf48c0edb2466aa4b27d287a59c30
+process.platform=darwin arch=arm64 execPath=/Users/mezn/.local/bin/omp
+process.release={"name":"node","sourceUrl":"https://github.com/oven-sh/bun/releases/download/bun-v1.4.4/bun-darwin-aarch64.zip","headersUrl":"https://nodejs.org/download/release/v26.3.0/node-v26.3.0-headers.tar.gz"}
+process.versions={"node":"26.3.0","bun":"1.4.4","boringssl":"41bf9b59c2ebf277a7aa427e1ecad5cc80dd4d4f","openssl":"1.1.0","llhttp":"9.4.2","libarchive":"27cbc7827172698143e440801fc0ba39ccb4f1f5","mimalloc":"92ef6587c57b262f6e6abf513f7776a2f8d12aeb","picohttpparser":"f4d94b48b31e0abae029ebeafcfd9ca0680ede58","uwebsockets":"38afee6c84fcf48c0edb2466aa4b27d287a59c30","webkit":"d6375c72affe0f70222cdcb45012b10f0bf3a9d5","zig":"04e7f6ac1e009525bc00934f20199c68f04e0a24","zlib":"12731092979c6d07f42da27da673a9f6c7b13586","tinycc":"05f0fafaa3be31e31d7b4b5c17dc60f62c991171","lolhtml":"725ce499aa9b71e38b7a2d0a9fbb6d7294a4079e","ares":"c7a3138dcfe3bb0eaaf10c0c24c36dc66dc790ab","libdeflate":"92e6a0db9fa848d742f9eb286c92afc60f2c3dda","usockets":"38afee6c84fcf48c0edb2466aa4b27d287a59c30","lshpack":"cf0f70dd10b352194c97448eb5d00b4aa484f531","zstd":"f8745da6ff1ad1e7bab384bd1f9d742439278e99","v8":"14.6.202.34-node.20","uv":"1.48.0","napi":"10","icu":"78.1","unicode":"17.0","sqlite":"3.54.0","typescript":"7.0.2","modules":"147"}
+navigator.userAgent=Bun/1.4.4
+host rssMB=247 totalmemGB=17.2 cpus=10
+## A2 worker threads
+echo ok=true startToReplyMs=8.1 reply={"final":true,"echo":"ping","runtime":"bun 1.4.4"} error=-
+resourceLimits maxOldGenerationSizeMb=32: workerDied=false error=- lastReportedAllocatedMb=512 lastHeapUsedMb=257 reachedCap=true
+resourceLimits honoured=false
+## A3 typescript
+createRequire.resolve failed: ResolveMessage: Cannot find module 'typescript'
+Require stack:
+- /Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-core.js
+import.meta.resolve failed: ResolveMessage: Cannot find package 'typescript' imported from /Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-core.js
+main thread import ok version=5.9.3 importMs=80.6
+manual node_modules walk from probe dir -> /Users/mezn/workspaces/private/ksd-intelligence/node_modules/typescript/lib/typescript.js
+worker (bare specifier only): ok=true {"final":true,"requireResolve":"FAILED Cannot find module 'typescript'","bareImport":"FAILED Cannot find package 'typescript' imported from /Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-worker.js"} error=-
+worker (bare, then absolute path from main): ok=true {"final":true,"requireResolve":"FAILED Cannot find module 'typescript'","bareImport":"FAILED Cannot find package 'typescript' imported from /Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-worker.js","absoluteImport":"ok /Users/mezn/workspaces/private/ksd-intelligence/node_modules/typescript/lib/typescript.js","version":"5.9.3","importMs":198,"resolvedCall":"f -> line 1"} error=-
+## A4 sqlite
+node:sqlite: open ok sqlite_version=3.54.0 fts5 MATCH 'fee' -> ["calculateFee"]
+node:sqlite: WAL journal_mode=wal walFileWhileOpen=true
+bun:sqlite: open ok sqlite_version=3.54.0 fts5 MATCH 'fee' -> ["calculateFee"]
+bun:sqlite: WAL journal_mode=wal walFileWhileOpen=true
+## A7 module format
+probe-core import.meta.url=file:///Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-core.js?mtime=1794453536829
+worker URL=file:///Users/mezn/workspaces/private/ksd-intelligence/spikes/m1b/dist/probe-worker.js
+typeof require in ESM module=function
+--- event type counts: {"session":1,"advisor_cost_changed":1,"agent_start":1,"turn_start":3,"message_start":6,"message_end":6,"message_update":109,"tool_execution_start":2,"tool_execution_end":2,"turn_end":3,"agent_end":1}

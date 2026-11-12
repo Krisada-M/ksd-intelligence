@@ -1,0 +1,12 @@
+{
+  "runtime": "node",
+  "mode": "write",
+  "alias": "tools",
+  "createMs": 3019.8,
+  "drainMs": 15481.7,
+  "drainedFiles": 3221,
+  "emitMs": 31.9,
+  "emitDiags": 0,
+  "buildinfoBytes": 817083,
+  "maxRssMB": 2440
+}

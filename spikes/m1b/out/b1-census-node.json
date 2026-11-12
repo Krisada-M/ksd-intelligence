@@ -1,0 +1,796 @@
+{
+  "runtime": "node",
+  "ompSrc": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src",
+  "commit": "04cd1a7549a02d62ad1d24826198d52507595683",
+  "visibleFiles": 10502,
+  "listMs": 189,
+  "missingOnDisk": 0,
+  "tsJsNonDts": {
+    "files": 6851,
+    "lines": 2266431
+  },
+  "dts": {
+    "files": 18,
+    "lines": 5031
+  },
+  "tsOnly": {
+    "files": 6829,
+    "lines": 2252529
+  },
+  "jsOnly": {
+    "files": 22,
+    "lines": 13902
+  },
+  "byExt": {
+    "ts": {
+      "files": 6694,
+      "lines": 2228155
+    },
+    "js": {
+      "files": 22,
+      "lines": 13902
+    },
+    "d.ts": {
+      "files": 18,
+      "lines": 5031
+    },
+    "tsx": {
+      "files": 135,
+      "lines": 24374
+    }
+  },
+  "topPackagesByLines": [
+    {
+      "dir": "packages/coding-agent",
+      "files": 3784,
+      "lines": 1248728,
+      "dts": 1
+    },
+    {
+      "dir": "packages/ai",
+      "files": 942,
+      "lines": 346569,
+      "dts": 0
+    },
+    {
+      "dir": "packages/tui",
+      "files": 845,
+      "lines": 309863,
+      "dts": 0
+    },
+    {
+      "dir": "packages/catalog",
+      "files": 275,
+      "lines": 85456,
+      "dts": 0
+    },
+    {
+      "dir": "packages/utils",
+      "files": 237,
+      "lines": 56571,
+      "dts": 0
+    },
+    {
+      "dir": "packages/agent",
+      "files": 96,
+      "lines": 51808,
+      "dts": 0
+    },
+    {
+      "dir": "packages/stats",
+      "files": 143,
+      "lines": 38193,
+      "dts": 2
+    },
+    {
+      "dir": "packages/mnemopi",
+      "files": 149,
+      "lines": 34239,
+      "dts": 0
+    },
+    {
+      "dir": "packages/omptype",
+      "files": 116,
+      "lines": 27683,
+      "dts": 0
+    },
+    {
+      "dir": "packages/metaharness",
+      "files": 30,
+      "lines": 13209,
+      "dts": 1
+    },
+    {
+      "dir": "packages/collab-web",
+      "files": 83,
+      "lines": 12558,
+      "dts": 1
+    },
+    {
+      "dir": "packages/natives",
+      "files": 51,
+      "lines": 12241,
+      "dts": 9
+    },
+    {
+      "dir": "scripts",
+      "files": 33,
+      "lines": 11986,
+      "dts": 0
+    },
+    {
+      "dir": "packages/snapcompact",
+      "files": 5,
+      "lines": 4847,
+      "dts": 0
+    },
+    {
+      "dir": "python/robomp/web",
+      "files": 35,
+      "lines": 4842,
+      "dts": 1
+    },
+    {
+      "dir": "packages/typescript-edit-benchmark",
+      "files": 12,
+      "lines": 4706,
+      "dts": 1
+    },
+    {
+      "dir": "packages/wire",
+      "files": 6,
+      "lines": 2762,
+      "dts": 0
+    },
+    {
+      "dir": ".omp",
+      "files": 4,
+      "lines": 2176,
+      "dts": 0
+    },
+    {
+      "dir": "crates",
+      "files": 11,
+      "lines": 1925,
+      "dts": 0
+    },
+    {
+      "dir": "packages/browser-relay",
+      "files": 8,
+      "lines": 965,
+      "dts": 1
+    },
+    {
+      "dir": "types",
+      "files": 1,
+      "lines": 75,
+      "dts": 1
+    },
+    {
+      "dir": "docs",
+      "files": 3,
+      "lines": 60,
+      "dts": 0
+    }
+  ],
+  "tsconfigFiles": 42,
+  "tsconfigList": [
+    "packages/agent/tsconfig.json",
+    "packages/agent/tsconfig.publish.json",
+    "packages/ai/tsconfig.json",
+    "packages/ai/tsconfig.publish.json",
+    "packages/browser-relay/tsconfig.json",
+    "packages/catalog/tsconfig.json",
+    "packages/catalog/tsconfig.publish.json",
+    "packages/coding-agent/tsconfig.examples.json",
+    "packages/coding-agent/tsconfig.json",
+    "packages/coding-agent/tsconfig.publish.json",
+    "packages/collab-web/tsconfig.json",
+    "packages/collab-web/tsconfig.publish.json",
+    "packages/metaharness/adapters/edit/tsconfig.json",
+    "packages/metaharness/scripts/tsconfig.json",
+    "packages/metaharness/src/tb/tsconfig.json",
+    "packages/metaharness/tsconfig.json",
+    "packages/mnemopi/tsconfig.json",
+    "packages/mnemopi/tsconfig.publish.json",
+    "packages/natives/tsconfig.json",
+    "packages/natives/tsconfig.publish.json",
+    "packages/omptype/tsconfig.json",
+    "packages/omptype/tsconfig.publish.js.json",
+    "packages/omptype/tsconfig.publish.json",
+    "packages/snapcompact/tsconfig.json",
+    "packages/snapcompact/tsconfig.publish.json",
+    "packages/stats/tsconfig.client.json",
+    "packages/stats/tsconfig.json",
+    "packages/stats/tsconfig.publish.client.json",
+    "packages/stats/tsconfig.publish.json",
+    "packages/tsconfig.workspace.json",
+    "packages/tui/tsconfig.json",
+    "packages/tui/tsconfig.publish.json",
+    "packages/typescript-edit-benchmark/tsconfig.json",
+    "packages/typescript-edit-benchmark/tsconfig.publish.json",
+    "packages/utils/tsconfig.json",
+    "packages/utils/tsconfig.publish.json",
+    "packages/wire/tsconfig.json",
+    "packages/wire/tsconfig.publish.json",
+    "python/robomp/web/tsconfig.json",
+    "tsconfig.base.json",
+    "tsconfig.json",
+    "tsconfig.tools.json"
+  ],
+  "tsconfigsWithReferences": [
+    "tsconfig.json"
+  ],
+  "tsconfigsWithPaths": [],
+  "tsconfigsComposite": [
+    "tsconfig.tools.json"
+  ],
+  "rootConfig": {
+    "file": "tsconfig.json",
+    "references": [
+      "packages/tsconfig.workspace.json",
+      "tsconfig.tools.json"
+    ],
+    "parsedFileNamesIfTreatedAsProject": 6843,
+    "errors": []
+  },
+  "reachableProjects": [
+    {
+      "config": "packages/tsconfig.workspace.json",
+      "rootNames": 6710,
+      "dts": 14,
+      "parseMs": 39.3,
+      "configErrors": [],
+      "effective": {
+        "moduleResolution": "Bundler",
+        "types": [
+          "bun",
+          "assets"
+        ],
+        "typeRoots": [
+          "types",
+          "node_modules/@types"
+        ],
+        "composite": false,
+        "allowJs": false,
+        "noEmit": true
+      }
+    },
+    {
+      "config": "tsconfig.tools.json",
+      "rootNames": 34,
+      "dts": 0,
+      "parseMs": 1.5,
+      "configErrors": [],
+      "effective": {
+        "moduleResolution": "Bundler",
+        "types": [
+          "bun",
+          "assets"
+        ],
+        "typeRoots": [
+          "types",
+          "node_modules/@types"
+        ],
+        "composite": true,
+        "allowJs": false,
+        "noEmit": true
+      }
+    }
+  ],
+  "effectivePathsAnywhere": false,
+  "referencesUsed": true,
+  "coverageByReachable": {
+    "rootNamesUnion": 6743,
+    "visibleTsJsNonDtsNotCovered": 122,
+    "byExt": {
+      "ts": 79,
+      "js": 22,
+      "tsx": 21
+    },
+    "tsNotCovered": 100,
+    "tsNotCoveredByDir": {
+      ".omp/skills/tool-prompt-optimization": 2,
+      ".omp/tests": 1,
+      ".omp/tools": 1,
+      "crates/pi-natives/tools": 9,
+      "crates/pi-predict/scripts": 1,
+      "docs/skills/examples": 3,
+      "packages/browser-relay/extension": 4,
+      "packages/coding-agent/examples": 34,
+      "packages/metaharness/adapters": 6,
+      "packages/snapcompact/research": 2,
+      "packages/stats": 1,
+      "packages/tui/examples": 2,
+      "python/robomp/web": 34
+    }
+  },
+  "perPackageAlternative": {
+    "tsconfigs": 16,
+    "rootNamesSum": 6451,
+    "rootNamesUnion": 6451,
+    "overlapFactor": 1,
+    "files": [
+      {
+        "config": "packages/agent/tsconfig.json",
+        "rootNames": 93,
+        "errors": []
+      },
+      {
+        "config": "packages/ai/tsconfig.json",
+        "rootNames": 942,
+        "errors": []
+      },
+      {
+        "config": "packages/browser-relay/tsconfig.json",
+        "rootNames": 7,
+        "errors": []
+      },
+      {
+        "config": "packages/catalog/tsconfig.json",
+        "rootNames": 274,
+        "errors": []
+      },
+      {
+        "config": "packages/coding-agent/tsconfig.json",
+        "rootNames": 3721,
+        "errors": []
+      },
+      {
+        "config": "packages/collab-web/tsconfig.json",
+        "rootNames": 83,
+        "errors": []
+      },
+      {
+        "config": "packages/metaharness/tsconfig.json",
+        "rootNames": 7,
+        "errors": []
+      },
+      {
+        "config": "packages/mnemopi/tsconfig.json",
+        "rootNames": 147,
+        "errors": []
+      },
+      {
+        "config": "packages/natives/tsconfig.json",
+        "rootNames": 37,
+        "errors": []
+      },
+      {
+        "config": "packages/omptype/tsconfig.json",
+        "rootNames": 36,
+        "errors": []
+      },
+      {
+        "config": "packages/snapcompact/tsconfig.json",
+        "rootNames": 3,
+        "errors": []
+      },
+      {
+        "config": "packages/stats/tsconfig.json",
+        "rootNames": 23,
+        "errors": []
+      },
+      {
+        "config": "packages/tui/tsconfig.json",
+        "rootNames": 825,
+        "errors": []
+      },
+      {
+        "config": "packages/typescript-edit-benchmark/tsconfig.json",
+        "rootNames": 12,
+        "errors": []
+      },
+      {
+        "config": "packages/utils/tsconfig.json",
+        "rootNames": 235,
+        "errors": []
+      },
+      {
+        "config": "packages/wire/tsconfig.json",
+        "rootNames": 6,
+        "errors": []
+      }
+    ]
+  },
+  "tsconfigFacts": [
+    {
+      "file": "packages/agent/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/agent/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/ai/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/ai/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/browser-relay/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "extension",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/catalog/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/catalog/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/coding-agent/tsconfig.examples.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "examples"
+      ]
+    },
+    {
+      "file": "packages/coding-agent/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/coding-agent/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/collab-web/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "scripts",
+        "test",
+        "../stats/src/client/react-css.d.ts"
+      ]
+    },
+    {
+      "file": "packages/collab-web/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/metaharness/adapters/edit/tsconfig.json",
+      "extends": "../../../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "."
+      ]
+    },
+    {
+      "file": "packages/metaharness/scripts/tsconfig.json",
+      "extends": "../../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "."
+      ]
+    },
+    {
+      "file": "packages/metaharness/src/tb/tsconfig.json",
+      "extends": "../../../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "."
+      ]
+    },
+    {
+      "file": "packages/metaharness/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/mnemopi/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/mnemopi/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/natives/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "native",
+        "scripts",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/natives/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false
+    },
+    {
+      "file": "packages/omptype/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test",
+        "bench"
+      ]
+    },
+    {
+      "file": "packages/omptype/tsconfig.publish.js.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/omptype/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/snapcompact/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/snapcompact/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/stats/tsconfig.client.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src/client",
+        "test/errors-route-range.test.tsx"
+      ]
+    },
+    {
+      "file": "packages/stats/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "scripts"
+      ]
+    },
+    {
+      "file": "packages/stats/tsconfig.publish.client.json",
+      "extends": "./tsconfig.client.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src/client"
+      ]
+    },
+    {
+      "file": "packages/stats/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/tsconfig.workspace.json",
+      "extends": "../tsconfig.base.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "*/src",
+        "*/test",
+        "*/tests",
+        "*/scripts",
+        "*/bench",
+        "*/bin",
+        "*/native"
+      ]
+    },
+    {
+      "file": "packages/tui/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/tui/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/typescript-edit-benchmark/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/typescript-edit-benchmark/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false
+    },
+    {
+      "file": "packages/utils/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/utils/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "packages/wire/tsconfig.json",
+      "extends": "../tsconfig.workspace.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src",
+        "test"
+      ]
+    },
+    {
+      "file": "packages/wire/tsconfig.publish.json",
+      "extends": "./tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src"
+      ]
+    },
+    {
+      "file": "python/robomp/web/tsconfig.json",
+      "references": [],
+      "composite": false,
+      "include": [
+        "src/**/*",
+        "vite.config.ts"
+      ]
+    },
+    {
+      "file": "tsconfig.base.json",
+      "references": [],
+      "composite": false
+    },
+    {
+      "file": "tsconfig.json",
+      "references": [
+        "./packages/tsconfig.workspace.json",
+        "./tsconfig.tools.json"
+      ],
+      "composite": false
+    },
+    {
+      "file": "tsconfig.tools.json",
+      "extends": "./tsconfig.base.json",
+      "references": [],
+      "composite": true,
+      "include": [
+        "scripts",
+        "packages/natives/scripts/gen-npm-packages.ts"
+      ]
+    }
+  ]
+}

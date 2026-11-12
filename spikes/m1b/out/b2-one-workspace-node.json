@@ -1,0 +1,151 @@
+{
+  "alias": "workspace",
+  "runtime": "node",
+  "startedAtUptimeS": 0.1,
+  "configMs": 142.4,
+  "rootNames": 6710,
+  "configErrors": [],
+  "programMs": 4719.6,
+  "programFiles": 7895,
+  "programFilesInNodeModules": 1145,
+  "checkerMs": 1943.3,
+  "ownFiles": 6695,
+  "declPassMs": 57.4,
+  "resolvePassMs": 21652.4,
+  "identifierMs": 21619.5,
+  "importMs": 32.9,
+  "totalMs": 28521.6,
+  "coldIndexMs": 28372.7,
+  "phases": [
+    {
+      "name": "config",
+      "maxRssMB": 115,
+      "rssMB": 115,
+      "heapMB": 26
+    },
+    {
+      "name": "program",
+      "maxRssMB": 2758,
+      "rssMB": 2758,
+      "heapMB": 2614
+    },
+    {
+      "name": "checker",
+      "maxRssMB": 3152,
+      "rssMB": 3148,
+      "heapMB": 3393
+    },
+    {
+      "name": "declPass",
+      "maxRssMB": 3197,
+      "rssMB": 3197,
+      "heapMB": 3415
+    },
+    {
+      "name": "resolvePass",
+      "maxRssMB": 5038,
+      "rssMB": 4710,
+      "heapMB": 5302
+    }
+  ],
+  "maxRssMB": 5038,
+  "summary": {
+    "files": 6695,
+    "lines": 2232329,
+    "identifiers": 2742712,
+    "skippedDeclNames": 1129593,
+    "uses": {
+      "edge": 802444,
+      "edge-module": 10141,
+      "local:binding": 1038238,
+      "local:member": 67916,
+      "external": 759359,
+      "no-declaration": 45279,
+      "unresolved-name-match": 15050,
+      "unresolved-other": 4285
+    },
+    "edgeKinds": {
+      "CALLS": 303803,
+      "CONSTRUCTS": 20268,
+      "REFERENCES": 478373
+    },
+    "edgeRecordsByKind": {
+      "CALLS": 135705,
+      "CONSTRUCTS": 8423,
+      "REFERENCES": 256615
+    },
+    "recordsStored": 400743,
+    "usesTotal": 2742712,
+    "usesSkippedNonEdge": 1940268,
+    "usesCollapsedDuplicates": 401701,
+    "imports": {
+      "total": 48436,
+      "resolved": 39521,
+      "resolved-external": 11015,
+      "ambient": 8915,
+      "unresolved-import": 0,
+      "external-unresolved": 0
+    },
+    "importSamples": {
+      "unresolved-import": [],
+      "external-unresolved": []
+    },
+    "unresolvedNameSamples": [
+      "packages/agent/src/agent-loop.ts:269 id",
+      "packages/agent/src/agent-loop.ts:269 id",
+      "packages/agent/src/agent-loop.ts:270 code",
+      "packages/agent/src/agent-loop.ts:270 code",
+      "packages/agent/src/agent-loop.ts:270 code",
+      "packages/agent/src/agent-loop.ts:271 message",
+      "packages/agent/src/agent-loop.ts:271 message",
+      "packages/agent/src/agent-loop.ts:271 message",
+      "packages/agent/src/agent-loop.ts:273 id",
+      "packages/agent/src/agent-loop.ts:274 code",
+      "packages/agent/src/agent-loop.ts:274 code",
+      "packages/agent/src/agent-loop.ts:275 message",
+      "packages/agent/src/agent-loop.ts:275 message",
+      "packages/agent/src/agent-loop.ts:296 type",
+      "packages/agent/src/agent-loop.ts:299 button",
+      "packages/agent/src/agent-loop.ts:300 x",
+      "packages/agent/src/agent-loop.ts:301 y",
+      "packages/agent/src/agent-loop.ts:302 keys",
+      "packages/agent/src/agent-loop.ts:308 x",
+      "packages/agent/src/agent-loop.ts:309 y",
+      "packages/agent/src/agent-loop.ts:310 keys",
+      "packages/agent/src/agent-loop.ts:316 path",
+      "packages/agent/src/agent-loop.ts:317 path",
+      "packages/agent/src/agent-loop.ts:321 x",
+      "packages/agent/src/agent-loop.ts:322 y",
+      "packages/agent/src/agent-loop.ts:324 keys",
+      "packages/agent/src/agent-loop.ts:329 keys",
+      "packages/agent/src/agent-loop.ts:329 keys",
+      "packages/agent/src/agent-loop.ts:332 x",
+      "packages/agent/src/agent-loop.ts:332 y"
+    ],
+    "declCounts": {
+      "interface": 9340,
+      "member": 71810,
+      "function": 28836,
+      "class": 1638,
+      "variable": 18704,
+      "type": 3665,
+      "object-member": 21435,
+      "namespace": 70,
+      "enum": 69,
+      "default-export": 21
+    },
+    "declCountsAllScope": {
+      "interface": 9524,
+      "member": 73090,
+      "function": 29026,
+      "class": 1666,
+      "variable": 18748,
+      "type": 3667,
+      "object-member": 21455,
+      "namespace": 89,
+      "enum": 85,
+      "default-export": 37
+    },
+    "nameSetSize": 84715
+  }
+}

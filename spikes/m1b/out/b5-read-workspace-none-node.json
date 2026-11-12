@@ -1,0 +1,16 @@
+{
+  "runtime": "node",
+  "mode": "read",
+  "alias": "workspace",
+  "edit": "none",
+  "target": "packages/agent/src/agent-loop.ts",
+  "buildinfoBytes": 2754136,
+  "createMs": 10775.4,
+  "affectedMs": 0.1,
+  "affectedCount": 0,
+  "affectedNonDts": 0,
+  "resolveAffectedMs": 0.3,
+  "resolveAffectedFiles": 0,
+  "ownFiles": 6695,
+  "maxRssMB": 3477
+}

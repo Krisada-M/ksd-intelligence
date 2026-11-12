@@ -1,0 +1,23 @@
+--- tool_execution_start tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 20}"}
+--- tool_execution_update tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 20}"}
+ei_probe blocking 5/20s
+--- tool_execution_update tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 20}"}
+ei_probe blocking 10/20s
+--- tool_execution_update tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 20}"}
+ei_probe blocking 15/20s
+--- tool_execution_update tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 20}"}
+ei_probe blocking 20/20s
+--- tool_execution_end tool=write id=toolu_01Ws2CpsUhrUzHqtsmJqUo78 
+isError=false
+ei_probe section=block toolCallId=toolu_01Ws2CpsUhrUzHqtsmJqUo78
+execute args: signal=AbortSignal onUpdate=function ctx=object
+elapsedMs=20088
+## A6 block 20s
+returned after 20087 ms; signal.aborted=false abortedAtMs=null reason=-
+--- event type counts: {"session":1,"advisor_cost_changed":1,"agent_start":1,"turn_start":2,"message_start":4,"message_end":4,"message_update":106,"tool_execution_start":1,"tool_execution_update":4,"tool_execution_end":1,"turn_end":2,"agent_end":1}
+block 20 exit=0 wall=30s

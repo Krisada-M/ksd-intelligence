@@ -1,0 +1,10 @@
+{
+  "runtime": "node",
+  "mode": "write",
+  "createMs": 6155.2,
+  "programFiles": 7895,
+  "emitMs": 73,
+  "emitDiags": 0,
+  "buildinfoBytes": 2314664,
+  "maxRssMB": 3497
+}

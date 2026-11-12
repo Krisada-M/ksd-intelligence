@@ -1,0 +1,12 @@
+{
+  "runtime": "node",
+  "capMb": 4608,
+  "set": "reachable",
+  "phases": [],
+  "completed": false,
+  "oom": true,
+  "error": "Error [ERR_WORKER_OUT_OF_MEMORY]: Worker terminated due to reaching memory limit: JS heap out of memory |     at [kOnExit] (node:internal/worker:403:26) |     at Worker.<computed>.onexit (node:internal/worker:299:20)",
+  "workerExitCode": 1,
+  "wallMs": 36521.7,
+  "mainThreadMaxRssMB": 4869
+}
