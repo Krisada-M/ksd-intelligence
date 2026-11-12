@@ -41,7 +41,6 @@ export interface ProjectConfig {
   compression: ToggleConfig;
   knowledge: ToggleConfig;
   verification: ToggleConfig;
-  ksdBridge: ToggleConfig;
   gitlab: GitlabConfig;
 }
 
@@ -75,7 +74,7 @@ export function defaultConfig(inferred?: { include?: string[]; routes?: string[]
       enabled: true,
       include: inferred?.include ?? ['packages/**', 'apps/**'],
       exclude: ['**/dist/**'],
-      routes: inferred?.routes ?? ['packages/api/src/routes.ts'],
+      routes: inferred?.routes ?? [],
       maxDepth: 10,
       freshness: 'stat',
       watch: true,
@@ -96,7 +95,6 @@ export function defaultConfig(inferred?: { include?: string[]; routes?: string[]
     compression: { enabled: false },
     knowledge: { enabled: false },
     verification: { enabled: false },
-    ksdBridge: { enabled: false },
     gitlab: {
       enabled: false,
       host: 'https://gitlab.example.com',
@@ -329,7 +327,6 @@ export function parseProjectConfig(raw: string): { config: ProjectConfig; errors
     compression: parseToggle(parsed.compression, defaults.compression, 'compression', errors),
     knowledge: parseToggle(parsed.knowledge, defaults.knowledge, 'knowledge', errors),
     verification: parseToggle(parsed.verification, defaults.verification, 'verification', errors),
-    ksdBridge: parseToggle(parsed.ksdBridge, defaults.ksdBridge, 'ksdBridge', errors),
     gitlab: parseGitlab(parsed.gitlab, defaults.gitlab, errors),
   };
 

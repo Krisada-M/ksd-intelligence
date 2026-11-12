@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -29,6 +29,7 @@ describe('config core', () => {
     assert.equal(config.skills.enabled, true);
     assert.equal(config.impact.enabled, true);
     assert.deepEqual(config.impact.include, ['packages/**', 'apps/**']);
+    assert.deepEqual(config.impact.routes, [], 'no route is assumed until one is detected or declared');
     assert.equal(config.impact.maxDepth, 10);
     assert.equal(config.impact.freshness, 'stat');
     assert.equal(config.impact.watch, true);
@@ -169,6 +170,28 @@ describe('workspace init engine', () => {
     }
   });
 
+  it('turns detected framework route directories into file globs, never bare directories', async () => {
+    const next = await makeTempDir('next-app');
+    const bare = await makeTempDir('bare');
+    try {
+      await mkdir(join(next, 'app', 'api', 'charge'), { recursive: true });
+      await mkdir(join(next, 'pages', 'api'), { recursive: true });
+
+      const layout = detectProjectLayout(next);
+      assert.deepEqual(layout.routes, [
+        'app/api/**/route.{ts,tsx,js,jsx}',
+        'pages/api/**/*.{ts,tsx,js,jsx}',
+      ]);
+
+      const bareLayout = detectProjectLayout(bare);
+      assert.deepEqual(bareLayout.include, ['**']);
+      assert.deepEqual(bareLayout.routes, []);
+    } finally {
+      await rm(next, { recursive: true, force: true });
+      await rm(bare, { recursive: true, force: true });
+    }
+  });
+
   it('discovers root and nested tsconfigs', async () => {
     const dir = await makeTempDir('tsconfigs');
     try {
@@ -213,6 +236,9 @@ describe('workspace init engine', () => {
       const parsedOnDisk = JSON.parse(configOnDisk);
       assert.equal(parsedOnDisk.impact.enabled, true);
       assert.ok(existsSync(result.cacheDir));
+      if (process.platform !== 'win32') {
+        assert.equal(statSync(result.cacheDir).mode & 0o777, 0o700, 'cache dir must be private (RISK §5)');
+      }
     } finally {
       await rm(repo, { recursive: true, force: true });
       await rm(customHome, { recursive: true, force: true });

@@ -516,6 +516,7 @@ No OMP hooks in V1. A `before_agent_start` hint ("ei tools available for this re
 ei route   --task … --stage … [--type …] [--risk high]      DONE
 ei load    --task … --stage … [--type …] [--risk high]      DONE
 ei sources check [--write]                                 DONE
+ei init   [--force] [--dry-run]                           M2 (pre-index; landed early in #8)
 ei index   [--full]                                        M2
 ei impact  <target…> [--depth N] [--json]                  M2
 ei symbol  <query>                                         M2   (CLI only)
@@ -555,7 +556,6 @@ One schema, three scopes, same precedence as KSD: **session > project > global >
   "compression": { "enabled": false },
   "knowledge":   { "enabled": false },
   "verification":{ "enabled": false },
-  "ksdBridge":   { "enabled": false },
   "gitlab":   { "enabled": false, "host": "https://gitlab.example.com", "project": "group/repo" }
 }
 ```
@@ -603,7 +603,7 @@ Merged as the policy module (§6.7). The extension entry registers the KSD hooks
 
 Nothing the library generates is written into the repo except learnings the owner approved.
 
-`<repo-id>` is the first 16 hex characters of the SHA-256 of the repository root's real path. `ei cache list` shows each cache with its size and last use; caches unused for 30 days are pruned on the next `ei index`.
+`<repo-id>` is the first 16 hex characters of the SHA-256 of the repository root's real path. `ei init` creates this directory (mode `0700`) and writes a starting `ei.config.json` from the detected layout: detected route directories become file globs, and no route is assumed when none is found. `ei cache list` shows each cache with its size and last use; caches unused for 30 days are pruned on the next `ei index`.
 
 **SQLite (D28, moved into M2a):** the runtime's built-in SQLite module becomes the primary store for index records, the full-text index and (M6) vectors, behind the storage interface, once M2a confirms which runtime OMP runs extensions in and that its built-in SQLite (with FTS5) is available. If it is not, the sharded-JSON store stays and search uses an in-memory inverted index. No third-party database package either way.
 
@@ -721,6 +721,7 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D39 | **Owner decision:** merge KSD Engineering Proxy into this library as `src/policy/` with its git history; frozen behaviour contract (§6.7); no bridge. Supersedes D04 | 2026-11-11 |
 | D40 | Package as an OMP marketplace plugin with committed build output; marketplace version bumped only on accepted milestones. Supersedes D38 | 2026-11-11 |
 | D41 | `main` is the release branch: only accepted milestones land there, by PR, with version bump and built `dist/`; development on branches | 2026-11-11 |
+| D42 | `ei init` (owner CLI) adopted after it landed outside the milestone flow (#8): creates the private cache dir and a starting `ei.config.json`; `ksdBridge` removed from the config schema (obsolete since D39). Unplanned work still goes through a brief or a reviewed PR before `main` (D41) | 2026-11-12 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
