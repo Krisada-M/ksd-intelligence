@@ -2,7 +2,7 @@
 
 Read `AGENTS.md` first, then `docs/DESIGN.md` §6.2, §6.2.1, §7, §9, §11, §12 and decisions D20–D23, D25, D30, D35–D36, D43–D47; `docs/adr/0002-stable-keys.md`; `docs/adr/0003-indexed-declarations.md`; `docs/research/m1b-runtime-facts.md`; `docs/research/index-techniques.md`.
 
-M2a has **two parts. Do part 1, stop, report, and wait for review.** Part 2 starts only after the owner accepts part 1.
+M2a starts only after the M1d macOS/Linux CI baseline is reviewed and accepted (see `docs/briefs/M1d-platform-baseline.md`). M2a has **two parts. Do part 1, stop, report, and wait for review.** Part 2 starts only after the owner accepts part 1.
 
 **Model:** implement with Claude Opus 5.5 at effort `xhigh`. State the exact model and effort setting in each report. Live OMP checks: `omp -p --no-extensions --model claude-haiku-4-5 -e dist/adapters/omp/extension.js …`.
 
@@ -12,7 +12,7 @@ M2a has **two parts. Do part 1, stop, report, and wait for review.** Part 2 star
 
 ## Part 0 — fix before starting
 
-1. `tests/workflow/loader.test.ts` fails on macOS: it expects the temp path (`/var/folders/…`) but the loader returns the real path (`/private/var/folders/…`). Compare against `realpathSync` of the expected path. Do not change loader behaviour (it returns real paths on purpose). `npm test` must be fully green on macOS and Linux before part 1 starts; paste the summary.
+1. Re-run `npm test` on macOS and Linux and record the results. An earlier macOS `/var/folders/…` vs `/private/var/folders/…` assertion failure was reported, but the current `tests/workflow/fixtures.ts` already canonicalises temporary roots with `realpath`. Do **not** assume it still fails. If reproduced, normalise the expected path with `realpathSync` and keep the loader's canonical-path behaviour. Both OS-family test runs must be green before part 1 starts.
 2. If `AGENTS.md` has a GitNexus block again, restore it (`git checkout -- AGENTS.md`) and report it.
 
 ## Part 1 — M2a.1: host, store, scan, probe, status
@@ -66,7 +66,8 @@ Build `tests/fixtures/mono` exactly as described in `tests/golden/M2-impact-case
 6. `ei setup` and `ei setup --check` tested against a fake registry or a local tarball (no network in tests); `ei_status` shows `degraded` with the fix when the runtime is missing.
 7. Live: `ei_status` called from OMP via `omp -p` returns the status text; paste it.
 8. Measured on the oh-my-pi checkout used in M1b: scan time, probe time with no drift, file counts.
-9. Report in the `AGENTS.md` template. **Stop.**
+9. macOS/Linux CI passes for the new host, lock, SQLite and scan tests, including an automated interrupted-build recovery test (kill the child mid-build; the previously published index must still open and answer); document runtime and arch. Live OMP smoke is done on the machine you are running on and labelled with its OS; the other OS family is marked **NOT VERIFIED** in the report for the owner to run. Do not substitute a mock for runtime proof, and do not claim an OS you did not run on.
+10. Report in the `AGENTS.md` template. **Stop.**
 
 ## Part 2 — M2a.2: extract, resolve, verify, publish, update
 
@@ -109,7 +110,8 @@ On the oh-my-pi checkout: cold build (Node and Bun), peak RSS, published databas
 3. Differential test: zero misses on the fixture; on oh-my-pi, every miss listed with file:line and cause, or zero.
 4. `ei doctor --deep` reports no difference on the fixture and on oh-my-pi after a sequence of edits.
 5. Measurements from 2.6 in `docs/research/m2a-measurements.md`.
-6. Report in the `AGENTS.md` template.
+6. Randomised, differential and freshness tests pass on macOS and Linux; compare canonical repo-relative graph results across OS families without equating absolute cache paths. Record any unsupported architecture explicitly.
+7. Report in the `AGENTS.md` template.
 
 ## Do not
 
