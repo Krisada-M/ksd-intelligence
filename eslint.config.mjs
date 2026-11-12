@@ -10,6 +10,7 @@ export default tseslint.config(
       'spikes/**',
       'src/policy/**',
       'tests/policy/**',
+      'tests/fixtures/**',
       'examples/**',
       '.gitnexus/**',
       '.omp/**',
