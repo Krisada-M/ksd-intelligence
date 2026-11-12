@@ -4,6 +4,7 @@ node_modules/
 spikes/
 src/policy/
 tests/policy/
+tests/fixtures/
 examples/
 .gitnexus/
 .omp/
