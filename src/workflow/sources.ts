@@ -47,8 +47,12 @@ function parseProvider(provider: ProviderId, raw: unknown): LockProvider {
   const info = PROVIDERS[provider];
   const { repo, commit, rootSubpath, skills: rawSkills } = raw;
 
-  if (repo !== info.repo) throw lockError(`${where}.repo is ${JSON.stringify(repo)}, catalog expects ${info.repo}`);
-  if (rootSubpath !== info.rootSubpath) throw lockError(`${where}.rootSubpath is ${JSON.stringify(rootSubpath)}, catalog expects ${info.rootSubpath}`);
+  if (repo !== info.repo)
+    throw lockError(`${where}.repo is ${JSON.stringify(repo)}, catalog expects ${info.repo}`);
+  if (rootSubpath !== info.rootSubpath)
+    throw lockError(
+      `${where}.rootSubpath is ${JSON.stringify(rootSubpath)}, catalog expects ${info.rootSubpath}`,
+    );
   if (commit !== null && !(typeof commit === 'string' && COMMIT.test(commit))) {
     throw lockError(`${where}.commit must be null or a 40-char lowercase hex SHA`);
   }
@@ -56,7 +60,8 @@ function parseProvider(provider: ProviderId, raw: unknown): LockProvider {
 
   const expectedIds = skillIdsOf(provider);
   const unknown = Object.keys(rawSkills).filter((id) => !expectedIds.includes(id));
-  if (unknown.length > 0) throw lockError(`${where}.skills has ids not in the catalog: ${unknown.join(', ')}`);
+  if (unknown.length > 0)
+    throw lockError(`${where}.skills has ids not in the catalog: ${unknown.join(', ')}`);
 
   const skills: Record<string, LockSkill> = {};
   for (const id of expectedIds) {
@@ -96,7 +101,9 @@ export async function readLock(path: string): Promise<SkillsLock> {
   try {
     text = await readFile(path, 'utf8');
   } catch (error) {
-    throw lockError(`cannot read lock file ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    throw lockError(
+      `cannot read lock file ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   return parseLock(text);
 }
@@ -167,26 +174,43 @@ async function gatherFacts(provider: ProviderId, roots: ProviderRoots): Promise<
     }
   }
   // A missing/nonexistent root already yields one problem per skill; collapse them into one.
-  const rootProblem = problems.find((p) => p.code === 'PROVIDER_ROOT_MISSING' || p.code === 'PROVIDER_ROOT_NOT_FOUND');
+  const rootProblem = problems.find(
+    (p) => p.code === 'PROVIDER_ROOT_MISSING' || p.code === 'PROVIDER_ROOT_NOT_FOUND',
+  );
   if (rootProblem) return { root: root ?? null, head, hashes, problems: [rootProblem] };
 
   if (head === null) {
-    problems.push({ code: 'NOT_A_GIT_CHECKOUT', message: `${PROVIDERS[provider].envVar}=${root} has no readable git HEAD` });
+    problems.push({
+      code: 'NOT_A_GIT_CHECKOUT',
+      message: `${PROVIDERS[provider].envVar}=${root} has no readable git HEAD`,
+    });
   }
   return { root: root ?? null, head, hashes, problems };
 }
 
-function reportFor(provider: ProviderId, facts: ProviderFacts, lock: LockProvider, written: boolean): ProviderReport {
+function reportFor(
+  provider: ProviderId,
+  facts: ProviderFacts,
+  lock: LockProvider,
+  written: boolean,
+): ProviderReport {
   const problems = [...facts.problems];
   let hashesVerified = 0;
   for (const [id, actual] of facts.hashes) {
     const pinned = lock.skills[id]?.sha256 ?? null;
     if (pinned === null) continue;
     if (pinned === actual) hashesVerified += 1;
-    else problems.push({ code: 'HASH_MISMATCH', message: `${id}: file sha256 ${actual}, lock pins ${pinned}` });
+    else
+      problems.push({
+        code: 'HASH_MISMATCH',
+        message: `${id}: file sha256 ${actual}, lock pins ${pinned}`,
+      });
   }
   if (lock.commit !== null && facts.head !== null && facts.head !== lock.commit) {
-    problems.push({ code: 'COMMIT_MISMATCH', message: `checkout HEAD ${facts.head}, lock pins ${lock.commit}` });
+    problems.push({
+      code: 'COMMIT_MISMATCH',
+      message: `checkout HEAD ${facts.head}, lock pins ${lock.commit}`,
+    });
   }
   return {
     provider,
@@ -244,11 +268,18 @@ export function formatReports(reports: ProviderReport[]): string {
       codes,
     ]);
   }
-  const widths = rows[0]?.map((_, col) => Math.max(...rows.map((row) => (row[col] ?? '').length))) ?? [];
-  const lines = rows.map((row) => row.map((cell, col) => cell.padEnd(widths[col] ?? 0)).join('  ').trimEnd());
+  const widths =
+    rows[0]?.map((_, col) => Math.max(...rows.map((row) => (row[col] ?? '').length))) ?? [];
+  const lines = rows.map((row) =>
+    row
+      .map((cell, col) => cell.padEnd(widths[col] ?? 0))
+      .join('  ')
+      .trimEnd(),
+  );
   for (const r of reports) {
     for (const p of r.problems) lines.push(`${r.provider}: ${p.code}: ${p.message}`);
-    if (r.written) lines.push(`${r.provider}: lock updated (commit ${short(r.head)}, ${r.skillsFound} hashes)`);
+    if (r.written)
+      lines.push(`${r.provider}: lock updated (commit ${short(r.head)}, ${r.skillsFound} hashes)`);
   }
   return lines.join('\n');
 }

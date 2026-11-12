@@ -14,13 +14,57 @@ import {
 
 // One primary skill per stage, indexed by STAGES order:
 // plan, investigate, implement, verify, review, ship.
-const WORKFLOWS: Readonly<Record<TaskType, readonly [SkillId, SkillId, SkillId, SkillId, SkillId, SkillId]>> = {
-  bug: ['matt:diagnosing-bugs', 'matt:diagnosing-bugs', 'matt:tdd', 'osmani:code-review-and-quality', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-  feature: ['osmani:spec-driven-development', 'poteto:how', 'matt:tdd', 'osmani:code-review-and-quality', 'matt:code-review', 'osmani:shipping-and-launch'],
-  refactor: ['matt:codebase-design', 'poteto:how', 'osmani:incremental-implementation', 'osmani:code-review-and-quality', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-  security: ['osmani:security-and-hardening', 'matt:diagnosing-bugs', 'matt:tdd', 'osmani:security-and-hardening', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-  performance: ['osmani:performance-optimization', 'poteto:why', 'osmani:incremental-implementation', 'osmani:performance-optimization', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-  ui: ['osmani:frontend-ui-engineering', 'poteto:how', 'osmani:frontend-ui-engineering', 'osmani:browser-testing-with-devtools', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
+const WORKFLOWS: Readonly<
+  Record<TaskType, readonly [SkillId, SkillId, SkillId, SkillId, SkillId, SkillId]>
+> = {
+  bug: [
+    'matt:diagnosing-bugs',
+    'matt:diagnosing-bugs',
+    'matt:tdd',
+    'osmani:code-review-and-quality',
+    'poteto:blast-radius',
+    'osmani:shipping-and-launch',
+  ],
+  feature: [
+    'osmani:spec-driven-development',
+    'poteto:how',
+    'matt:tdd',
+    'osmani:code-review-and-quality',
+    'matt:code-review',
+    'osmani:shipping-and-launch',
+  ],
+  refactor: [
+    'matt:codebase-design',
+    'poteto:how',
+    'osmani:incremental-implementation',
+    'osmani:code-review-and-quality',
+    'poteto:blast-radius',
+    'osmani:shipping-and-launch',
+  ],
+  security: [
+    'osmani:security-and-hardening',
+    'matt:diagnosing-bugs',
+    'matt:tdd',
+    'osmani:security-and-hardening',
+    'poteto:blast-radius',
+    'osmani:shipping-and-launch',
+  ],
+  performance: [
+    'osmani:performance-optimization',
+    'poteto:why',
+    'osmani:incremental-implementation',
+    'osmani:performance-optimization',
+    'poteto:blast-radius',
+    'osmani:shipping-and-launch',
+  ],
+  ui: [
+    'osmani:frontend-ui-engineering',
+    'poteto:how',
+    'osmani:frontend-ui-engineering',
+    'osmani:browser-testing-with-devtools',
+    'poteto:blast-radius',
+    'osmani:shipping-and-launch',
+  ],
 };
 
 export interface RouteInput {
@@ -32,18 +76,23 @@ export interface RouteInput {
 }
 
 function invalid(field: string, value: unknown, allowed: readonly string[]): WorkflowError {
-  return new WorkflowError('INVALID_INPUT', `invalid ${field} ${JSON.stringify(value)}; expected one of: ${allowed.join(', ')}`);
+  return new WorkflowError(
+    'INVALID_INPUT',
+    `invalid ${field} ${JSON.stringify(value)}; expected one of: ${allowed.join(', ')}`,
+  );
 }
 
 function primarySkill(type: TaskType, stage: Stage): SkillId {
   const skill = WORKFLOWS[type][STAGES.indexOf(stage)];
-  if (skill === undefined) throw new WorkflowError('INVALID_INPUT', `no workflow entry for ${type}/${stage}`);
+  if (skill === undefined)
+    throw new WorkflowError('INVALID_INPUT', `no workflow entry for ${type}/${stage}`);
   return skill;
 }
 
 export function routeTask(input: RouteInput): RouteResult {
   const { task, stage = 'plan', risk = 'normal', type } = input;
-  if (typeof task !== 'string' || !task.trim()) throw new WorkflowError('INVALID_INPUT', 'non-empty task required');
+  if (typeof task !== 'string' || !task.trim())
+    throw new WorkflowError('INVALID_INPUT', 'non-empty task required');
   if (!isOneOf(STAGES, stage)) throw invalid('stage', stage, STAGES);
   if (!isOneOf(RISKS, risk)) throw invalid('risk', risk, RISKS);
   if (type !== undefined && !isOneOf(TASK_TYPES, type)) throw invalid('type', type, TASK_TYPES);

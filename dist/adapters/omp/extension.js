@@ -37,7 +37,10 @@ function registerEiWorkflow(pi, env, lockPath) {
             task: z.string(),
             stage: z.enum(STAGES),
             risk: z.enum(RISKS).optional(),
-            type: z.enum(TASK_TYPES).optional().describe('Caller-asserted task type; overrides the keyword classifier'),
+            type: z
+                .enum(TASK_TYPES)
+                .optional()
+                .describe('Caller-asserted task type; overrides the keyword classifier'),
         }),
         approval: 'read',
         async execute(_toolCallId, params, signal) {

@@ -3,12 +3,54 @@ import { RISKS, STAGES, TASK_TYPES, WorkflowError, isOneOf, } from './types.js';
 // One primary skill per stage, indexed by STAGES order:
 // plan, investigate, implement, verify, review, ship.
 const WORKFLOWS = {
-    bug: ['matt:diagnosing-bugs', 'matt:diagnosing-bugs', 'matt:tdd', 'osmani:code-review-and-quality', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-    feature: ['osmani:spec-driven-development', 'poteto:how', 'matt:tdd', 'osmani:code-review-and-quality', 'matt:code-review', 'osmani:shipping-and-launch'],
-    refactor: ['matt:codebase-design', 'poteto:how', 'osmani:incremental-implementation', 'osmani:code-review-and-quality', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-    security: ['osmani:security-and-hardening', 'matt:diagnosing-bugs', 'matt:tdd', 'osmani:security-and-hardening', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-    performance: ['osmani:performance-optimization', 'poteto:why', 'osmani:incremental-implementation', 'osmani:performance-optimization', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
-    ui: ['osmani:frontend-ui-engineering', 'poteto:how', 'osmani:frontend-ui-engineering', 'osmani:browser-testing-with-devtools', 'poteto:blast-radius', 'osmani:shipping-and-launch'],
+    bug: [
+        'matt:diagnosing-bugs',
+        'matt:diagnosing-bugs',
+        'matt:tdd',
+        'osmani:code-review-and-quality',
+        'poteto:blast-radius',
+        'osmani:shipping-and-launch',
+    ],
+    feature: [
+        'osmani:spec-driven-development',
+        'poteto:how',
+        'matt:tdd',
+        'osmani:code-review-and-quality',
+        'matt:code-review',
+        'osmani:shipping-and-launch',
+    ],
+    refactor: [
+        'matt:codebase-design',
+        'poteto:how',
+        'osmani:incremental-implementation',
+        'osmani:code-review-and-quality',
+        'poteto:blast-radius',
+        'osmani:shipping-and-launch',
+    ],
+    security: [
+        'osmani:security-and-hardening',
+        'matt:diagnosing-bugs',
+        'matt:tdd',
+        'osmani:security-and-hardening',
+        'poteto:blast-radius',
+        'osmani:shipping-and-launch',
+    ],
+    performance: [
+        'osmani:performance-optimization',
+        'poteto:why',
+        'osmani:incremental-implementation',
+        'osmani:performance-optimization',
+        'poteto:blast-radius',
+        'osmani:shipping-and-launch',
+    ],
+    ui: [
+        'osmani:frontend-ui-engineering',
+        'poteto:how',
+        'osmani:frontend-ui-engineering',
+        'osmani:browser-testing-with-devtools',
+        'poteto:blast-radius',
+        'osmani:shipping-and-launch',
+    ],
 };
 function invalid(field, value, allowed) {
     return new WorkflowError('INVALID_INPUT', `invalid ${field} ${JSON.stringify(value)}; expected one of: ${allowed.join(', ')}`);

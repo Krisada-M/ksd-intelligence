@@ -25,13 +25,31 @@ export const catalog = {
     'poteto:how': { provider: 'poteto', path: 'how/SKILL.md' },
     'poteto:why': { provider: 'poteto', path: 'why/SKILL.md' },
     'poteto:blast-radius': { provider: 'poteto', path: 'blast-radius/SKILL.md' },
-    'osmani:spec-driven-development': { provider: 'osmani', path: 'spec-driven-development/SKILL.md' },
-    'osmani:incremental-implementation': { provider: 'osmani', path: 'incremental-implementation/SKILL.md' },
-    'osmani:code-review-and-quality': { provider: 'osmani', path: 'code-review-and-quality/SKILL.md' },
+    'osmani:spec-driven-development': {
+        provider: 'osmani',
+        path: 'spec-driven-development/SKILL.md',
+    },
+    'osmani:incremental-implementation': {
+        provider: 'osmani',
+        path: 'incremental-implementation/SKILL.md',
+    },
+    'osmani:code-review-and-quality': {
+        provider: 'osmani',
+        path: 'code-review-and-quality/SKILL.md',
+    },
     'osmani:security-and-hardening': { provider: 'osmani', path: 'security-and-hardening/SKILL.md' },
-    'osmani:performance-optimization': { provider: 'osmani', path: 'performance-optimization/SKILL.md' },
-    'osmani:frontend-ui-engineering': { provider: 'osmani', path: 'frontend-ui-engineering/SKILL.md' },
-    'osmani:browser-testing-with-devtools': { provider: 'osmani', path: 'browser-testing-with-devtools/SKILL.md' },
+    'osmani:performance-optimization': {
+        provider: 'osmani',
+        path: 'performance-optimization/SKILL.md',
+    },
+    'osmani:frontend-ui-engineering': {
+        provider: 'osmani',
+        path: 'frontend-ui-engineering/SKILL.md',
+    },
+    'osmani:browser-testing-with-devtools': {
+        provider: 'osmani',
+        path: 'browser-testing-with-devtools/SKILL.md',
+    },
     'osmani:shipping-and-launch': { provider: 'osmani', path: 'shipping-and-launch/SKILL.md' },
 };
 export function lookupSkill(id) {

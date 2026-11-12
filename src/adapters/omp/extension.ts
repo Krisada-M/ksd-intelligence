@@ -48,7 +48,11 @@ interface OmpToolDefinition {
   description: string;
   parameters: SchemaLike;
   approval: 'read';
-  execute(toolCallId: string, params: ToolParams, signal: AbortSignal | undefined): Promise<ToolResult>;
+  execute(
+    toolCallId: string,
+    params: ToolParams,
+    signal: AbortSignal | undefined,
+  ): Promise<ToolResult>;
 }
 
 export interface OmpExtensionApi {
@@ -87,7 +91,10 @@ function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPat
       task: z.string(),
       stage: z.enum(STAGES),
       risk: z.enum(RISKS).optional(),
-      type: z.enum(TASK_TYPES).optional().describe('Caller-asserted task type; overrides the keyword classifier'),
+      type: z
+        .enum(TASK_TYPES)
+        .optional()
+        .describe('Caller-asserted task type; overrides the keyword classifier'),
     }),
     approval: 'read',
     async execute(_toolCallId, params, signal) {
@@ -117,9 +124,13 @@ function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPat
 }
 
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
-export default function ksdIntelligenceExtension(pi: OmpExtensionApi, deps: ExtensionDeps = {}): void {
+export default function ksdIntelligenceExtension(
+  pi: OmpExtensionApi,
+  deps: ExtensionDeps = {},
+): void {
   const env = deps.env ?? process.env;
-  const startPolicy = deps.createPolicyExtension ?? ((api: OmpExtensionApi) => createPolicyExtension(api));
+  const startPolicy =
+    deps.createPolicyExtension ?? ((api: OmpExtensionApi) => createPolicyExtension(api));
 
   try {
     startPolicy(pi);

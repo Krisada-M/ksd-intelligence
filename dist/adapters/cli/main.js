@@ -25,7 +25,12 @@ async function run(argv) {
     const [command, sub] = positionals;
     const lockPath = values.lock ?? defaultLockPath();
     if (command === 'route' || command === 'load') {
-        const query = { task: values.task ?? '', stage: values.stage, risk: values.risk, type: values.type };
+        const query = {
+            task: values.task ?? '',
+            stage: values.stage,
+            risk: values.risk,
+            type: values.type,
+        };
         if (command === 'route') {
             console.log(JSON.stringify(routeTask(query), null, 2));
             return 0;
@@ -41,7 +46,9 @@ async function run(argv) {
     }
     if (command === 'sources' && sub === 'check') {
         const lock = await readLock(lockPath);
-        const result = await checkSources(lock, rootsFromEnv(process.env), { write: values.write === true });
+        const result = await checkSources(lock, rootsFromEnv(process.env), {
+            write: values.write === true,
+        });
         console.log(formatReports(result.reports));
         if (result.reports.some((report) => report.written))
             await writeLock(lockPath, result.lock);

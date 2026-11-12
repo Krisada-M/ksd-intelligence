@@ -3,14 +3,16 @@ import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { PROVIDERS, lookupSkill } from './catalog.js';
 import { routeTask } from './router.js';
-import { WorkflowError, } from './types.js';
+import { WorkflowError } from './types.js';
 export const MAX_SKILL_BYTES = 64 * 1024;
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
 export function sha256Hex(bytes) {
     return createHash('sha256').update(bytes).digest('hex');
 }
 function isMissingPath(error) {
-    return error instanceof Error && 'code' in error && (error.code === 'ENOENT' || error.code === 'ENOTDIR');
+    return (error instanceof Error &&
+        'code' in error &&
+        (error.code === 'ENOENT' || error.code === 'ENOTDIR'));
 }
 async function realpathOrThrow(path, onMissing) {
     try {

@@ -124,7 +124,10 @@ async function gatherFacts(provider, roots) {
     if (rootProblem)
         return { root: root ?? null, head, hashes, problems: [rootProblem] };
     if (head === null) {
-        problems.push({ code: 'NOT_A_GIT_CHECKOUT', message: `${PROVIDERS[provider].envVar}=${root} has no readable git HEAD` });
+        problems.push({
+            code: 'NOT_A_GIT_CHECKOUT',
+            message: `${PROVIDERS[provider].envVar}=${root} has no readable git HEAD`,
+        });
     }
     return { root: root ?? null, head, hashes, problems };
 }
@@ -138,10 +141,16 @@ function reportFor(provider, facts, lock, written) {
         if (pinned === actual)
             hashesVerified += 1;
         else
-            problems.push({ code: 'HASH_MISMATCH', message: `${id}: file sha256 ${actual}, lock pins ${pinned}` });
+            problems.push({
+                code: 'HASH_MISMATCH',
+                message: `${id}: file sha256 ${actual}, lock pins ${pinned}`,
+            });
     }
     if (lock.commit !== null && facts.head !== null && facts.head !== lock.commit) {
-        problems.push({ code: 'COMMIT_MISMATCH', message: `checkout HEAD ${facts.head}, lock pins ${lock.commit}` });
+        problems.push({
+            code: 'COMMIT_MISMATCH',
+            message: `checkout HEAD ${facts.head}, lock pins ${lock.commit}`,
+        });
     }
     return {
         provider,
@@ -193,7 +202,10 @@ export function formatReports(reports) {
         ]);
     }
     const widths = rows[0]?.map((_, col) => Math.max(...rows.map((row) => (row[col] ?? '').length))) ?? [];
-    const lines = rows.map((row) => row.map((cell, col) => cell.padEnd(widths[col] ?? 0)).join('  ').trimEnd());
+    const lines = rows.map((row) => row
+        .map((cell, col) => cell.padEnd(widths[col] ?? 0))
+        .join('  ')
+        .trimEnd());
     for (const r of reports) {
         for (const p of r.problems)
             lines.push(`${r.provider}: ${p.code}: ${p.message}`);

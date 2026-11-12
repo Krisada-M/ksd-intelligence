@@ -2,7 +2,13 @@ export { PROVIDERS, catalog, lookupSkill, rootsFromEnv, skillIdsOf } from './wor
 export type { CatalogEntry, ProviderInfo, ProviderRoots } from './workflow/catalog.js';
 export { classifyTask } from './workflow/classify.js';
 export type { Classification } from './workflow/classify.js';
-export { MAX_SKILL_BYTES, loadSkill, prepareWorkflow, readSkill, sha256Hex } from './workflow/loader.js';
+export {
+  MAX_SKILL_BYTES,
+  loadSkill,
+  prepareWorkflow,
+  readSkill,
+  sha256Hex,
+} from './workflow/loader.js';
 export type { PrepareOptions } from './workflow/loader.js';
 export { PRECEDENCE_HEADER, renderWorkflow } from './workflow/render.js';
 export { routeTask } from './workflow/router.js';
@@ -16,7 +22,13 @@ export {
   reportStatus,
   writeLock,
 } from './workflow/sources.js';
-export type { LockProvider, LockSkill, ProviderReport, SkillsLock, SourceProblem } from './workflow/sources.js';
+export type {
+  LockProvider,
+  LockSkill,
+  ProviderReport,
+  SkillsLock,
+  SourceProblem,
+} from './workflow/sources.js';
 export {
   PROVIDER_IDS,
   RISKS,
