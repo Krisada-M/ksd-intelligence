@@ -1,6 +1,6 @@
 # ksd-intelligence
 
-Personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). Current scope is **M0**: a skill workflow router that picks one (at most two) leaf skills from Matt Pocock, poteto/pstack and Addy Osmani per task type, SDLC stage and risk, and reads their `SKILL.md` from explicit local checkouts. Upstream skill content is **not** copied into this repo. Scope and rules: `AGENTS.md`, `docs/adr/0001-v1-scope.md`.
+Personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). The implemented foundation includes the skill router (`M0`), OMP adapter (`M1`), workspace initialization and the merged KSD policy module. The TypeScript code index and impact engine (`M2a`/`M2b`) are **not yet implemented**. The proposed delivery sequence adds a macOS/Linux CI baseline (`M1d`) before indexing. Current scope and gates: `AGENTS.md`, `docs/DESIGN.md`, `docs/briefs/M1d-platform-baseline.md` and `docs/reviews/2026-11-12-practical-roadmap.md`. The library reads allowlisted skills from local checkouts; upstream skill content is not copied into this repo.
 
 The router only reads Markdown. It never executes skill scripts, edits code, merges or deploys: every route result has `mayMerge: false` and `mayDeploy: false`.
 
@@ -42,6 +42,8 @@ npm run typecheck
 npm test          # tsc build, compile tests to dist-test/, node --test
 npm run build     # src/ -> dist/
 ```
+
+The baseline CI workflow runs `typecheck`, `lint`, `test` and `check:dist` on `ubuntu-latest` and `macos-latest` (Node 24). This checks the current library on two OS families, **not** every CPU architecture, real OMP integration or the future M2 engine. Those require separate acceptance evidence.
 
 `npm test` expands `dist-test/tests/workflow/*.test.js` through the POSIX shell.
 

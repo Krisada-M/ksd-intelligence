@@ -61,8 +61,9 @@ The library **informs**. The agent decides and acts. The owner approves anything
 
 | Tier | Contents |
 |---|---|
-| **V1** (M0–M3) | Skill workflow router · KSD policy module (merged, M1c) · codebase scan + whole-scope index · TS/JS impact engine · OMP adapter · CLI · golden + freshness tests · dogfood log |
-| **V1.5** (M4–M6, owner-directed, D28) | Framework route detection · heuristic bridges across dynamic dispatch · built-in SQLite store · session file watcher · git-worktree seeding · code search (lexical, optional local embeddings) |
+| **V1** (M0–M3 plus M1d) | Skill workflow router · KSD policy module (M1c) · macOS/Linux CI baseline (M1d) · built-in SQLite store · whole-scope TS/JS index and impact engine · OMP adapter · CLI · golden, differential and freshness tests · dogfood log |
+| **V1.5** (M2c/M4/M5/M6a, delivery gated by dogfood) | Risk zones and changed-code review first · lexical search · framework route detection · evidence-scoped heuristic bridges · optional session watcher/worktree seeding when measured |
+| **Later, separately approved** | M6b local semantic search and embeddings; only if lexical search demonstrably misses required cases |
 | **V2** (each gated, §13) | Context packs (built on search) · GitLab adapter · verification adapters · anchored learnings · recoverable compression |
 | **NEVER** | New agent runtime or model router · always-on proxy · graph DB server · external vector DB or embedding service · auto-merge/deploy · auto-promoting model guesses to knowledge · replacing KSD · running skill scripts |
 
@@ -77,7 +78,7 @@ The library **informs**. The agent decides and acts. The owner approves anything
       │
   core/            kernel (contracts, errors, config) · evidence · workspace · indexing · graph
       │
-  storage/         one interface: built-in SQLite if the runtime has it, else sharded JSON · CAS (V2)
+  storage/         one interface: built-in node:sqlite (D46) · CAS (V2)
 ```
 
 - Dependencies point **down only**. Capabilities never import each other; shared needs go through `core/`.
@@ -108,7 +109,7 @@ ksd-intelligence/
 │   ├── verification/      report.ts · runners/                                         (V2)
 │   ├── policy/            KSD Engineering Proxy, moved with history: runtime · policy · sdlc · config · commands ·
 │   │                      status · change-scope · check-changed · review-verdict · eslint-rules     (M1c)
-│   ├── storage/           store.ts · sqlite.ts · json-shards.ts · cas.ts               (store M2a; CAS V2)
+│   ├── storage/           store.ts · sqlite.ts · cas.ts                                (store M2a; CAS V2)
 │   ├── adapters/
 │   │   ├── omp/extension.ts
 │   │   ├── cli/main.ts
@@ -646,18 +647,19 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | 2 | **M1** ✅ | TS adapter live in OMP; S1–S8 | S1–S6, S8 verified on 18.18.8; S7 owner check in TUI |
 | 3 | **M1b** ✅ | Runtime spike, facts only | Facts in `docs/research/m1b-runtime-facts.md`; applied as D43–D47 |
 | 3b | **M1c** ✅ | Merge KSD Engineering Proxy as `src/policy/` with history; one extension entry; marketplace packaging; cut-over from the old plugin (`docs/briefs/M1c-ksd-merge.md`) | KSD's 148 tests and this repo's tests all pass; policy and status snapshots byte-identical to 0.6.0; live OMP: one install, commands work, policy injected once, `ei_workflow` still works; rollback tested |
+| 3c | **M1d** | Portable baseline: macOS/Linux CI, canonical-path checks, OS/arch evidence (`docs/briefs/M1d-platform-baseline.md`) | Matrix checks pass on both OS families; OS/arch recorded; real OMP smoke on each OS family remains a separate manual gate |
 | 4 | **M2a.1** | Engine host (child process, runtime choice, memory watchdog, idle exit, lock) · TypeScript provisioning (`ei setup`) · SQLite store · scan · fingerprint and probe · `ei index` (scan only), `ei_status` (`docs/briefs/M2a-index.md`, part 1) | Scan census accounts for every fixture file; probe and lock behaviour tested; child is killed above its memory limit; status reports runtime, TypeScript and store |
 | 4b | **M2a.2** | Extract-local · resolve (ADR 0002/0003, D43 options) · verify · publish · incremental update · `ei doctor --deep` (`docs/briefs/M2a-index.md`, part 2) | Randomised incremental == full passes; differential test against TypeScript find-references passes on the fixture and on oh-my-pi; cold build and one-file update measured on oh-my-pi |
 | 5 | **M2b** | `ei_impact`: targets, guidance, reach, factors, base verdict, name cross-check, text per `docs/TOOLS.md` | All confirmed engine golden and freshness cases pass; rendering snapshots reviewed by owner; mutation smoke |
 | 6 | **M3** | Dogfood on oh-my-pi repo + one real GitLab project (read-only clone). Starts when M2b is accepted and continues alongside later milestones | 2 weeks of `docs/dogfood-log.md`; ≥ 10 real tasks logged |
-| 7 | **M4a** | Route detection B1–B2 (Next.js, Expo Router, Hono): facts from file conventions and literal paths | Routes found on a fixture app without config; `route` factor appears; no golden regression |
-| 8 | **M2c** | Risk zones, `ei_changes`, audit log + `ei audit`, stage-protocol lines, skill content lint | Policy and changes golden cases pass |
-| 9 | **M6a** | `ei_search`, lexical tier | Ranked hits on a fixed query set reviewed by owner |
-| 10 | **M4b** | Bridges B3–B6, one complete flow at a time, each justified by dogfood-log entries | Per bridge: end-to-end fixture flow connects; bridged edges never in `byDepth` or reach |
-| 11 | **M5** | Session watcher · worktree seeding | Watcher on and off give identical results on the freshness cases; seeding equals a cold build |
-| 12 | **M6b** | Semantic search tier | Written comparison of local model options first; works offline after install; absent model degrades to lexical with a clear label |
+| 7 | **M2c** | Risk zones, `ei_changes`, audit log and stage protocol | Changed-code golden cases pass; no file omitted silently; unknown/reachable gaps are explicit |
+| 8 | **M6a** | `ei_search`, lexical only | Fixed query set reviewed on the two M3 repositories; results carry provenance and freshness |
+| 9 | **M4a** | Route detection for Next.js, Expo Router and Hono | At least one real workflow justifies each detector; route fixture and negative tests pass |
+| 10 | **M4b** | Heuristic bridges, one evidenced flow at a time | Each bridge has a dogfood case and a full fixture flow; heuristic reach never counted as compiler evidence |
+| 11 | **M5** (optional) | Session watcher and worktree seeding | Measured repeated probe overhead or cold-index duplication justifies implementation; watcher off/on has identical correctness |
+| 12 | **M6b** (deferred) | Local semantic search | Only starts with separate owner approval after lexical recall/failure data; offline and graceful-degradation tests |
 
-Items 7 and 9–12 are in scope by owner decision D28, ahead of the dogfood gates D19 would otherwise apply. The order above is D33; dogfood results may still reorder items 7–12.
+**Delivery order revision proposed in D48:** finish the correctness baseline and M3 dogfood before investing in advanced graph/AI features. D28 still records intended optional capabilities, but its unconditional scheduling is superseded for M4b, M5 and M6b. M2c precedes route detection because checking the actual diff is the first production workflow. Do not claim M1d CI proves engine or live OMP compatibility.
 
 **Dogfood log entry:** task · tools called · was the answer correct (owner judges) · did it change what the agent did · latency · any false `low`. A single false `low` on a real change stops the roadmap until fixed.
 
@@ -682,6 +684,8 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | Freshness | Temp git copies: edit, untracked, rename/delete, barrel change, incremental == full (run with `freshness: "hash"`), plus one documented blind-spot case | every `npm test` |
 | Differential | For sampled declarations, every reference TypeScript's own find-references reports must be an edge in the index. Runs on the fixture in `npm test` and on real repositories in `ei doctor --deep` | every `npm test`; on demand |
 | Randomised | Random sequences of edits, renames, adds and deletes on the fixture; after each, incremental index == cold build. Seeded, so a failure reproduces | every `npm test` (short run); nightly-style long run on demand |
+| Platform CI | Node 24 on macOS and Linux: typecheck, lint, tests, dist drift; record OS and architecture | every PR and merge to main (M1d) |
+| Runtime/OS integration | Real OMP adapter smoke on both OS families; engine process, memory enforcement, SQLite locking/recovery and cancellation after M2a | release gate per supported OS family; manual until automated |
 | Live smoke | OMP scenarios S1–S7 (+ impact scenarios after M2) | after each milestone and each OMP upgrade |
 | Dogfood | Real tasks, owner-judged | M3 onward |
 
@@ -738,6 +742,7 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D45 | Engine host is a child process, Node ≥ 22.5 when on `PATH` else OMP's Bun; memory limit enforced by flag (Node) or RSS watchdog (Bun); one program per index scope; idle exit after 10 minutes; at most one engine process per repository | 2026-11-12 |
 | D46 | Store is `node:sqlite` (one database per repository, WAL, staged then renamed); JSON fallback and the SQLite gate dropped | 2026-11-12 |
 | D47 | No TypeScript build-info persistence; a new session loads the published index and creates a program only when the probe finds drift | 2026-11-12 |
+| D48 (proposed) | Practical delivery replan: add M1d macOS/Linux CI baseline before M2a; retain D43–D47 engine design and D28 capability intent, but reorder M2c and lexical search before route/heuristic work; M5 only on measured need, M6b requires separate approval. Supersedes D33 sequencing and D28 automatic scheduling only if this PR is accepted | 2026-11-12 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 

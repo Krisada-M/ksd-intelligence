@@ -18,21 +18,22 @@ In scope, in order:
 | 2 | M1 ✅ | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
 | 3 | M1b ✅ | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
 | 3b | M1c | Merge KSD Engineering Proxy as `src/policy/`; one plugin; marketplace packaging | `docs/briefs/M1c-ksd-merge.md` |
+| 3c | M1d | macOS + Linux CI baseline and platform compatibility gates (no engine code) | `docs/briefs/M1d-platform-baseline.md` |
 | 4 | M2a | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
 | 5 | M2b | `ei_impact` passing the engine golden cases | written after M2a review |
 | 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | written after M2b review |
-| 7 | M4a | Route detection (Next.js, Expo Router, Hono) | written when scheduled |
-| 8 | M2c | Risk zones, `ei_changes`, audit log | written when scheduled |
-| 9 | M6a | `ei_search`, lexical | written when scheduled |
-| 10 | M4b | Heuristic bridges, one flow at a time | written when scheduled |
-| 11 | M5 | Session watcher, worktree seeding | written when scheduled |
-| 12 | M6b | Semantic search (optional local embeddings) | written when scheduled |
+| 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | written after M3 evidence |
+| 8 | M6a | `ei_search`, lexical (no embedding dependency) | written after M3 evidence |
+| 9 | M4a | Route detection (Next.js, Expo Router, Hono) | written when scheduled |
+| 10 | M4b | Heuristic bridges, one proven flow at a time | gated by dogfood evidence |
+| 11 | M5 | Session watcher, worktree seeding | optional; gated by measured need |
+| 12 | M6b | Semantic search (optional local embeddings) | deferred; separate owner approval |
 
 A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
 
-Out of scope until the owner says otherwise: MCP adapter, multi-OS CI, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
+Out of scope until the owner says otherwise: MCP adapter, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
 
-Work on **one milestone at a time**. When it is done, stop and report. Do not start the next milestone.
+Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a baseline, not proof that the index/impact engine works. When a milestone is done, stop and report. Do not start the next milestone.
 
 ## Evidence rules (non-negotiable)
 
@@ -40,8 +41,9 @@ Work on **one milestone at a time**. When it is done, stop and report. Do not st
 2. Use these labels in reports: `VERIFIED` (ran it, saw the result), `MOCK-ONLY` (tested against a stub), `NOT VERIFIED` (not run), `PROPOSED` (design only).
 3. A test against a mock of OMP is `MOCK-ONLY`, never "OMP compatible".
 4. Impact/graph answers must say `unknown` or `partial`, with reasons, when evidence is incomplete. Zero callers never proves "safe" or "low risk" on its own.
-5. Do not edit expected values in `tests/golden/**` to make a test pass. If you think an expected value is wrong, report it and leave it.
-6. Do not weaken, skip or delete an existing test to get green. If a test is wrong, say so in the report.
+5. Do not describe a macOS/Linux CI result as live OMP compatibility or as verification of an engine that does not yet exist. Record OS and architecture; require separate live OMP smoke on both OS families before claiming full support.
+6. Do not edit expected values in `tests/golden/**` to make a test pass. If you think an expected value is wrong, report it and leave it.
+7. Do not weaken, skip or delete an existing test to get green. If a test is wrong, say so in the report.
 
 ## OMP integration rules
 
