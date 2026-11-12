@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, realpathSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { defaultConfig, parseProjectConfig, type ProjectConfig } from '../kernel/config.js';
@@ -65,23 +65,26 @@ export function detectProjectLayout(rootPath: string): {
   if (hasPackages) include.push('packages/**');
   if (hasApps) include.push('apps/**');
   if (include.length === 0) {
-    include.push(hasSrc ? 'src/**' : 'src/**');
+    // Without packages/, apps/ or src/ there is no layout to infer; index the whole root.
+    include.push(hasSrc ? 'src/**' : '**');
   }
 
-  const candidateRoutes = [
-    'src/routes.ts',
-    'src/routes/index.ts',
-    'src/app/api',
-    'src/pages/api',
-    'app/api',
-    'pages/api',
-    'packages/api/src/routes.ts',
+  // `impact.routes` holds file globs (DESIGN §9), so a detected directory becomes the glob
+  // for the route files a framework loads from it, never the bare directory path.
+  const candidateRoutes: ReadonlyArray<{ probe: string; route: string }> = [
+    { probe: 'src/routes.ts', route: 'src/routes.ts' },
+    { probe: 'src/routes/index.ts', route: 'src/routes/index.ts' },
+    { probe: 'src/app/api', route: 'src/app/api/**/route.{ts,tsx,js,jsx}' },
+    { probe: 'src/pages/api', route: 'src/pages/api/**/*.{ts,tsx,js,jsx}' },
+    { probe: 'app/api', route: 'app/api/**/route.{ts,tsx,js,jsx}' },
+    { probe: 'pages/api', route: 'pages/api/**/*.{ts,tsx,js,jsx}' },
+    { probe: 'packages/api/src/routes.ts', route: 'packages/api/src/routes.ts' },
   ];
 
   const routes: string[] = [];
   for (const candidate of candidateRoutes) {
-    if (existsSync(join(rootPath, candidate))) {
-      routes.push(candidate);
+    if (existsSync(join(rootPath, candidate.probe))) {
+      routes.push(candidate.route);
     }
   }
 
@@ -153,7 +156,9 @@ export async function initProject(options: InitProjectOptions = {}): Promise<Ini
   const repoId = computeRepoId(realRoot);
   const cacheDir = resolveCacheDir(repoId, options.cacheHome);
   if (!options.dryRun) {
-    await mkdir(cacheDir, { recursive: true });
+    // The cache holds index records and the audit log; keep it private to the user (RISK §5).
+    await mkdir(cacheDir, { recursive: true, mode: 0o700 });
+    await chmod(cacheDir, 0o700);
   }
 
   const configPath = join(realRoot, 'ei.config.json');
