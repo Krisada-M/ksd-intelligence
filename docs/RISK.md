@@ -132,9 +132,9 @@ The tool result states the limit in plain words when a boundary factor is presen
 
 | Risk | Mechanism |
 |---|---|
-| Index work freezes the OMP session | Impact engine runs in a **worker thread** (one long-lived worker, no per-call subprocess). Main thread only posts requests. To be verified on OMP's runtime in M2 (R6) |
-| A query hangs | Per-call budget (default 5 s impact, 15 s cold index). On expiry: terminate worker, return `index-failed`, restart lazily. Session continues |
-| Memory growth on a large repo | Worker `resourceLimits` cap (default 1.5 GB; a sandbox cold build of 200k–390k lines without library types peaked at 0.6–0.8 GB, so M2 sets the real default after measuring with `node_modules`); on exceed, same as timeout, plus `ei_status` advice to narrow `impact.include` |
+| Index work freezes the OMP session | Engine runs in a **child process** (DESIGN D45); the OMP process only sends requests. Verified need: Bun ignores worker memory limits (M1b) |
+| A query hangs | Per-call budget (5 s query; first build blocks up to 60 s with progress, D35). On expiry: stop waiting, keep the child building in the background, return guidance; a child that stops responding is killed and restarted lazily. Session continues |
+| Memory growth on a large repo | `impact.maxMemoryMb` (default min(8 GB, half of RAM)); Node child gets the heap flag, Bun child is killed by the parent's RSS watchdog; on exceed, `index-failed` plus `ei_status` advice to narrow `impact.include` or raise the limit. oh-my-pi needed 6 GB heap (M1b) |
 | Library must be turned off fast | `EI_DISABLED=1` → extension registers no tools. Per-capability `enabled` flags in config. Either works without uninstalling |
 | Work in progress breaks daily use | **Stable channel:** daily OMP loads the extension from a git worktree checked out at the last accepted milestone tag (`m0`, `m1`, …). Development builds are loaded only with an explicit `--extension` path |
 | OMP upgrade changes the extension API | `ei_status` compares the running OMP version with the last smoke-verified version recorded in the repo and warns on mismatch; re-run the M1 scenarios |

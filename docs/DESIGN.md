@@ -1,6 +1,6 @@
 # ksd-intelligence — Final Design
 
-> **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37); KSD merged into the library and packaging decided (D39–D40). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
+> **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37); KSD merged into the library and packaging decided (D39–D40); M1b runtime facts applied 2026-11-12 (D43–D47). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
 > **Owner/user:** one person, personal non-commercial use.
 > **Host:** Oh My Pi (OMP) 18.18.8 on WSL2 (verified 18.18.2 on 2026-11-09, re-verified 18.18.8 on 2026-11-11). Node >= 20 (owner runs v24). Owner shell: fish.
 > **Labels:** `DONE` = built and verified · `NEXT` = current or next milestone · `PLANNED` = designed; starts at its milestone (M4–M6, owner-directed) or when its entry gate is met (V2) · `NEVER` = explicitly out of scope.
@@ -185,6 +185,7 @@ Incoming edges (who calls X) are the inverse of the resolved outgoing edges, so 
 - Cold build: every indexable file.
 - Warm update: the files reported by TypeScript's builder program (`createSemanticDiagnosticsBuilderProgram`, chained from the previous program). It propagates through importers when a file's exported shape changes, and stops when it does not.
 - Checked in a sandbox on TypeScript 6.0.3: a return-type change re-affected direct and transitive importers; a parameter change with unchanged downstream shape stopped at direct importers; a new file affected only itself; the first change after a cold build was treated conservatively (importers included). To be re-verified in M2 with project references and `paths`.
+- **M1b correction (D43):** the builder only propagates through importers when the program does **not** set `verbatimModuleSyntax` or `isolatedModules`. With either on (oh-my-pi sets `verbatimModuleSyntax`), a signature or return-type change re-checked 1 file although it had 478 importers. The engine therefore builds its analysis program with both options forced **off** (they control emit and per-file checks, not symbol resolution), never uses `ignoreSourceFile`, and relies on the seeded randomised incremental-equals-full test and `ei doctor --deep` to catch any remaining miss.
 - Config-level changes are not incremental: `tsconfig*`, `package.json`, lockfile, `ei.config.json`, TypeScript version or extractor stamp changed → full rebuild.
 
 **Extractor stamp:** a hash of the indexing module's own built files + TypeScript version + the index-relevant config. It is part of every cache key, so changing the extractor invalidates old records without anyone remembering to bump a version.
@@ -209,7 +210,7 @@ The fingerprint (path → size, mtime, hash, plus extractor stamp and scope conf
 | Query, index present, probe clean | Answer from the active index |
 | Query, index present, drift found | Update: re-extract changed files, re-resolve the affected set, verify, publish, then answer |
 | New session, fingerprint unchanged | Load the published index from disk; no rebuild |
-| New session, files changed since last publish | Reuse cached EXTRACT-LOCAL records; RESOLVE needs a program. M2 evaluates persisting TypeScript's build info to avoid a full RESOLVE; until proven, this case is a cold RESOLVE and its duration is reported |
+| New session, files changed since last publish | Load the published index; create the compiler program (3–12 s measured on oh-my-pi), then re-extract and re-resolve only the changed and affected files. TypeScript build-info persistence is **not** used (D47): writing it needs a full check (223 s on oh-my-pi) and it saves only the diagnostics pass, not program creation |
 | `ei index --full` | Full rebuild on demand, ignoring caches |
 | Git worktree with no index (M5) | Seed from the main checkout's published index and records, then treat the difference as ordinary drift |
 
@@ -223,16 +224,24 @@ The fingerprint (path → size, mtime, hash, plus extractor stamp and scope conf
 
 **Monorepo:** one TypeScript project per `tsconfig`, linked through `paths` and project references; edges across packages are resolved to the declaring file. Packages outside `impact.include` produce `outside-index-scope`.
 
-**Program lifetime and memory (D31, provisional until M1b measures a real project with `node_modules`):** projects are built one at a time in dependency order; after publishing, compiler state is kept only for projects touched in this session, at most two at once (least recently used is released). The worker's memory cap is set from the M1b measurement, not from the sandbox numbers below. Editing a global declaration file re-affects every file in that project; that is expected, not a fault.
+**Engine host, lifetime and memory (D45, measured in M1b on oh-my-pi: 6,851 files, 2.27M lines with dependency types loaded):**
 
-**Measured cost (sandbox, 2 cores, TypeScript 6.0.3, no `node_modules` so external types were unresolved; real projects will be heavier):**
+- The engine runs in a **child process**, not a worker thread. OMP runs on Bun, and Bun ignores worker `resourceLimits` (a worker allocated 512 MB under a 32 MB cap), so only a separate process can be contained and killed.
+- The child runs on `node` (≥ 22.5) from `PATH` when available, else on OMP's own Bun runtime. Measured cold build: **28.5 s on Node, 83 s on Bun**, at 5–5.3 GB RSS.
+- Memory: under Node the child gets `--max-old-space-size` from `impact.maxMemoryMb` (default: the smaller of 8,192 MB and half of physical RAM); under Bun, which has no such flag, the parent polls the child's RSS every second and kills it above the same limit. M1b's smallest passing heap for oh-my-pi was 6 GB (1.5, 3 and 4.6 GB failed).
+- One program for the whole index scope, built from the root configuration with project references followed. Per-package sequential builds were measured **worse** (44–48 s, up to 7.9 GB), so they are only a fallback for packages whose compiler options conflict.
+- The child exits after 10 minutes without a request, releasing memory; the next update pays program creation again (3–12 s). Only the lock holder runs a child (D35), so there is at most one engine process per repository.
+- TypeScript is loaded by absolute path (a bare `import('typescript')` failed inside the worker in M1b).
+
+**Measured cost.** First rows: sandbox, 2 cores, TypeScript 6.0.3, no `node_modules` (external types unresolved). Last row: M1b, macOS arm64, 10 cores, 17 GB RAM, TypeScript 5.9.3, dependencies installed.
 
 | Codebase | Files | Lines | Create program | Resolve every identifier | Peak memory |
 |---|---|---|---|---|---|
 | CodeGraph `src/` | 327 | 201k | 1.9 s | 7.0 s | 0.6 GB |
 | GitNexus `gitnexus/src/` | 1,130 | 388k | 2.8 s | 8.9 s | 0.8 GB |
+| oh-my-pi (workspace) | 6,851 | 2.27M | full cold build 28.5 s on Node / 83 s on Bun | | 5.0–5.5 GB RSS; needs ≥ 6 GB heap |
 
-So a cold build is on the order of 10 s per few hundred thousand lines and needs most of a gigabyte. This is why the engine runs in a worker, why warm updates and cross-session reuse matter, and why targets in §14 were revised.
+So a large real workspace costs tens of seconds and several gigabytes on a cold build. This is why the engine is a separate, killable process, why it publishes an index that later sessions load without a compiler, and why warm updates re-resolve only affected files. The probe stays cheap: listing and stat-ing 10,502 files took 94 ms on Bun and 220 ms on Node.
 
 ### 6.3 Context packs — `PLANNED` (V2)
 
@@ -517,6 +526,7 @@ ei route   --task … --stage … [--type …] [--risk high]      DONE
 ei load    --task … --stage … [--type …] [--risk high]      DONE
 ei sources check [--write]                                 DONE
 ei init   [--force] [--dry-run]                           M2 (pre-index; landed early in #8)
+ei setup   [--check]                                       M2a.1 (installs the pinned TypeScript runtime; owner-run, network once; D44)
 ei index   [--full]                                        M2
 ei impact  <target…> [--depth N] [--json]                  M2
 ei symbol  <query>                                         M2   (CLI only)
@@ -548,7 +558,8 @@ One schema, three scopes, same precedence as KSD: **session > project > global >
   "impact":   { "enabled": true, "include": ["packages/**", "apps/**"], "exclude": ["**/dist/**"],
                 "routes": ["packages/api/src/routes.ts"], "maxDepth": 10,
                 "freshness": "stat", "watch": true,                         // watch: M5
-                "manyCallers": 10, "useWorkspaceTypescript": false },
+                "manyCallers": 10, "useWorkspaceTypescript": false,
+                "maxMemoryMb": null },                                    // null = min(8192, half of RAM); D45
   "bridges":  { "B1": true, "B2": true, "B3": true, "B4": true, "B5": true, "B6": true },   // M4
   "search":   { "enabled": true, "semantic": false },                       // M6
   "riskZones": "default",                                                   // M2c; "default" = the four zones in docs/RISK.md, or a list, or []
@@ -596,7 +607,7 @@ Merged as the policy module (§6.7). The extension entry registers the KSD hooks
 | Data | First implementation | Later | Regenerable? |
 |---|---|---|---|
 | Skill text | read from checkouts each call | same | yes (from pinned checkout) |
-| Index / graph | whole-scope index in `~/.cache/ksd-intelligence/<repo-id>/`: a small fingerprint file, per-file local records (keyed by content hash + extractor stamp), resolved edges and unresolved records, as sharded JSON loaded into memory; staged and published atomically | SQLite (WAL, migrations) in the same dir, behind the same storage interface | yes; `ei index --full` or delete dir |
+| Index / graph | whole-scope index in `~/.cache/ksd-intelligence/<repo-id>/index.sqlite`: fingerprint, per-file local records (keyed by content hash + extractor stamp), resolved edges, unresolved records and the full-text tables, in one SQLite database (WAL); updates are written to a staging copy and published by atomic rename | Same | yes; `ei index --full` or delete dir |
 | Compression originals | n/a | CAS files `<sha256>` in the same dir; retained while referenced | **no**; never evict a referenced object |
 | Learnings | n/a | `.ksd/learnings/*.yaml` in the repo | **no**; versioned with code |
 | Verification reports | n/a | cache dir, last N per check | yes |
@@ -605,9 +616,8 @@ Nothing the library generates is written into the repo except learnings the owne
 
 `<repo-id>` is the first 16 hex characters of the SHA-256 of the repository root's real path. `ei init` creates this directory (mode `0700`) and writes a starting `ei.config.json` from the detected layout: detected route directories become file globs, and no route is assumed when none is found. `ei cache list` shows each cache with its size and last use; caches unused for 30 days are pruned on the next `ei index`.
 
-**SQLite (D28, moved into M2a):** the runtime's built-in SQLite module becomes the primary store for index records, the full-text index and (M6) vectors, behind the storage interface, once M2a confirms which runtime OMP runs extensions in and that its built-in SQLite (with FTS5) is available. If it is not, the sharded-JSON store stays and search uses an in-memory inverted index. No third-party database package either way.
+**SQLite (D46):** `node:sqlite` is the store. M1b verified it inside OMP (SQLite 3.54.0, FTS5, WAL) and under Node 24, so it works in either engine runtime. The sharded-JSON fallback and the SQLite entry gate are dropped. `bun:sqlite` is not used because it does not exist under Node.
 
-**Original SQLite entry gate (superseded by D28):** loading the persisted index of the dogfood repo takes > 2 s, incremental writes become a bottleneck, or a query needs something the in-memory graph cannot answer. Candidate with no new dependency: the runtime's built-in SQLite module (a reference project uses Node's as its only backend, with FTS5), to be verified on OMP's runtime before it is chosen.
 
 ## 12. Safety and failure model
 
@@ -634,9 +644,10 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 |---|---|---|---|
 | 1 | **M0** ✅ | TS repo, router fixed, sources lock | 56/56 tests; real 15/15 hashes; done 2026-11-09 |
 | 2 | **M1** ✅ | TS adapter live in OMP; S1–S8 | S1–S6, S8 verified on 18.18.8; S7 owner check in TUI |
-| 3 | **M1b** | Runtime spike, facts only (`docs/briefs/M1b-runtime-spike.md`): runtime identity, worker threads, `typescript` loading, built-in SQLite + FTS5, memory on a real project with `node_modules`, update-callback streaming | One page of measured facts; §6.2.1 and §11 adjusted once from them. **No M2a code before this** |
+| 3 | **M1b** ✅ | Runtime spike, facts only | Facts in `docs/research/m1b-runtime-facts.md`; applied as D43–D47 |
 | 3b | **M1c** ✅ | Merge KSD Engineering Proxy as `src/policy/` with history; one extension entry; marketplace packaging; cut-over from the old plugin (`docs/briefs/M1c-ksd-merge.md`) | KSD's 148 tests and this repo's tests all pass; policy and status snapshots byte-identical to 0.6.0; live OMP: one install, commands work, policy injected once, `ei_workflow` still works; rollback tested |
-| 4 | **M2a** | Scan · fingerprint · extract-local · resolve · verify · publish · store · `ei index`, `ei_status` | Scan census accounts for every fixture file; **randomised incremental == full** passes; **differential test** against TypeScript find-references passes on the fixture and one real repo; probe listing cost measured |
+| 4 | **M2a.1** | Engine host (child process, runtime choice, memory watchdog, idle exit, lock) · TypeScript provisioning (`ei setup`) · SQLite store · scan · fingerprint and probe · `ei index` (scan only), `ei_status` (`docs/briefs/M2a-index.md`, part 1) | Scan census accounts for every fixture file; probe and lock behaviour tested; child is killed above its memory limit; status reports runtime, TypeScript and store |
+| 4b | **M2a.2** | Extract-local · resolve (ADR 0002/0003, D43 options) · verify · publish · incremental update · `ei doctor --deep` (`docs/briefs/M2a-index.md`, part 2) | Randomised incremental == full passes; differential test against TypeScript find-references passes on the fixture and on oh-my-pi; cold build and one-file update measured on oh-my-pi |
 | 5 | **M2b** | `ei_impact`: targets, guidance, reach, factors, base verdict, name cross-check, text per `docs/TOOLS.md` | All confirmed engine golden and freshness cases pass; rendering snapshots reviewed by owner; mutation smoke |
 | 6 | **M3** | Dogfood on oh-my-pi repo + one real GitLab project (read-only clone). Starts when M2b is accepted and continues alongside later milestones | 2 weeks of `docs/dogfood-log.md`; ≥ 10 real tasks logged |
 | 7 | **M4a** | Route detection B1–B2 (Next.js, Expo Router, Hono): facts from file conventions and literal paths | Routes found on a fixture app without config; `route` factor appears; no golden regression |
@@ -674,7 +685,7 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | Live smoke | OMP scenarios S1–S7 (+ impact scenarios after M2) | after each milestone and each OMP upgrade |
 | Dogfood | Real tasks, owner-judged | M3 onward |
 
-**Performance targets (proposed; recalibrate after M3):** query with a clean probe p95 < 300 ms; update after a one-file edit < 3 s; cold build < 15 s per 300k lines (sandbox measurement: about 10 s, §6.2.1); loading a published index in a new session < 2 s; `ei_workflow` < 50 ms excluding file I/O. A missed target is logged, not hidden; correctness is never traded for it.
+**Performance targets (revised after M1b; recalibrate after M3):** query with a clean probe p95 < 300 ms (probe measured 94–220 ms for 10.5k files); update after a one-file body edit < 3 s once a program exists; first query in a new session with drift < 15 s (program creation measured 3–12 s); cold build of a 2M-line workspace < 60 s on Node (measured 28.5 s), with Bun accepted as slower; peak engine memory reported by `ei_status`; `ei_workflow` < 50 ms excluding file I/O.
 
 ## 15. Decision log
 
@@ -709,8 +720,8 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D27 | V1 agent surface is four tools (`ei_workflow`, `ei_impact`, `ei_changes`, `ei_status`); lookup folded into `ei_impact`; indexing automatic + owner CLI; output text contract in `docs/TOOLS.md` | 2026-11-11 |
 | D28 | **Owner decision 2026-11-11:** bring forward, ahead of dogfood gates, six items previously deferred or not adopted: heuristic bridges across dynamic dispatch, framework route detection, built-in SQLite, session file watcher, git-worktree seeding, code search with optional local embeddings. Each is designed so it cannot weaken evidence rules (§6.9–6.11). Supersedes D19 for these items and the matching parts of D26 | 2026-11-11 |
 | D29 | **M1b runtime spike** is a gate before any M2a code (review B-1, B-3) | 2026-11-11 |
-| D30 | `typescript` is a runtime dependency: bundled and pinned by default; a project's own copy only by explicit opt-in. Engine runs in a worker with time and memory budgets (RISK R5 as amended, R6) | 2026-11-11 |
-| D31 | Program lifetime: sequential builds, compiler state kept for at most two recently touched projects; cap set from M1b (provisional) | 2026-11-11 |
+| D30 | `typescript` is a runtime dependency: pinned, never taken from the analysed repo by default; a project's own copy only by explicit opt-in. Engine isolated with time and memory budgets (RISK R5 as amended, R6). **Delivery and isolation revised by D44 and D45** | 2026-11-11 |
+| D31 | Program lifetime: sequential builds, two projects kept (**superseded by D45**: one program, child process, idle exit) | 2026-11-11 |
 | D32 | No engine "risk" word. Results carry completeness, reach and factors; one derived verdict (level + action). New factors `cross-package`, `many-callers` | 2026-11-11 |
 | D33 | Milestone order: M1 → M1b → M1c (D39) → M2a → M2b → M3 starts → M4a → M2c → M6a → M4b → M5 → M6b | 2026-11-11 |
 | D34 | Stable key grammar and the set of indexed declarations and uses fixed by ADR 0002 and 0003 | 2026-11-11 |
@@ -722,6 +733,11 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D40 | Package as an OMP marketplace plugin with committed build output; marketplace version bumped only on accepted milestones. Supersedes D38 | 2026-11-11 |
 | D41 | `main` is the release branch: only accepted milestones land there, by PR, with version bump and built `dist/`; development on branches | 2026-11-11 |
 | D42 | `ei init` (owner CLI) adopted after it landed outside the milestone flow (#8): creates the private cache dir and a starting `ei.config.json`; `ksdBridge` removed from the config schema (obsolete since D39). Unplanned work still goes through a brief or a reviewed PR before `main` (D41) | 2026-11-12 |
+| D43 | The engine's analysis program forces `verbatimModuleSyntax` and `isolatedModules` off and never uses `ignoreSourceFile`, so the builder's affected set propagates through importers (M1b B4) | 2026-11-12 |
+| D44 | Marketplace installs copy the repository and install no dependencies (OMP `marketplace/cache.ts`, `fs.cp`). The pinned TypeScript is provisioned by an owner-run `ei setup` into `~/.cache/ksd-intelligence/runtime/typescript-<version>/` and loaded by absolute path; without it the impact tools report `degraded` with that fix. No network from the agent or the tools | 2026-11-12 |
+| D45 | Engine host is a child process, Node ≥ 22.5 when on `PATH` else OMP's Bun; memory limit enforced by flag (Node) or RSS watchdog (Bun); one program per index scope; idle exit after 10 minutes; at most one engine process per repository | 2026-11-12 |
+| D46 | Store is `node:sqlite` (one database per repository, WAL, staged then renamed); JSON fallback and the SQLite gate dropped | 2026-11-12 |
+| D47 | No TypeScript build-info persistence; a new session loads the published index and creates a program only when the probe finds drift | 2026-11-12 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
@@ -729,7 +745,7 @@ Each decision gets a short ADR in `docs/adr/` when the milestone that depends on
 
 1. Answered by M1c: default-branch head, versioned by the catalog (§10.1).
 7. Follow-ups from M1c, folded into the M2a brief: (a) KSD's TypeScript sources in `src/policy/src/` are excluded from this repo's build and its committed runtime ships as is; add a drift check that rebuilds them with KSD's pinned compiler (5.8.3) and compares, so an edit to the sources cannot silently diverge from what runs; (b) slash commands produce no output under `omp -p`, so `/engineering-proxy status` and the `🛡 KSD` segment are verified by the owner in the TUI after cut-over.
-2. Runtime facts and real-project memory (M1b answers; D31 is provisional until then).
+2. Answered by M1b (D43–D47). Still open from it: progress visibility in the interactive TUI, Bun runs above 1.5 GB, the exact memory floor between 4.6 and 6 GB for oh-my-pi, TypeScript 6/7 behaviour (oh-my-pi itself ships 7.x).
 3. Which real GitLab project to clone read-only for M3 dogfooding.
 4. Whether GitNexus is active for repos the owner works in; if so, how its answers compare on the same M3 tasks.
 5. Upstream skill content review: the owner reads the 15 pinned SKILL.md files once and re-reads diffs on each update.
