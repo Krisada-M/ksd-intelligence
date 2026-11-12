@@ -29,7 +29,11 @@ describe('config core', () => {
     assert.equal(config.skills.enabled, true);
     assert.equal(config.impact.enabled, true);
     assert.deepEqual(config.impact.include, ['packages/**', 'apps/**']);
-    assert.deepEqual(config.impact.routes, [], 'no route is assumed until one is detected or declared');
+    assert.deepEqual(
+      config.impact.routes,
+      [],
+      'no route is assumed until one is detected or declared',
+    );
     assert.equal(config.impact.maxDepth, 10);
     assert.equal(config.impact.freshness, 'stat');
     assert.equal(config.impact.watch, true);
@@ -170,7 +174,7 @@ describe('workspace init engine', () => {
     }
   });
 
-  it('turns detected framework route directories into file globs, never bare directories', async () => {
+  it('turns detected route directories into file globs, never bare directories', async () => {
     const next = await makeTempDir('next-app');
     const bare = await makeTempDir('bare');
     try {
@@ -237,7 +241,11 @@ describe('workspace init engine', () => {
       assert.equal(parsedOnDisk.impact.enabled, true);
       assert.ok(existsSync(result.cacheDir));
       if (process.platform !== 'win32') {
-        assert.equal(statSync(result.cacheDir).mode & 0o777, 0o700, 'cache dir must be private (RISK §5)');
+        assert.equal(
+          statSync(result.cacheDir).mode & 0o777,
+          0o700,
+          'cache dir must be private (RISK §5)',
+        );
       }
     } finally {
       await rm(repo, { recursive: true, force: true });
