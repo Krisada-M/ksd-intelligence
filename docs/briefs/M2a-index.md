@@ -66,7 +66,7 @@ Build `tests/fixtures/mono` exactly as described in `tests/golden/M2-impact-case
 6. `ei setup` and `ei setup --check` tested against a fake registry or a local tarball (no network in tests); `ei_status` shows `degraded` with the fix when the runtime is missing.
 7. Live: `ei_status` called from OMP via `omp -p` returns the status text; paste it.
 8. Measured on the oh-my-pi checkout used in M1b: scan time, probe time with no drift, file counts.
-9. macOS/Linux CI passes for the new host, lock, SQLite and scan tests; document runtime and arch. On each OS family, exercise interrupted index/build recovery and separate real OMP smoke; do not substitute a mock for runtime proof.
+9. macOS/Linux CI passes for the new host, lock, SQLite and scan tests, including an automated interrupted-build recovery test (kill the child mid-build; the previously published index must still open and answer); document runtime and arch. Live OMP smoke is done on the machine you are running on and labelled with its OS; the other OS family is marked **NOT VERIFIED** in the report for the owner to run. Do not substitute a mock for runtime proof, and do not claim an OS you did not run on.
 10. Report in the `AGENTS.md` template. **Stop.**
 
 ## Part 2 — M2a.2: extract, resolve, verify, publish, update

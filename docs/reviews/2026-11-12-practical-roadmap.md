@@ -1,6 +1,6 @@
 # Practical V1 roadmap review — 2026-11-12
 
-**Decision status:** PROPOSED in this PR (D48). This is a source-grounded prioritisation, **not** evidence that competitors' implementations are faster or that KSD already has their features.
+**Decision status:** ACCEPTED by the owner on 2026-11-12 (D48). For what was actually read in the reference projects' indexing code, with commits, see `docs/research/index-techniques.md`. This is a source-grounded prioritisation, **not** evidence that competitors' implementations are faster or that KSD already has their features.
 
 ## Baseline from KSD source
 

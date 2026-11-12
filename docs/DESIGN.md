@@ -284,7 +284,7 @@ KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one in
 
 Read-only access to issues (requirements for `plan`), merge request diffs (scope for `review`/`impact`), and pipeline/job results (evidence for `verify`). Host and project from `ei.config.json`; token from env `GITLAB_TOKEN` only, never stored or logged. This is the only library code allowed network access, and only when enabled.
 
-### 6.9 Framework routes and heuristic bridges — `PLANNED` (M4, D28)
+### 6.9 Framework routes and heuristic bridges — `PLANNED` (M4a routes after M2c/M6a; M4b bridges gated by dogfood evidence; D28, D48)
 
 Static analysis stops at dynamic dispatch: a route file the framework calls, a `fetch('/api/charge')` that reaches a handler, an event name that links emitter to listener. Without bridges these become gap sites and many answers are `unknown`. Bridges add the likely edges, clearly marked.
 
@@ -312,7 +312,7 @@ Static analysis stops at dynamic dispatch: a route file the framework calls, a `
 
 Tool text shows them as a separate section, `Possible (heuristic)`, after compiler-grade callers (see `docs/TOOLS.md`).
 
-### 6.10 Session file watcher — `PLANNED` (M5, D28)
+### 6.10 Session file watcher — `PLANNED` (M5, optional, only on measured need; D28, D48)
 
 An optimisation, never the authority. Inside the OMP session (no daemon), a recursive watcher on the index scope records changed paths and, after a debounce, starts the update in the worker so the next query is already fresh.
 
@@ -320,7 +320,7 @@ An optimisation, never the authority. Inside the OMP session (no daemon), a recu
 - Auto-disables, with a line in `ei_status`, when the platform cannot watch reliably (for example a Windows-mounted path under WSL2, or the inotify limit is hit). Queries then use the probe as before.
 - `impact.watch: false` turns it off. No watcher exists outside a running session.
 
-### 6.11 Code search — `PLANNED` (M6, D28)
+### 6.11 Code search — `PLANNED` (M6a lexical after M2c; M6b semantic deferred to separate owner approval; D28, D48)
 
 Answers "where is the code that does X?" with ranked symbols and `path:line`, for the moment the agent would otherwise grep around.
 
@@ -659,7 +659,7 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | 11 | **M5** (optional) | Session watcher and worktree seeding | Measured repeated probe overhead or cold-index duplication justifies implementation; watcher off/on has identical correctness |
 | 12 | **M6b** (deferred) | Local semantic search | Only starts with separate owner approval after lexical recall/failure data; offline and graceful-degradation tests |
 
-**Delivery order revision proposed in D48:** finish the correctness baseline and M3 dogfood before investing in advanced graph/AI features. D28 still records intended optional capabilities, but its unconditional scheduling is superseded for M4b, M5 and M6b. M2c precedes route detection because checking the actual diff is the first production workflow. Do not claim M1d CI proves engine or live OMP compatibility.
+**Delivery order (D48, accepted by the owner 2026-11-12):** finish the correctness baseline and M3 dogfood before investing in advanced graph/AI features. D28 still records intended optional capabilities, but its unconditional scheduling is superseded for M4b, M5 and M6b. M2c precedes route detection because checking the actual diff is the first production workflow. Do not claim M1d CI proves engine or live OMP compatibility.
 
 **Dogfood log entry:** task · tools called · was the answer correct (owner judges) · did it change what the agent did · latency · any false `low`. A single false `low` on a real change stops the roadmap until fixed.
 
@@ -722,12 +722,12 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D25 | Disk is the source of truth; git only lists visible files; one builder per repo under a lock; a failed update answers from the last published index marked `stale-index` | 2026-11-11 |
 | D26 | Not adopted from reference projects: name-guess resolution tiers, in-place edge patching, commit-based staleness, graph DB server. (Synthesized edges, watchers and embeddings were on this list until D28) | 2026-11-11 |
 | D27 | V1 agent surface is four tools (`ei_workflow`, `ei_impact`, `ei_changes`, `ei_status`); lookup folded into `ei_impact`; indexing automatic + owner CLI; output text contract in `docs/TOOLS.md` | 2026-11-11 |
-| D28 | **Owner decision 2026-11-11:** bring forward, ahead of dogfood gates, six items previously deferred or not adopted: heuristic bridges across dynamic dispatch, framework route detection, built-in SQLite, session file watcher, git-worktree seeding, code search with optional local embeddings. Each is designed so it cannot weaken evidence rules (§6.9–6.11). Supersedes D19 for these items and the matching parts of D26 | 2026-11-11 |
+| D28 | **Owner decision 2026-11-11:** bring forward, ahead of dogfood gates, six items previously deferred or not adopted: heuristic bridges across dynamic dispatch, framework route detection, built-in SQLite, session file watcher, git-worktree seeding, code search with optional local embeddings. Each is designed so it cannot weaken evidence rules (§6.9–6.11). Supersedes D19 for these items and the matching parts of D26. **Scheduling revised by D48:** the capabilities stay intended, but M4b and M5 wait for dogfood evidence and M6b for separate approval | 2026-11-11 |
 | D29 | **M1b runtime spike** is a gate before any M2a code (review B-1, B-3) | 2026-11-11 |
 | D30 | `typescript` is a runtime dependency: pinned, never taken from the analysed repo by default; a project's own copy only by explicit opt-in. Engine isolated with time and memory budgets (RISK R5 as amended, R6). **Delivery and isolation revised by D44 and D45** | 2026-11-11 |
 | D31 | Program lifetime: sequential builds, two projects kept (**superseded by D45**: one program, child process, idle exit) | 2026-11-11 |
 | D32 | No engine "risk" word. Results carry completeness, reach and factors; one derived verdict (level + action). New factors `cross-package`, `many-callers` | 2026-11-11 |
-| D33 | Milestone order: M1 → M1b → M1c (D39) → M2a → M2b → M3 starts → M4a → M2c → M6a → M4b → M5 → M6b | 2026-11-11 |
+| D33 | Milestone order: M1 → M1b → M1c (D39) → M2a → M2b → M3 starts → M4a → M2c → M6a → M4b → M5 → M6b (**sequencing superseded by D48**) | 2026-11-11 |
 | D34 | Stable key grammar and the set of indexed declarations and uses fixed by ADR 0002 and 0003 | 2026-11-11 |
 | D35 | First call blocks up to 60 s with streamed progress; only the lock holder builds, other sessions read the published index | 2026-11-11 |
 | D36 | Acceptance adds a differential test against TypeScript find-references and a seeded randomised incremental-equals-full test | 2026-11-11 |
@@ -742,7 +742,7 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D45 | Engine host is a child process, Node ≥ 22.5 when on `PATH` else OMP's Bun; memory limit enforced by flag (Node) or RSS watchdog (Bun); one program per index scope; idle exit after 10 minutes; at most one engine process per repository | 2026-11-12 |
 | D46 | Store is `node:sqlite` (one database per repository, WAL, staged then renamed); JSON fallback and the SQLite gate dropped | 2026-11-12 |
 | D47 | No TypeScript build-info persistence; a new session loads the published index and creates a program only when the probe finds drift | 2026-11-12 |
-| D48 (proposed) | Practical delivery replan: add M1d macOS/Linux CI baseline before M2a; retain D43–D47 engine design and D28 capability intent, but reorder M2c and lexical search before route/heuristic work; M5 only on measured need, M6b requires separate approval. Supersedes D33 sequencing and D28 automatic scheduling only if this PR is accepted | 2026-11-12 |
+| D48 | Practical delivery replan: add M1d macOS/Linux CI baseline before M2a; retain D43–D47 engine design and D28 capability intent, but reorder M2c and lexical search before route/heuristic work; M5 only on measured need, M6b requires separate approval. Accepted by the owner 2026-11-12. Supersedes D33's sequencing and D28's unconditional scheduling of M4b, M5 and M6b | 2026-11-12 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
