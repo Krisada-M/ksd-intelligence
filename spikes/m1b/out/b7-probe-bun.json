@@ -1,0 +1,52 @@
+{
+  "runtime": "bun",
+  "ompSrc": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src",
+  "iters": [
+    {
+      "run": 1,
+      "count": 10502,
+      "listMs": 92.2,
+      "statSyncMs": 19.4,
+      "statAsyncMs": 17.7,
+      "syncOk": 10502,
+      "syncMissing": 0,
+      "asyncOk": 10502,
+      "asyncMissing": 0,
+      "totalMs": 129.3
+    },
+    {
+      "run": 2,
+      "count": 10502,
+      "listMs": 60.5,
+      "statSyncMs": 18,
+      "statAsyncMs": 13.1,
+      "syncOk": 10502,
+      "syncMissing": 0,
+      "asyncOk": 10502,
+      "asyncMissing": 0,
+      "totalMs": 91.6
+    },
+    {
+      "run": 3,
+      "count": 10502,
+      "listMs": 75.2,
+      "statSyncMs": 19.5,
+      "statAsyncMs": 15.3,
+      "syncOk": 10502,
+      "syncMissing": 0,
+      "asyncOk": 10502,
+      "asyncMissing": 0,
+      "totalMs": 110.1
+    }
+  ],
+  "median": {
+    "listMs": 75.2,
+    "statSyncMs": 19.4,
+    "statAsyncMs": 15.3
+  },
+  "min": {
+    "listMs": 60.5,
+    "statSyncMs": 18,
+    "statAsyncMs": 13.1
+  }
+}

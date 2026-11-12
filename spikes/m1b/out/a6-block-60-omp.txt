@@ -1,0 +1,47 @@
+--- tool_execution_start tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 5/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 10/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 15/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 20/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 25/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 30/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 35/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 40/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 45/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 50/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 55/60s
+--- tool_execution_update tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+args={"path":"xd://ei_probe","content":"{\"section\": \"block\", \"seconds\": 60}"}
+ei_probe blocking 60/60s
+--- tool_execution_end tool=write id=toolu_01DKyWMJhpcYCreNC5MRd4q8 
+isError=false
+ei_probe section=block toolCallId=toolu_01DKyWMJhpcYCreNC5MRd4q8
+execute args: signal=AbortSignal onUpdate=function ctx=object
+elapsedMs=60067
+## A6 block 60s
+returned after 60067 ms; signal.aborted=false abortedAtMs=null reason=-
+--- event type counts: {"session":1,"advisor_cost_changed":1,"agent_start":1,"turn_start":2,"message_start":4,"message_end":4,"message_update":110,"tool_execution_start":1,"tool_execution_update":12,"tool_execution_end":1,"turn_end":2,"agent_end":1}
+block 60 exit=0 wall=73s

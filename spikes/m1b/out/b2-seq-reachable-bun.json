@@ -1,0 +1,320 @@
+{
+  "runtime": "bun",
+  "mode": "seq",
+  "gc": false,
+  "projects": [
+    "workspace",
+    "tools"
+  ],
+  "totalMs": 48048.2,
+  "maxRssMB": 4380,
+  "per": [
+    {
+      "alias": "workspace",
+      "runtime": "bun",
+      "startedAtUptimeS": 0.1,
+      "configMs": 50.7,
+      "rootNames": 6710,
+      "configErrors": [],
+      "programMs": 3709.1,
+      "programFiles": 7895,
+      "programFilesInNodeModules": 1145,
+      "checkerMs": 1152.2,
+      "ownFiles": 6695,
+      "declPassMs": 49.9,
+      "resolvePassMs": 35813.4,
+      "identifierMs": 35666.6,
+      "importMs": 146.7,
+      "totalMs": 40782,
+      "coldIndexMs": 40724.6,
+      "phases": [
+        {
+          "name": "config",
+          "maxRssMB": 89,
+          "rssMB": 89,
+          "heapMB": 12
+        },
+        {
+          "name": "program",
+          "maxRssMB": 2995,
+          "rssMB": 2995,
+          "heapMB": 2076
+        },
+        {
+          "name": "checker",
+          "maxRssMB": 3887,
+          "rssMB": 3887,
+          "heapMB": 2076
+        },
+        {
+          "name": "declPass",
+          "maxRssMB": 3896,
+          "rssMB": 3896,
+          "heapMB": 2076
+        },
+        {
+          "name": "resolvePass",
+          "maxRssMB": 4380,
+          "rssMB": 2094,
+          "heapMB": 4867
+        }
+      ],
+      "maxRssMB": 4380,
+      "summary": {
+        "files": 6695,
+        "lines": 2232329,
+        "identifiers": 2742712,
+        "skippedDeclNames": 1129593,
+        "uses": {
+          "edge": 802444,
+          "edge-module": 10141,
+          "local:binding": 1038238,
+          "local:member": 67916,
+          "external": 759359,
+          "no-declaration": 45279,
+          "unresolved-name-match": 15050,
+          "unresolved-other": 4285
+        },
+        "edgeKinds": {
+          "CALLS": 303803,
+          "CONSTRUCTS": 20268,
+          "REFERENCES": 478373
+        },
+        "edgeRecordsByKind": {
+          "CALLS": 135705,
+          "CONSTRUCTS": 8423,
+          "REFERENCES": 256615
+        },
+        "recordsStored": 400743,
+        "usesTotal": 2742712,
+        "usesSkippedNonEdge": 1940268,
+        "usesCollapsedDuplicates": 401701,
+        "imports": {
+          "total": 48436,
+          "resolved": 39521,
+          "resolved-external": 11015,
+          "ambient": 8915,
+          "unresolved-import": 0,
+          "external-unresolved": 0
+        },
+        "importSamples": {
+          "unresolved-import": [],
+          "external-unresolved": []
+        },
+        "unresolvedNameSamples": [
+          "packages/agent/src/agent-loop.ts:269 id",
+          "packages/agent/src/agent-loop.ts:269 id",
+          "packages/agent/src/agent-loop.ts:270 code",
+          "packages/agent/src/agent-loop.ts:270 code",
+          "packages/agent/src/agent-loop.ts:270 code",
+          "packages/agent/src/agent-loop.ts:271 message",
+          "packages/agent/src/agent-loop.ts:271 message",
+          "packages/agent/src/agent-loop.ts:271 message",
+          "packages/agent/src/agent-loop.ts:273 id",
+          "packages/agent/src/agent-loop.ts:274 code",
+          "packages/agent/src/agent-loop.ts:274 code",
+          "packages/agent/src/agent-loop.ts:275 message",
+          "packages/agent/src/agent-loop.ts:275 message",
+          "packages/agent/src/agent-loop.ts:296 type",
+          "packages/agent/src/agent-loop.ts:299 button",
+          "packages/agent/src/agent-loop.ts:300 x",
+          "packages/agent/src/agent-loop.ts:301 y",
+          "packages/agent/src/agent-loop.ts:302 keys",
+          "packages/agent/src/agent-loop.ts:308 x",
+          "packages/agent/src/agent-loop.ts:309 y",
+          "packages/agent/src/agent-loop.ts:310 keys",
+          "packages/agent/src/agent-loop.ts:316 path",
+          "packages/agent/src/agent-loop.ts:317 path",
+          "packages/agent/src/agent-loop.ts:321 x",
+          "packages/agent/src/agent-loop.ts:322 y",
+          "packages/agent/src/agent-loop.ts:324 keys",
+          "packages/agent/src/agent-loop.ts:329 keys",
+          "packages/agent/src/agent-loop.ts:329 keys",
+          "packages/agent/src/agent-loop.ts:332 x",
+          "packages/agent/src/agent-loop.ts:332 y"
+        ],
+        "declCounts": {
+          "interface": 9340,
+          "member": 71810,
+          "function": 28836,
+          "class": 1638,
+          "variable": 18704,
+          "type": 3665,
+          "object-member": 21435,
+          "namespace": 70,
+          "enum": 69,
+          "default-export": 21
+        },
+        "declCountsAllScope": {
+          "interface": 9524,
+          "member": 73090,
+          "function": 29026,
+          "class": 1666,
+          "variable": 18748,
+          "type": 3667,
+          "object-member": 21455,
+          "namespace": 89,
+          "enum": 85,
+          "default-export": 37
+        },
+        "nameSetSize": 84715
+      },
+      "rssAfterReleaseMB": 2094
+    },
+    {
+      "alias": "tools",
+      "runtime": "bun",
+      "startedAtUptimeS": 40.9,
+      "configMs": 9.3,
+      "rootNames": 34,
+      "configErrors": [],
+      "programMs": 4002.8,
+      "programFiles": 3283,
+      "programFilesInNodeModules": 494,
+      "checkerMs": 2498.5,
+      "ownFiles": 34,
+      "declPassMs": 212.4,
+      "resolvePassMs": 533.5,
+      "identifierMs": 533.2,
+      "importMs": 0.3,
+      "totalMs": 7265.3,
+      "coldIndexMs": 7247.2,
+      "phases": [
+        {
+          "name": "config",
+          "maxRssMB": 4380,
+          "rssMB": 2094,
+          "heapMB": 4867
+        },
+        {
+          "name": "program",
+          "maxRssMB": 4380,
+          "rssMB": 2212,
+          "heapMB": 4867
+        },
+        {
+          "name": "checker",
+          "maxRssMB": 4380,
+          "rssMB": 2150,
+          "heapMB": 6547
+        },
+        {
+          "name": "declPass",
+          "maxRssMB": 4380,
+          "rssMB": 2107,
+          "heapMB": 6547
+        },
+        {
+          "name": "resolvePass",
+          "maxRssMB": 4380,
+          "rssMB": 2087,
+          "heapMB": 6547
+        }
+      ],
+      "maxRssMB": 4380,
+      "summary": {
+        "files": 34,
+        "lines": 12215,
+        "identifiers": 16264,
+        "skippedDeclNames": 5425,
+        "uses": {
+          "edge": 3169,
+          "edge-module": 1,
+          "local:binding": 7127,
+          "local:member": 336,
+          "external": 5423,
+          "no-declaration": 120,
+          "unresolved-name-match": 61,
+          "unresolved-other": 27
+        },
+        "edgeKinds": {
+          "CALLS": 940,
+          "CONSTRUCTS": 2,
+          "REFERENCES": 2227
+        },
+        "edgeRecordsByKind": {
+          "CALLS": 572,
+          "CONSTRUCTS": 2,
+          "REFERENCES": 1443
+        },
+        "recordsStored": 2017,
+        "usesTotal": 16264,
+        "usesSkippedNonEdge": 13095,
+        "usesCollapsedDuplicates": 1152,
+        "imports": {
+          "total": 104,
+          "resolved": 43,
+          "resolved-external": 24,
+          "ambient": 61,
+          "unresolved-import": 0,
+          "external-unresolved": 0
+        },
+        "importSamples": {
+          "unresolved-import": [],
+          "external-unresolved": []
+        },
+        "unresolvedNameSamples": [
+          "scripts/ci-test-ts.ts:612 CI",
+          "scripts/ci-test-ts.ts:689 NO_COLOR",
+          "scripts/release.ts:340 private",
+          "scripts/release.ts:341 name",
+          "scripts/release.ts:353 name",
+          "scripts/release.ts:353 version",
+          "scripts/run-rs-task.ts:259 Path",
+          "scripts/install-tests/native-version.ts:10 __piNativesBuildVersion",
+          "scripts/session-stats/audit.ts:293 paths",
+          "scripts/session-stats/audit.ts:293 pattern",
+          "scripts/session-stats/audit.ts:295 tasks",
+          "scripts/session-stats/audit.ts:295 tasks",
+          "scripts/session-stats/audit.ts:297 agent",
+          "scripts/session-stats/audit.ts:360 type",
+          "scripts/session-stats/audit.ts:362 title",
+          "scripts/session-stats/audit.ts:363 timestamp",
+          "scripts/session-stats/audit.ts:372 message",
+          "scripts/session-stats/audit.ts:374 timestamp",
+          "scripts/session-stats/audit.ts:374 timestamp",
+          "scripts/session-stats/audit.ts:379 role",
+          "scripts/session-stats/audit.ts:382 content",
+          "scripts/session-stats/audit.ts:387 synthetic",
+          "scripts/session-stats/audit.ts:387 steering",
+          "scripts/session-stats/audit.ts:399 usage",
+          "scripts/session-stats/audit.ts:401 input",
+          "scripts/session-stats/audit.ts:402 output",
+          "scripts/session-stats/audit.ts:403 cacheRead",
+          "scripts/session-stats/audit.ts:404 cacheWrite",
+          "scripts/session-stats/audit.ts:405 cost",
+          "scripts/session-stats/audit.ts:405 total"
+        ],
+        "declCounts": {
+          "function": 378,
+          "interface": 94,
+          "member": 432,
+          "variable": 212,
+          "object-member": 183,
+          "type": 21,
+          "class": 1
+        },
+        "declCountsAllScope": {
+          "function": 21195,
+          "interface": 8292,
+          "member": 65143,
+          "variable": 11705,
+          "object-member": 13855,
+          "class": 1314,
+          "type": 3083,
+          "enum": 83,
+          "namespace": 82,
+          "default-export": 36
+        },
+        "nameSetSize": 73179
+      },
+      "rssAfterReleaseMB": 2087
+    }
+  ],
+  "totals": {
+    "programMs": 7711.9,
+    "checkerMs": 3650.7,
+    "resolvePassMs": 36346.9,
+    "declPassMs": 262.3
+  }
+}

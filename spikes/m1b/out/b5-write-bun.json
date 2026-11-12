@@ -1,0 +1,10 @@
+{
+  "runtime": "bun",
+  "mode": "write",
+  "createMs": 4683.3,
+  "programFiles": 7895,
+  "emitMs": 59.7,
+  "emitDiags": 0,
+  "buildinfoBytes": 2314664,
+  "maxRssMB": 4042
+}

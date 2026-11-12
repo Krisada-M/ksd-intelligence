@@ -1,0 +1,141 @@
+{
+  "runtime": "node",
+  "tsconfig": "packages/tsconfig.workspace.json",
+  "picked": {
+    "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/catalog/src/build.ts",
+    "rel": "packages/catalog/src/build.ts",
+    "fn": "buildModel",
+    "importers": 478,
+    "retType": "Model<TApi>",
+    "async": false,
+    "edits": {
+      "body": 20727,
+      "paramsEnd": 20711,
+      "paramsEmpty": false,
+      "lastParamRest": false,
+      "typeEnd": 20725
+    }
+  },
+  "candidates": [
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/catalog/src/build.ts",
+      "rel": "packages/catalog/src/build.ts",
+      "fn": "buildModel",
+      "importers": 478,
+      "retType": "Model<TApi>",
+      "async": false,
+      "edits": {
+        "body": 20727,
+        "paramsEnd": 20711,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 20725
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/catalog/src/models.ts",
+      "rel": "packages/catalog/src/models.ts",
+      "fn": "getBundledModel",
+      "importers": 407,
+      "retType": "Model<TApi>",
+      "async": false,
+      "edits": {
+        "body": 2364,
+        "paramsEnd": 2348,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 2362
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/tui/src/theme/theme.ts",
+      "rel": "packages/tui/src/theme/theme.ts",
+      "fn": "initTheme",
+      "importers": 392,
+      "retType": "Promise<void>",
+      "async": true,
+      "edits": {
+        "body": 7452,
+        "paramsEnd": 7433,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 7450
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/utils/src/temp.ts",
+      "rel": "packages/utils/src/temp.ts",
+      "fn": "removeWithRetries",
+      "importers": 298,
+      "retType": "Promise<void>",
+      "async": true,
+      "edits": {
+        "body": 2409,
+        "paramsEnd": 2391,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 2407
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/utils/src/type-guards.ts",
+      "rel": "packages/utils/src/type-guards.ts",
+      "fn": "isRecord",
+      "importers": 250,
+      "retType": "value is Record<string, unknown>",
+      "async": false,
+      "edits": {
+        "body": 76,
+        "paramsEnd": 39,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 74
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/ai/src/providers/mock.ts",
+      "rel": "packages/ai/src/providers/mock.ts",
+      "fn": "createMockModel",
+      "importers": 223,
+      "retType": "MockModel",
+      "async": false,
+      "edits": {
+        "body": 8651,
+        "paramsEnd": 8637,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 8649
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/utils/src/fs-error.ts",
+      "rel": "packages/utils/src/fs-error.ts",
+      "fn": "isEnoent",
+      "importers": 167,
+      "retType": "err is FsError",
+      "async": false,
+      "edits": {
+        "body": 681,
+        "paramsEnd": 662,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 679
+      }
+    },
+    {
+      "file": "/private/var/folders/tj/skmpx5kj42x6jc2zsrkb3fgw0000gn/T/m1b/omp-src/packages/tui/src/native/describe.ts",
+      "rel": "packages/tui/src/native/describe.ts",
+      "fn": "node",
+      "importers": 153,
+      "retType": "NativeNode",
+      "async": false,
+      "edits": {
+        "body": 629,
+        "paramsEnd": 614,
+        "paramsEmpty": false,
+        "lastParamRest": false,
+        "typeEnd": 627
+      }
+    }
+  ]
+}

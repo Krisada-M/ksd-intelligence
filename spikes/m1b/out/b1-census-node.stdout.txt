@@ -1,0 +1,61 @@
+{
+ "visibleFiles": 10502,
+ "listMs": 189,
+ "tsJsNonDts": {
+  "files": 6851,
+  "lines": 2266431
+ },
+ "dts": {
+  "files": 18,
+  "lines": 5031
+ },
+ "tsOnly": {
+  "files": 6829,
+  "lines": 2252529
+ },
+ "jsOnly": {
+  "files": 22,
+  "lines": 13902
+ },
+ "tsconfigFiles": 42,
+ "reachable": [
+  "packages/tsconfig.workspace.json:6710",
+  "tsconfig.tools.json:34"
+ ],
+ "rootParsedFileNames": 6843,
+ "referencesUsedIn": [
+  "tsconfig.json"
+ ],
+ "pathsUsedIn": [],
+ "effectivePathsAnywhere": false,
+ "coverage": {
+  "rootNamesUnion": 6743,
+  "visibleTsJsNonDtsNotCovered": 122,
+  "byExt": {
+   "ts": 79,
+   "js": 22,
+   "tsx": 21
+  },
+  "tsNotCovered": 100,
+  "tsNotCoveredByDir": {
+   ".omp/skills/tool-prompt-optimization": 2,
+   ".omp/tests": 1,
+   ".omp/tools": 1,
+   "crates/pi-natives/tools": 9,
+   "crates/pi-predict/scripts": 1,
+   "docs/skills/examples": 3,
+   "packages/browser-relay/extension": 4,
+   "packages/coding-agent/examples": 34,
+   "packages/metaharness/adapters": 6,
+   "packages/snapcompact/research": 2,
+   "packages/stats": 1,
+   "packages/tui/examples": 2,
+   "python/robomp/web": 34
+  }
+ },
+ "perPackage": {
+  "n": 16,
+  "sum": 6451,
+  "union": 6451
+ }
+}
