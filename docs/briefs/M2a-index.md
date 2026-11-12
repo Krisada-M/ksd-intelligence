@@ -73,6 +73,13 @@ Build `tests/fixtures/mono` exactly as described in `tests/golden/M2-impact-case
 
 Starts only after part 1 is accepted. Runs inside the child process.
 
+### 2.0 Carried over from the part 1 review (D49)
+
+- **Secret rule:** implement the two classes in `docs/RISK.md` §6. Name patterns never exclude code kinds. Test: a `.ts` file under `secrets/` and one named `*credentials*.ts` are indexable; `secrets/x.json` and `.env.local` are excluded and never read. Add one mutation (remove the kind check) that the test must catch.
+- **Publish:** keep copy-then-rename for all publishes. Do not add in-place updates. Report database size and one-file update time (2.6).
+- **`ei_status` text:** replace the home directory prefix with `~` in every path line; keep absolute paths in `details`.
+- **tsconfig ownership:** add a fixture-copy test where `include` is inherited through `extends`, and one for a project reference; the owning tsconfig must be the one whose effective `include`/`files` covers the file.
+
 ### 2.1 Program (D43, D45)
 
 - One program for the index scope from the root configuration, following project references. Compiler options as configured **except** `verbatimModuleSyntax: false`, `isolatedModules: false`, `noEmit: true`; never pass `ignoreSourceFile`. If packages have conflicting options that make one program impossible, fall back to one program per conflicting project and record it in the scan summary.
