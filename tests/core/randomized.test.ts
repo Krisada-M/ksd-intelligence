@@ -129,13 +129,13 @@ const OPS: Record<string, Op> = {
   },
 };
 
-// Three ways to the same index: the session's chained builder; a 1 MB budget, always exceeded,
-// so every program gives its checker back after each batch; and a new session before every step,
-// which has no builder and relies on this repository's cross-checks alone (D47).
+// Three ways to the same index: one Indexer for every step; a 1 MB budget, always exceeded, so
+// every program gives its checker back after each batch; and a new Indexer before every step, as
+// a new engine process would be, so no state can carry over between updates (D47, D50).
 const RUNS: { seed: number; label: string; memoryBudgetMb?: number; newSession?: boolean }[] = [
   ...SEEDS.map((seed) => ({ seed, label: '' })),
   { seed: SEEDS[0] ?? 1, label: ', 1 MB budget', memoryBudgetMb: 1 },
-  { seed: SEEDS[0] ?? 1, label: ', new session each step', newSession: true },
+  { seed: SEEDS[0] ?? 1, label: ', new Indexer each step', newSession: true },
 ];
 
 describe('seeded randomised incremental == cold (D36)', () => {
@@ -150,17 +150,15 @@ describe('seeded randomised incremental == cold (D36)', () => {
       };
       const history: string[] = [];
       try {
-        const indexer = new Indexer(ts, repo, join(repo, '..', 'cache'), { memoryBudgetMb });
+        let indexer = new Indexer(ts, repo, join(repo, '..', 'cache'), { memoryBudgetMb });
         await indexer.index({ impact: impactOf(repo) });
-        await indexer.settle();
         for (let step = 1; step <= STEPS; step++) {
           const name = pick(Object.keys(OPS));
           const op = OPS[name];
           if (op === undefined) continue;
-          if (newSession === true) await indexer.release();
+          if (newSession === true) indexer = new Indexer(ts, repo, indexer.cacheDir);
           history.push(`${step}. ${name}: ${op(repo, step, pick)}`);
           const report = await indexer.index({ impact: impactOf(repo) });
-          await indexer.settle();
           assert.deepEqual(report.problems, [], `seed ${seed}: verify\n${history.join('\n')}`);
           const diff = difference(
             publishedLines(indexer.cacheDir),

@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, join, relative, sep } from 'node:path';
-import { setImmediate as yieldToEvents } from 'node:timers/promises';
+import { basename, dirname, join } from 'node:path';
 import { isRecord } from '../kernel/guards.js';
 import { scan } from '../workspace/scan.js';
 import { FAILURE_FILE, SCHEMA_VERSION, beginBuild, beginUpdate, discardBuild, openPublished, publishBuild, readFiles, readMeta, readSchemaVersion, transaction, writeFiles, writeMeta, } from '../../storage/sqlite.js';
@@ -119,34 +118,14 @@ function roundPhases(phases) {
     return rounded;
 }
 /**
- * The builders' first semantic pass, one program at a time, yielding between files. A program
- * gives its checker back as soon as its pass ends, so the peak is one checker, as in the cold
- * resolve. Stops only when its session is released.
- */
-async function drainInBackground(groups, cancelled, drained) {
-    for (const group of groups) {
-        while (!cancelled()) {
-            if (group.builder?.getSemanticDiagnosticsOfNextAffectedFile() === undefined)
-                break;
-            await yieldToEvents();
-        }
-        if (cancelled())
-            return false;
-        drained(group);
-    }
-    return true;
-}
-/**
  * The index pipeline of one repository (DESIGN §6.2.1): scan → extract-local → resolve → verify →
- * publish. It keeps the programs of the last build, so the next update chains from them.
+ * publish. It keeps nothing between runs: every update creates its programs from the census.
  */
 export class Indexer {
     ts;
     root;
     cacheDir;
     options;
-    session = null;
-    generation = 0;
     constructor(ts, root, cacheDir, options = {}) {
         this.ts = ts;
         this.root = root;
@@ -155,17 +134,6 @@ export class Indexer {
     }
     get memoryBudgetMb() {
         return this.options.memoryBudgetMb;
-    }
-    /** Waits for background work; true when the builders are ready to chain from. */
-    async settle() {
-        return (await this.session?.drained) ?? false;
-    }
-    /** Cancels background work and releases every retained program before returning. */
-    async release() {
-        const session = this.session;
-        this.session = null;
-        this.generation++;
-        await session?.drained;
     }
     async index(request) {
         const progress = request.onProgress ?? (() => undefined);
@@ -188,12 +156,7 @@ export class Indexer {
         phases.scan = performance.now() - started;
         const drift = published === null ? null : diffCensus(published.files, census.records);
         const coldReason = this.coldReason(request, stamp, published, drift);
-        // Programs of another build (an older publish, another stamp) are of no use: free them.
-        if (this.session !== null && published?.meta.build_id !== this.session.buildId) {
-            this.session = null;
-        }
         if (coldReason !== null || published === null || drift === null) {
-            this.session = null; // free the old programs before building new ones
             return this.cold(census, coldReason ?? 'no published index', stamp, request, phases, progress);
         }
         const contentDrift = drift.added.size + drift.changed.size + drift.deleted.size;
@@ -205,31 +168,12 @@ export class Indexer {
         }
         const programStarted = performance.now();
         progress('program');
-        const prepared = await this.preparePrograms(census.records, drift, published);
+        const programs = this.createPrograms(census.records);
+        const late = this.programLevelChange(programs.groups, drift, published);
         phases.program = performance.now() - programStarted;
-        if (prepared.programs === null || prepared.late !== null) {
-            return this.cold(census, prepared.late ?? 'program change', stamp, request, phases, progress);
-        }
-        return this.update(census, drift, published, stamp, request, phases, progress, {
-            programs: prepared.programs,
-            warm: prepared.builderReady,
-        });
-    }
-    /**
-     * Programs for an update, chained from the session's when it belongs to the published build.
-     * The session is dropped here: the new programs share every unchanged parsed file, and the old
-     * checkers would double the memory of the update.
-     */
-    async preparePrograms(census, drift, published) {
-        const session = this.session;
-        this.session = null;
-        const builderReady = session !== null && (await session.drained);
-        const changedAbs = new Set([...drift.changed, ...drift.added, ...drift.deleted].map((path) => join(this.root, path)));
-        const programs = this.createPrograms(census, session, changedAbs, builderReady);
-        const late = programs === null
-            ? 'a tsconfig without a program owns files'
-            : this.programLevelChange(programs.groups, drift, published, session);
-        return { programs, late, builderReady };
+        if (late !== null)
+            return this.cold(census, late, stamp, request, phases, progress);
+        return this.update(census, drift, published, stamp, request, phases, progress, programs);
     }
     readPublished() {
         const db = openPublished(this.cacheDir);
@@ -266,7 +210,7 @@ export class Indexer {
      * Checks that need the new programs. A changed global file, or a changed file that a program
      * compiles without indexing it (its types reach indexed files untracked), forces a cold build.
      */
-    programLevelChange(groups, drift, published, session) {
+    programLevelChange(groups, drift, published) {
         const wasIndexable = new Set(published.files.filter((file) => file.status === 'indexable').map((file) => file.path));
         const globalBefore = this.globalFiles();
         for (const path of [...drift.changed, ...drift.added, ...drift.deleted]) {
@@ -282,10 +226,8 @@ export class Indexer {
             }
             if (wasIndexable.has(path) || drift.added.has(path) || !CODE_OR_JSON.test(path))
                 continue;
-            // Without the old programs a deleted file's membership is unknown: assume it was compiled.
-            const wasCompiled = session === null
-                ? drift.deleted.has(path)
-                : session.groups.some((g) => g.program.getSourceFile(abs) !== undefined);
+            // No previous programs: a deleted file's membership is unknown, so assume it was compiled.
+            const wasCompiled = drift.deleted.has(path);
             if (sf !== undefined || wasCompiled)
                 return `non-indexed program file changed: ${path}`;
         }
@@ -306,68 +248,28 @@ export class Indexer {
             db.close();
         }
     }
-    /**
-     * Programs for the census. With a session: its groups again, each chained from its old program
-     * and builder so unchanged files are not parsed again. Null when an owning tsconfig has no group.
-     */
-    createPrograms(census, session, changedAbs, builderReady = false) {
+    /** Programs for the census, one per set of compatible tsconfigs. */
+    createPrograms(census) {
         const owners = new Map();
-        const versions = new Map();
         for (const record of census) {
-            if (record.hash !== null)
-                versions.set(join(this.root, record.path), record.hash);
             if (record.status !== 'indexable' || record.tsconfig === null)
                 continue;
             const list = owners.get(record.tsconfig) ?? [];
             list.push(record.path);
             owners.set(record.tsconfig, list);
         }
-        let plans;
-        let errors = [];
-        if (session === null) {
-            const grouping = groupPrograms(this.ts, this.root, owners);
-            errors = grouping.errors;
-            plans = grouping.groups.map((group) => ({ group, previous: null }));
-        }
-        else {
-            const known = new Set(session.groups.flatMap((group) => group.configs));
-            for (const config of owners.keys())
-                if (!known.has(config))
-                    return null;
-            plans = session.groups.map((previous) => ({
-                previous,
-                group: {
-                    configs: previous.configs,
-                    options: previous.options,
-                    rootNames: previous.configs
-                        .flatMap((config) => owners.get(config) ?? [])
-                        .map((path) => join(this.root, path))
-                        .sort(),
-                },
-            }));
-        }
-        const groups = plans.map(({ group, previous }) => {
-            const host = createAnalysisHost(this.ts, group.options, versions, changedAbs, previous?.program);
-            const program = this.ts.createProgram({
-                rootNames: group.rootNames,
-                options: group.options,
-                host,
-                oldProgram: previous?.program,
-            });
-            // Chained from a drained builder it reports the affected set (D43).
-            const builder = builderReady && previous?.builder !== undefined
-                ? this.ts.createSemanticDiagnosticsBuilderProgram(program, host, previous.builder)
-                : undefined;
-            return { ...group, program, builder };
-        });
-        return { groups, errors };
-    }
-    repoPath(fileName) {
-        const rel = relative(this.root, fileName);
-        const posixRel = sep === '/' ? rel : rel.split(sep).join('/');
-        if (posixRel.startsWith('..') || isAbsolute(posixRel))
-            return null;
-        return posixRel.includes('node_modules/') ? null : posixRel;
+        const { groups, errors } = groupPrograms(this.ts, this.root, owners);
+        return {
+            groups: groups.map((group) => ({
+                ...group,
+                program: this.ts.createProgram({
+                    rootNames: group.rootNames,
+                    options: group.options,
+                    host: createAnalysisHost(this.ts, group.options, undefined),
+                }),
+            })),
+            errors,
+        };
     }
     workspacePackages(census) {
         const names = new Set();
@@ -426,14 +328,9 @@ export class Indexer {
         const budget = this.options.memoryBudgetMb;
         return budget !== undefined && process.memoryUsage().rss / 2 ** 20 > budget * fraction;
     }
-    /**
-     * Swaps a group's program for one sharing every parsed file but no checker: what a later update
-     * needs to reuse unchanged files, at a fraction of the memory. A drained builder keeps its
-     * signatures and references without the program, and the next update chains from it.
-     */
+    /** Swaps a group's program for one sharing every parsed file but no checker, to free memory. */
     lighten(group) {
-        group.builder?.releaseProgram?.();
-        const host = createAnalysisHost(this.ts, group.options, new Map(), new Set(), group.program);
+        const host = createAnalysisHost(this.ts, group.options, group.program);
         group.program = this.ts.createProgram({
             rootNames: group.rootNames,
             options: group.options,
@@ -444,9 +341,7 @@ export class Indexer {
     cold(census, reason, stamp, request, phases, progress) {
         let started = performance.now();
         progress('program');
-        const programs = this.createPrograms(census.records, null, new Set());
-        if (programs === null)
-            throw new Error('cold build: tsconfig grouping returned no programs');
+        const programs = this.createPrograms(census.records);
         phases.program += performance.now() - started;
         const indexable = census.records.filter((r) => r.status === 'indexable').map((r) => r.path);
         const declarationNames = new Set();
@@ -505,8 +400,6 @@ export class Indexer {
                 reason,
                 drift: { added: 0, changed: 0, deleted: 0 },
                 resolvedFiles: indexable.length,
-                builderAffected: null,
-                supplemented: 0,
                 programs: programs.groups.length,
             });
         }
@@ -515,40 +408,18 @@ export class Indexer {
             throw error;
         }
     }
-    update(census, drift, published, stamp, request, phases, progress, created) {
+    update(census, drift, published, stamp, request, phases, progress, programs) {
         const indexableNow = new Set(census.records.filter((r) => r.status === 'indexable').map((r) => r.path));
         const changed = [...drift.changed, ...drift.added].filter((path) => indexableNow.has(path));
         const removed = published.files
             .filter((file) => file.status === 'indexable' && !indexableNow.has(file.path))
             .map((file) => file.path);
-        // TypeScript's affected set: only from builders chained to this session's drained ones.
-        let started = performance.now();
-        let builderAffected = null;
-        if (created?.warm === true) {
-            builderAffected = new Set();
-            for (const group of created.programs.groups) {
-                for (;;) {
-                    const next = group.builder?.getSemanticDiagnosticsOfNextAffectedFile();
-                    if (next === undefined)
-                        break;
-                    const affected = next.affected;
-                    const files = 'fileName' in affected ? [affected] : affected.getSourceFiles();
-                    for (const sf of files) {
-                        const path = this.repoPath(sf.fileName);
-                        if (path !== null && indexableNow.has(path))
-                            builderAffected.add(path);
-                    }
-                }
-            }
-        }
-        phases.program += performance.now() - started;
         const db = beginUpdate(this.cacheDir);
         if (db === null) {
-            this.session = null;
             return this.cold(census, 'published index unreadable', stamp, request, phases, progress);
         }
         try {
-            started = performance.now();
+            let started = performance.now();
             progress('extract', { files: changed.length });
             const before = tableCounts(db);
             const oldIndex = readFileIndex(db);
@@ -565,9 +436,7 @@ export class Indexer {
                 declarationNames,
                 workspacePackages: this.workspacePackages(census.records),
             };
-            const sourceOf = created === null
-                ? () => undefined
-                : this.sources(created.programs.groups, census.records, scope);
+            const sourceOf = programs === null ? () => undefined : this.sources(programs.groups, census.records, scope);
             const newKeys = new Map();
             for (const path of changed) {
                 const source = sourceOf(path);
@@ -593,11 +462,9 @@ export class Indexer {
             names.delete('<module>');
             const entering = [...declarationNames].filter((name) => !oldNames.has(name));
             phases.extract = performance.now() - started;
-            // Affected set: changed files, the builder's set, and this repository's cross-checks.
+            // Affected set: changed files and this repository's cross-checks (no builder state, D47).
             started = performance.now();
             const pending = new Set(changed);
-            for (const path of builderAffected ?? [])
-                pending.add(path);
             if (drift.added.size + drift.deleted.size > 0) {
                 // A new or removed file can change how imports resolve.
                 for (const path of filesWithUnresolvedImports(db))
@@ -620,14 +487,13 @@ export class Indexer {
             }
             progress('resolve', { files: pending.size });
             const resolved = new Map();
-            const viaSurface = new Set();
             // A file's surface counts as changed when its text-derived surface differs, or when one of
-            // its inferred-type declarations uses a file whose surface changed: an inferred type can
-            // change with no edit to the file itself, and its dependents then see a different type
-            // (D47: no builder state to say so).
+            // its observable declarations (types written or inferred) has an edge into a file whose
+            // surface changed: an overload, a conditional or an inferred type can then resolve to
+            // something else with no edit to the file itself, and its dependents see a different type.
             const changedSurface = new Set();
-            const inferredKeysOf = new Map();
-            const isInferredSource = (keys, source) => {
+            const observableKeysOf = new Map();
+            const isObservableSource = (keys, source) => {
                 if (keys.has(source))
                     return true;
                 for (let dot = source.indexOf('.', source.indexOf('#')); dot !== -1;) {
@@ -638,12 +504,12 @@ export class Indexer {
                 return false;
             };
             const leaks = (path) => {
-                const keys = inferredKeysOf.get(path);
+                const keys = observableKeysOf.get(path);
                 const rows = resolved.get(path);
                 if (keys === undefined || rows === undefined)
                     return false;
                 return rows.edges.some((edge) => changedSurface.has(edge.target.slice(0, edge.target.indexOf('#'))) &&
-                    isInferredSource(keys, edge.source));
+                    isObservableSource(keys, edge.source));
             };
             let next = [];
             const markChanged = (start) => {
@@ -658,7 +524,6 @@ export class Indexer {
                                 stack.push(dependent);
                         }
                         else if (!pending.has(dependent)) {
-                            viaSurface.add(dependent);
                             next.push(dependent);
                         }
                     }
@@ -683,7 +548,7 @@ export class Indexer {
                         resolved.set(path, rowsOf(path, source?.sf, source?.resolver.declarationsOf(source.sf), resolution));
                         if (resolution === undefined)
                             continue;
-                        inferredKeysOf.set(path, resolution.inferredKeys);
+                        observableKeysOf.set(path, resolution.observableKeys);
                         if (oldIndex.get(path)?.surface !== resolution.surface || leaks(path)) {
                             markChanged(path);
                         }
@@ -693,10 +558,6 @@ export class Indexer {
                 }
                 round = next;
             }
-            // affected-set-supplemented: dependents of a changed surface the builder did not report.
-            const supplemented = builderAffected === null
-                ? 0
-                : [...viaSurface].filter((path) => !builderAffected.has(path)).length;
             const expected = emptyCounts();
             transaction(db, () => {
                 db.exec('DELETE FROM files');
@@ -711,10 +572,7 @@ export class Indexer {
                 deleteOrphanSymbols(db);
             });
             phases.resolve = performance.now() - started;
-            const total = Number(published.meta.supplemented_total ?? 0) + supplemented;
-            writeMeta(db, { supplemented_total: String(total) });
-            const groups = created?.programs ?? null;
-            return this.finish(db, census, expected, stamp, request, phases, progress, groups, {
+            return this.finish(db, census, expected, stamp, request, phases, progress, programs, {
                 action: 'update',
                 reason: `${changed.length} changed · ${removed.length} removed · ${resolved.size} resolved`,
                 drift: {
@@ -723,10 +581,8 @@ export class Indexer {
                     deleted: drift.deleted.size,
                 },
                 resolvedFiles: resolved.size,
-                builderAffected: builderAffected?.size ?? null,
-                supplemented,
-                programs: groups?.groups.length ?? Number(published.meta.programs ?? 0),
-            }, created?.warm === true);
+                programs: programs?.groups.length ?? Number(published.meta.programs ?? 0),
+            });
         }
         catch (error) {
             discardBuild(db, this.cacheDir);
@@ -735,9 +591,9 @@ export class Indexer {
     }
     /**
      * VERIFY, then PUBLISH; on failure the previous index stays and the report lists why.
-     * `programs` null: the census alone changed and the session's programs stay current.
+     * `programs` null: the census alone changed (sizes or times), not any file's content.
      */
-    finish(db, census, produced, stamp, request, phases, progress, programs, outcome, drained = false) {
+    finish(db, census, produced, stamp, request, phases, progress, programs, outcome) {
         progress('verify');
         let started = performance.now();
         const verify = this.options.verify ?? verifyIndex;
@@ -780,8 +636,6 @@ export class Indexer {
             programs: String(outcome.programs),
             ...(programs === null ? {} : { program_split: JSON.stringify(splitBy(programs.groups)) }),
             resolved_last: String(outcome.resolvedFiles),
-            builder_affected_last: outcome.builderAffected === null ? '' : String(outcome.builderAffected),
-            supplemented_last: String(outcome.supplemented),
             phases: JSON.stringify(roundPhases(phases)),
             // Peak of the engine process so far. maxRSS is in kilobytes (libuv converts macOS's bytes);
             // shortcut: Bun's unit on macOS is not verified, check it in the macOS run.
@@ -791,31 +645,7 @@ export class Indexer {
         if (programs !== null)
             rmSync(join(this.cacheDir, FAILURE_FILE), { force: true });
         phases.publish = performance.now() - started;
-        if (programs !== null)
-            this.keepSession(programs.groups, buildId, drained);
-        else if (this.session !== null)
-            this.session.buildId = buildId;
         return { ...outcome, census: census.summary, counts, problems, phases: roundPhases(phases) };
-    }
-    /**
-     * Keeps what the next update chains from: each group's parsed files and a drained builder.
-     * After an update that chained, the builders are current. After a cold build or a new session's
-     * update, new builders run their first semantic pass in the background.
-     */
-    keepSession(groups, buildId, drained) {
-        if (drained && groups.every((group) => group.builder !== undefined)) {
-            for (const group of groups)
-                this.lighten(group); // a published build needs no checker
-            this.session = { buildId, groups, drained: Promise.resolve(true) };
-            return;
-        }
-        for (const group of groups) {
-            const host = createAnalysisHost(this.ts, group.options, new Map(), new Set(), group.program);
-            group.builder = this.ts.createSemanticDiagnosticsBuilderProgram(group.program, host);
-        }
-        const generation = ++this.generation;
-        const drainedFully = drainInBackground(groups, () => generation !== this.generation, (group) => this.lighten(group));
-        this.session = { buildId, groups, drained: drainedFully };
     }
     unchanged(census, phases) {
         return {
@@ -824,9 +654,7 @@ export class Indexer {
             census: census.summary,
             drift: { added: 0, changed: 0, deleted: 0 },
             resolvedFiles: 0,
-            builderAffected: null,
-            supplemented: 0,
-            programs: this.session?.groups.length ?? 0,
+            programs: 0,
             counts: emptyCounts(),
             problems: [],
             phases: roundPhases(phases),

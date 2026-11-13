@@ -9,16 +9,11 @@ import type { FileDeclarations, Ts } from './declarations.js';
 export interface Surface {
   hash: string;
   /**
-   * Keys of the observable declarations whose type is inferred, not written. Such a declaration
-   * can change meaning when a file it uses changes, with no change to this file's text; its
-   * members' keys extend the declaration's key with `.`.
+   * Keys of the observable declarations. What one of them states can change when a file it uses
+   * changes, with no change to this file's text (an inferred type, an overload or conditional
+   * over an imported type); its members' keys extend the declaration's key with `.`.
    */
-  inferredKeys: ReadonlySet<string>;
-}
-
-interface Piece {
-  text: string;
-  inferred: boolean;
+  observableKeys: ReadonlySet<string>;
 }
 
 const IDENTIFIER = /[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*/gu;
@@ -40,36 +35,23 @@ export function surfaceOf(ts: Ts, sf: TS.SourceFile, declarations: FileDeclarati
   const text = sf.text;
   const script = SCRIPT_FILE.test(sf.fileName);
   const begin = (node: TS.Node): number => (script ? node.getFullStart() : node.getStart(sf));
-  const whole = (node: TS.Node, inferred: boolean): Piece => ({
-    text: text.slice(begin(node), node.end),
-    inferred,
-  });
+  const whole = (node: TS.Node): string => text.slice(begin(node), node.end);
 
-  const functionPiece = (node: TS.SignatureDeclaration, from: number): Piece => {
+  const functionPiece = (node: TS.SignatureDeclaration, from: number): string => {
     const hasWrittenResult =
       ts.isConstructorDeclaration(node) ||
       ts.isSetAccessorDeclaration(node) ||
       node.type !== undefined;
     const written =
       !script && hasWrittenResult && node.parameters.every((p) => p.type !== undefined);
-    if (!written) return { text: text.slice(from, node.end), inferred: true };
+    if (!written) return text.slice(from, node.end);
     const body = 'body' in node ? node.body : undefined;
-    return {
-      text: text.slice(from, body === undefined ? node.end : body.getStart(sf)),
-      inferred: false,
-    };
+    return text.slice(from, body === undefined ? node.end : body.getStart(sf));
   };
 
-  const piece = (node: TS.Node): Piece => {
+  const piece = (node: TS.Node): string => {
     if (ts.isClassLike(node)) {
-      const parts = [text.slice(begin(node), node.members.pos)];
-      let inferred = false;
-      for (const member of node.members) {
-        const memberPiece = piece(member);
-        parts.push(memberPiece.text);
-        inferred ||= memberPiece.inferred;
-      }
-      return { text: parts.join('\n'), inferred };
+      return [text.slice(begin(node), node.members.pos), ...node.members.map(piece)].join('\n');
     }
     if (ts.isFunctionLike(node)) return functionPiece(node, begin(node));
     if (ts.isVariableDeclaration(node)) {
@@ -78,23 +60,20 @@ export function surfaceOf(ts: Ts, sf: TS.SourceFile, declarations: FileDeclarati
       const from = begin(node);
       const init = node.initializer;
       if (!script && node.type !== undefined) {
-        return { text: `${flags}:${text.slice(from, node.type.end)}`, inferred: false };
+        return `${flags}:${text.slice(from, node.type.end)}`;
       }
       if (
         !script &&
         init !== undefined &&
         (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
       ) {
-        const fn = functionPiece(init, from);
-        return { text: `${flags}:${fn.text}`, inferred: fn.inferred };
+        return `${flags}:${functionPiece(init, from)}`;
       }
-      return { text: `${flags}:${text.slice(from, node.end)}`, inferred: true };
+      return `${flags}:${text.slice(from, node.end)}`;
     }
     if (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node) || ts.isParameter(node)) {
-      if (!script && node.type !== undefined) {
-        return { text: text.slice(begin(node), node.type.end), inferred: false };
-      }
-      return whole(node, true);
+      if (!script && node.type !== undefined) return text.slice(begin(node), node.type.end);
+      return whole(node);
     }
     if (ts.isBindingElement(node)) {
       // A destructured name takes its type from the declaration's type or initializer.
@@ -108,14 +87,7 @@ export function surfaceOf(ts: Ts, sf: TS.SourceFile, declarations: FileDeclarati
       }
       return piece(owner);
     }
-    if (
-      ts.isInterfaceDeclaration(node) ||
-      ts.isTypeAliasDeclaration(node) ||
-      ts.isEnumDeclaration(node)
-    ) {
-      return whole(node, false);
-    }
-    return whole(node, true);
+    return whole(node);
   };
 
   const lines = new Set<string>();
@@ -143,12 +115,9 @@ export function surfaceOf(ts: Ts, sf: TS.SourceFile, declarations: FileDeclarati
 
   const names = new Set<string>();
   const observable = new Set<string>();
-  const inferredKeys = new Set<string>();
   const observe = (key: string, nodes: readonly TS.Node[]): void => {
     observable.add(key);
-    const pieces = nodes.map(piece);
-    const joined = pieces.map((p) => p.text).join('\n');
-    if (pieces.some((p) => p.inferred)) inferredKeys.add(key);
+    const joined = nodes.map(piece).join('\n');
     lines.add(`src\t${key}\t${shortHash(joined, 16)}`);
     for (const match of joined.matchAll(IDENTIFIER)) names.add(match[0]);
   };
@@ -192,5 +161,5 @@ export function surfaceOf(ts: Ts, sf: TS.SourceFile, declarations: FileDeclarati
     }
   }
 
-  return { hash: shortHash([...lines].sort().join('\n'), 32), inferredKeys };
+  return { hash: shortHash([...lines].sort().join('\n'), 32), observableKeys: observable };
 }

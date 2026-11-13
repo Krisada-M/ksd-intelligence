@@ -23,9 +23,15 @@ describe('differential test against TypeScript find-references (D36)', () => {
       try {
         const report = differential(ts, repo, db, { size: 0 });
         assert.deepEqual(report.misses, []);
-        assert.ok(report.declarations >= 30, `sampled ${report.declarations} declarations`);
-        assert.ok(report.covered >= 25, `checked ${report.covered} references`);
+        assert.equal(report.declarations, 31);
+        assert.equal(report.references, 48);
+        assert.deepEqual(report.coveredBy, { edge: 48, exportStatus: 0, recordOnly: 0 });
         assert.equal(report.covered, report.references);
+        // Exact, so a reference that moves into a skip reason cannot pass unnoticed.
+        assert.deepEqual(report.skipped, {
+          definition: 33,
+          'declaration name of a related symbol': 6,
+        });
       } finally {
         db.close();
       }
@@ -52,6 +58,15 @@ describe('differential test against TypeScript find-references (D36)', () => {
           report.misses.map((miss) => `${miss.file}:${miss.line} ${miss.declaration}`),
           ['packages/api/src/charge.ts:8 packages/payments/src/fee.ts#calculateFee'],
         );
+        // A gap site on that line accounts for the reference, but only as a record, not an edge.
+        const writable = new DatabaseSync(indexPath(indexer.cacheDir));
+        writable
+          .prepare('INSERT INTO gap_sites VALUES (?, ?, ?, ?, ?)')
+          .run('packages/api/src/charge.ts', 8, 'test', '', 'packages/api/src/charge.ts#<module>');
+        writable.close();
+        const recorded = differential(ts, repo, db, { size: 0 });
+        assert.deepEqual(recorded.misses, []);
+        assert.deepEqual(recorded.coveredBy, { ...report.coveredBy, recordOnly: 1 });
       } finally {
         db.close();
       }
@@ -74,7 +89,7 @@ describe('differential test against TypeScript find-references (D36)', () => {
       try {
         const report = differential(ts, repo, db, { size: 0 });
         assert.deepEqual(report.misses, []);
-        assert.ok(report.docOnly >= 2, `doc-only references: ${report.docOnly}`);
+        assert.equal(report.docOnly, 2);
         assert.equal(report.covered, report.references, 'no doc reference counts as checked');
       } finally {
         db.close();
@@ -100,6 +115,7 @@ describe('differential test against TypeScript find-references (D36)', () => {
           'export function kindIcons(): Record<1 | 2, string> {',
           '  return { 1: "x", 2: "y" };',
           '}',
+          'export const first = kindNames[1];',
           '',
         ].join('\n'),
       );
@@ -110,15 +126,61 @@ describe('differential test against TypeScript find-references (D36)', () => {
       try {
         const report = differential(ts, repo, db, { size: 0 });
         assert.deepEqual(report.misses, []);
-        assert.ok(
-          (report.skipped['use of the value a shorthand property names'] ?? 0) >= 1,
-          JSON.stringify(report.skipped),
-        );
-        assert.ok(
-          (report.skipped['key of an object literal typed by a mapped type (no declaration)'] ??
-            0) >= 1,
-          JSON.stringify(report.skipped),
-        );
+        assert.deepEqual(report.skipped, {
+          definition: 43,
+          'declaration name of a related symbol': 9,
+          'use of the value a shorthand property names': 13,
+          'key of an object literal typed by a mapped type (no declaration)': 2,
+          // `kindNames[1]`: the `Record` property it reads has no declaration.
+          'use of a property of a mapped type (no declaration)': 1,
+        });
+        assert.deepEqual(report.coveredBy, { edge: 52, exportStatus: 0, recordOnly: 0 });
+      } finally {
+        db.close();
+      }
+    } finally {
+      await rm(dirname(repo), { recursive: true, force: true });
+    }
+  });
+
+  it('a member of an anonymous type is skipped by kind; a quoted property name is matched', async () => {
+    const repo = await fixtureRepo('differential-kinds');
+    try {
+      await appendFile(
+        join(repo, 'packages/api/src/charge.ts'),
+        [
+          '',
+          'export interface Rate {',
+          '  cost: { input: number };',
+          '}',
+          'export const RATE: Rate = { cost: { input: 1 } };',
+          'export function inputOf(rate: Rate): number {',
+          '  return rate.cost.input;',
+          '}',
+          'export interface Glyphs {',
+          "  'tab.shell': string;",
+          '}',
+          "export const ASCII: Glyphs = { 'tab.shell': '>' };",
+          "export const FANCY: Glyphs = { 'tab.shell': '»' };",
+          "export const shell = ASCII['tab.shell'];",
+          '',
+        ].join('\n'),
+      );
+      const indexer = new Indexer(ts, repo, join(repo, '..', 'cache'));
+      await indexer.index({ impact: impactOf(repo) });
+      const db = openPublished(indexer.cacheDir);
+      assert.ok(db);
+      try {
+        const report = differential(ts, repo, db, { size: 0 });
+        assert.deepEqual(report.misses, []);
+        // `Rate.cost.input` is a member of an anonymous type: not indexed (ADR 0003). The quoted
+        // `'tab.shell'` members are indexed: their references are checked, their names skipped.
+        assert.deepEqual(report.skipped, {
+          definition: 46,
+          'declaration name of a related symbol': 14,
+          'target is not an indexed declaration: property': 2,
+        });
+        assert.deepEqual(report.coveredBy, { edge: 58, exportStatus: 0, recordOnly: 0 });
       } finally {
         db.close();
       }
@@ -135,7 +197,6 @@ describe('ei doctor --deep', () => {
       const indexer = new Indexer(ts, repo, join(repo, '..', 'cache'));
       const impact = impactOf(repo);
       await indexer.index({ impact });
-      await indexer.settle();
       await appendFile(
         join(repo, 'packages/api/src/charge.ts'),
         '\nexport const again = (): number => calculateFee(5);\n',
@@ -143,7 +204,6 @@ describe('ei doctor --deep', () => {
       await indexer.index({ impact });
       await writeFile(join(repo, 'packages/payments/src/index.ts'), "export * from './fee';\n");
       await indexer.index({ impact });
-      await indexer.settle();
       const report = await doctorDeep(ts, indexer, impact, { differential: -1 });
       assert.deepEqual(report.differences, { count: 0, onlyActive: [], onlyCold: [] });
       assert.deepEqual(report.differential?.misses, []);
@@ -162,7 +222,6 @@ describe('ei doctor --deep', () => {
     try {
       const impact = impactOf(repo);
       await indexer.index({ impact });
-      await indexer.settle();
       await appendFile(join(repo, 'packages/api/src/charge.ts'), '\n// changed bytes\n');
       reject = true;
       await assert.rejects(
@@ -170,7 +229,6 @@ describe('ei doctor --deep', () => {
         /doctor: active index verification failed/,
       );
     } finally {
-      await indexer.release();
       await rm(dirname(repo), { recursive: true, force: true });
     }
   });
@@ -184,7 +242,6 @@ describe('per-file use counters are statistics (ADR 0003)', () => {
       const indexer = new Indexer(ts, repo, cacheDir);
       const impact = impactOf(repo);
       await indexer.index({ impact });
-      await indexer.release();
       const answers = (): string => {
         const graph = Graph.open(cacheDir);
         assert.ok(graph);

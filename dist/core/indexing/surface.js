@@ -16,33 +16,20 @@ export function surfaceOf(ts, sf, declarations) {
     const text = sf.text;
     const script = SCRIPT_FILE.test(sf.fileName);
     const begin = (node) => (script ? node.getFullStart() : node.getStart(sf));
-    const whole = (node, inferred) => ({
-        text: text.slice(begin(node), node.end),
-        inferred,
-    });
+    const whole = (node) => text.slice(begin(node), node.end);
     const functionPiece = (node, from) => {
         const hasWrittenResult = ts.isConstructorDeclaration(node) ||
             ts.isSetAccessorDeclaration(node) ||
             node.type !== undefined;
         const written = !script && hasWrittenResult && node.parameters.every((p) => p.type !== undefined);
         if (!written)
-            return { text: text.slice(from, node.end), inferred: true };
+            return text.slice(from, node.end);
         const body = 'body' in node ? node.body : undefined;
-        return {
-            text: text.slice(from, body === undefined ? node.end : body.getStart(sf)),
-            inferred: false,
-        };
+        return text.slice(from, body === undefined ? node.end : body.getStart(sf));
     };
     const piece = (node) => {
         if (ts.isClassLike(node)) {
-            const parts = [text.slice(begin(node), node.members.pos)];
-            let inferred = false;
-            for (const member of node.members) {
-                const memberPiece = piece(member);
-                parts.push(memberPiece.text);
-                inferred ||= memberPiece.inferred;
-            }
-            return { text: parts.join('\n'), inferred };
+            return [text.slice(begin(node), node.members.pos), ...node.members.map(piece)].join('\n');
         }
         if (ts.isFunctionLike(node))
             return functionPiece(node, begin(node));
@@ -52,21 +39,19 @@ export function surfaceOf(ts, sf, declarations) {
             const from = begin(node);
             const init = node.initializer;
             if (!script && node.type !== undefined) {
-                return { text: `${flags}:${text.slice(from, node.type.end)}`, inferred: false };
+                return `${flags}:${text.slice(from, node.type.end)}`;
             }
             if (!script &&
                 init !== undefined &&
                 (ts.isArrowFunction(init) || ts.isFunctionExpression(init))) {
-                const fn = functionPiece(init, from);
-                return { text: `${flags}:${fn.text}`, inferred: fn.inferred };
+                return `${flags}:${functionPiece(init, from)}`;
             }
-            return { text: `${flags}:${text.slice(from, node.end)}`, inferred: true };
+            return `${flags}:${text.slice(from, node.end)}`;
         }
         if (ts.isPropertyDeclaration(node) || ts.isPropertySignature(node) || ts.isParameter(node)) {
-            if (!script && node.type !== undefined) {
-                return { text: text.slice(begin(node), node.type.end), inferred: false };
-            }
-            return whole(node, true);
+            if (!script && node.type !== undefined)
+                return text.slice(begin(node), node.type.end);
+            return whole(node);
         }
         if (ts.isBindingElement(node)) {
             // A destructured name takes its type from the declaration's type or initializer.
@@ -78,12 +63,7 @@ export function surfaceOf(ts, sf, declarations) {
             }
             return piece(owner);
         }
-        if (ts.isInterfaceDeclaration(node) ||
-            ts.isTypeAliasDeclaration(node) ||
-            ts.isEnumDeclaration(node)) {
-            return whole(node, false);
-        }
-        return whole(node, true);
+        return whole(node);
     };
     const lines = new Set();
     const meta = new Map(declarations.declarations.map((declaration) => [declaration.key, declaration]));
@@ -107,13 +87,9 @@ export function surfaceOf(ts, sf, declarations) {
     }
     const names = new Set();
     const observable = new Set();
-    const inferredKeys = new Set();
     const observe = (key, nodes) => {
         observable.add(key);
-        const pieces = nodes.map(piece);
-        const joined = pieces.map((p) => p.text).join('\n');
-        if (pieces.some((p) => p.inferred))
-            inferredKeys.add(key);
+        const joined = nodes.map(piece).join('\n');
         lines.add(`src\t${key}\t${shortHash(joined, 16)}`);
         for (const match of joined.matchAll(IDENTIFIER))
             names.add(match[0]);
@@ -161,5 +137,5 @@ export function surfaceOf(ts, sf, declarations) {
             lines.add(`imp\t${shortHash(text.slice(begin(statement), statement.end), 16)}`);
         }
     }
-    return { hash: shortHash([...lines].sort().join('\n'), 32), inferredKeys };
+    return { hash: shortHash([...lines].sort().join('\n'), 32), observableKeys: observable };
 }

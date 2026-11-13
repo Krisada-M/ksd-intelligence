@@ -114,10 +114,7 @@ describe('ei index and ei_status (M2a.1)', () => {
       'Scope       4 packages · tsconfigs 1 (tsconfig.json) · bases 1 · tsconfig problems none',
     );
     assert.equal(lines[7], 'Config      ei.config.json ok');
-    assert.match(
-      lines[3] ?? '',
-      /^Graph {7}\d+ declarations · \d+ edges · programs 1 · affected-set-supplemented 0 \(total 0\)$/,
-    );
+    assert.match(lines[3] ?? '', /^Graph {7}\d+ declarations · \d+ edges · programs 1$/);
     assert.equal(
       lines[4],
       'Problems    0 files failed to parse · 0 not in a program · 0 unresolved imports · 1 unresolved name matches · dependencies installed: yes · incompleteReasons: none',

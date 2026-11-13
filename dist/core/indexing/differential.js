@@ -127,6 +127,7 @@ export function differential(ts, root, db, options) {
         declarations: 0,
         references: 0,
         covered: 0,
+        coveredBy: { edge: 0, exportStatus: 0, recordOnly: 0 },
         skipped: {},
         docOnly: 0,
         misses: [],
@@ -181,7 +182,11 @@ export function differential(ts, root, db, options) {
         };
         const keyAtName = (path, sf, start) => {
             for (const [node, key] of declarationsOf(path, sf).keyOf) {
-                if (nameNode(ts, node)?.getStart(sf) === start)
+                const name = nameNode(ts, node);
+                if (name === undefined)
+                    continue;
+                // TypeScript's span of a quoted name (`"tab.shell": …`) starts inside the quotes.
+                if (name.getStart(sf) + (ts.isStringLiteralLike(name) ? 1 : 0) === start)
                     return key;
             }
             return undefined;
@@ -210,6 +215,10 @@ export function differential(ts, root, db, options) {
             report.declarations++;
             for (const symbol of service.findReferences(sf.fileName, name.getStart(sf)) ?? []) {
                 const target = targetOf(symbol.definition, key);
+                // ADR 0003 explains each kind: parameters, locals, type parameters, members of anonymous
+                // types and library declarations are not indexed declarations.
+                const outside = repoPath(root, symbol.definition.fileName) === null;
+                const unindexed = `target is not an indexed declaration: ${symbol.definition.kind}${outside ? ' (outside the repository)' : ''}`;
                 for (const reference of symbol.references) {
                     if (reference.isDefinition === true) {
                         skip('definition');
@@ -221,7 +230,7 @@ export function differential(ts, root, db, options) {
                         continue;
                     }
                     if (target === undefined) {
-                        skip('target is not an indexed declaration');
+                        skip(unindexed);
                         continue;
                     }
                     const refFile = program.getSourceFile(reference.fileName);
@@ -267,25 +276,35 @@ export function differential(ts, root, db, options) {
                             continue;
                         }
                     }
+                    // The same holds for an access (`map["k"]` on a `Record<"k" | …, V>`): the property it
+                    // uses has no declaration, so ADR 0003 stores no edge, yet TypeScript lists the access
+                    // under each object literal's `"k"`.
+                    const own = program.getTypeChecker().getSymbolAtLocation(node);
+                    if (own !== undefined && (own.declarations ?? []).length === 0) {
+                        skip('use of a property of a mapped type (no declaration)');
+                        continue;
+                    }
                     report.references++;
                     const declarations = declarationsOf(path, refFile);
                     const binding = insideImportOrReexport(ts, node);
-                    let covered;
+                    let by = null;
                     if (binding === 'local-export') {
-                        covered = true; // `export { x }`: an export status, recorded as exported
+                        by = 'exportStatus';
                     }
                     else if (binding !== null) {
                         const statementLine = refFile.getLineAndCharacterOfPosition(binding.getStart(refFile)).line + 1;
-                        covered = hasLine(importLines.all(declarations.moduleKey), statementLine);
+                        if (hasLine(importLines.all(declarations.moduleKey), statementLine))
+                            by = 'edge';
                     }
-                    else {
-                        const source = enclosingKey(node, declarations);
-                        covered =
-                            hasLine(edgeLines.all(source, target), line) ||
-                                recorded.get(path, line, path, line) !== undefined;
+                    else if (hasLine(edgeLines.all(enclosingKey(node, declarations), target), line)) {
+                        by = 'edge';
                     }
-                    if (covered) {
+                    else if (recorded.get(path, line, path, line) !== undefined) {
+                        by = 'recordOnly';
+                    }
+                    if (by !== null) {
                         report.covered++;
+                        report.coveredBy[by]++;
                         continue;
                     }
                     report.misses.push({

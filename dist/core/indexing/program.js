@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 /**
  * Options that only shape emit or diagnostics. They never change which declaration a name
@@ -130,18 +129,12 @@ export function groupPrograms(ts, root, owners) {
 }
 // Default library files never change for one TypeScript install; programs share them.
 const libraryFiles = new Map();
-function versioned(sf, version) {
-    // The builder program requires versions; TypeScript's incremental host sets the same field.
-    const withVersion = sf;
-    withVersion.version = version;
-    return sf;
-}
 /**
- * A compiler host that returns the previous program's source file for every file not in `changed`,
- * so an update parses only what changed. Files outside the census (libraries) are reused as well:
- * a dependency change is a lockfile change, which forces a cold build.
+ * A compiler host that returns the previous program's source file for every file it holds, so a
+ * new program over the same files parses nothing again and has no checker yet. Library files are
+ * shared across programs: a dependency change is a lockfile change, which forces a cold build.
  */
-export function createAnalysisHost(ts, options, versions, changed, previous) {
+export function createAnalysisHost(ts, options, previous) {
     const host = ts.createCompilerHost(options, true);
     const read = host.getSourceFile.bind(host);
     const libraryDir = host.getDefaultLibLocation?.() ?? '';
@@ -149,13 +142,11 @@ export function createAnalysisHost(ts, options, versions, changed, previous) {
     // program, and its checker, alive for as long as the new one.
     const caseKey = (fileName) => ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase();
     const reusable = new Map();
-    for (const sf of previous?.getSourceFiles() ?? []) {
-        if (!changed.has(sf.fileName))
-            reusable.set(caseKey(sf.fileName), sf);
-    }
+    for (const sf of previous?.getSourceFiles() ?? [])
+        reusable.set(caseKey(sf.fileName), sf);
     host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
         const old = reusable.get(caseKey(fileName));
-        if (old !== undefined && !changed.has(fileName))
+        if (old !== undefined)
             return old;
         const isLibrary = libraryDir !== '' && fileName.startsWith(libraryDir);
         const target = typeof languageVersion === 'object' ? languageVersion.languageVersion : languageVersion;
@@ -166,12 +157,9 @@ export function createAnalysisHost(ts, options, versions, changed, previous) {
                 return cached;
         }
         const sf = read(fileName, languageVersion, onError, shouldCreate);
-        if (sf === undefined)
-            return undefined;
-        const version = versions.get(fileName) ?? createHash('sha256').update(sf.text).digest('hex');
-        if (isLibrary)
+        if (sf !== undefined && isLibrary)
             libraryFiles.set(cacheKey, sf);
-        return versioned(sf, version);
+        return sf;
     };
     return host;
 }

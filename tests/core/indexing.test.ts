@@ -200,7 +200,6 @@ describe('freshness at index level (golden F01–F06, freshness "hash")', () => 
     repo = await fixtureRepo('fresh');
     indexer = new Indexer(ts, repo, join(repo, '..', 'cache'));
     assert.equal((await indexer.index({ impact: impactOf(repo) })).action, 'cold');
-    assert.equal(await indexer.settle(), true, 'the builders drain on the fixture');
   });
   after(async () => {
     await rm(dirname(repo), { recursive: true, force: true });
@@ -335,7 +334,6 @@ describe('verify and publish', () => {
     const indexer = new Indexer(ts, repo, cacheDir);
     try {
       await indexer.index({ impact: impactOf(repo) });
-      await indexer.release();
       const before = openPublished(cacheDir);
       assert.ok(before);
       const meta = readMeta(before);
@@ -362,7 +360,6 @@ describe('verify and publish', () => {
       assert.equal(published.built_at, meta.built_at);
       assert.ok(existsSync(failurePath), 'touching files cannot validate the graph');
     } finally {
-      await indexer.release();
       await rm(dirname(repo), { recursive: true, force: true });
     }
   });
