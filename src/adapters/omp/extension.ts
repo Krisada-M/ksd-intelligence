@@ -1,8 +1,9 @@
 /**
- * OMP extension entry: KSD policy module + `ei_workflow` tool in one plugin.
+ * OMP extension entry: KSD policy module + `ei_workflow` and `ei_status` tools in one plugin.
  *
  * STATUS: live-verified pieces — policy module migrated byte-identical from KSD 0.6.0
- * (73fc916) in M1c, ei_workflow verified live in OMP 18.18.8 in M1.
+ * (73fc916) in M1c, ei_workflow verified live in OMP 18.18.8 in M1, ei_status (M2a.1) uses the
+ * `ctx.cwd` documented for tool `execute` in OMP 18.19.0 (omp://extensions.md §2).
  *
  * Registration order is KSD first, then ei_* (docs/DESIGN.md §10.1). A failure in
  * either part must not prevent the other from registering. Kill switches are
@@ -10,6 +11,7 @@
  * disables only policy injection and /engineering-review; EI_DISABLED=1 disables
  * only the ei_* tools.
  */
+import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
@@ -42,7 +44,7 @@ interface ToolResult {
   isError?: boolean;
 }
 
-interface OmpToolDefinition {
+interface OmpToolDefinition<P> {
   name: string;
   label: string;
   description: string;
@@ -50,14 +52,16 @@ interface OmpToolDefinition {
   approval: 'read';
   execute(
     toolCallId: string,
-    params: ToolParams,
+    params: P,
     signal: AbortSignal | undefined,
+    onUpdate?: unknown,
+    ctx?: { cwd?: string },
   ): Promise<ToolResult>;
 }
 
 export interface OmpExtensionApi {
   zod: SchemaBuilder;
-  registerTool(tool: OmpToolDefinition): void;
+  registerTool<P>(tool: OmpToolDefinition<P>): void;
 }
 
 export interface ExtensionDeps {
@@ -81,7 +85,7 @@ function warnLoad(stage: string, error: unknown): void {
 function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPath: string): void {
   const z = pi.zod;
 
-  pi.registerTool({
+  pi.registerTool<ToolParams>({
     name: 'ei_workflow',
     label: 'KSD Skills Workflow',
     description:
@@ -123,6 +127,31 @@ function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPat
   });
 }
 
+function registerEiStatus(pi: OmpExtensionApi, env: NodeJS.ProcessEnv): void {
+  pi.registerTool<Record<string, never>>({
+    name: 'ei_status',
+    label: 'KSD Index Status',
+    description:
+      'Shows whether the code index is ready and how much of the repository it covers. ' +
+      'Call this if an ei_ result looks empty, stale or wrong.',
+    // No input: nothing the agent passes can reach the engine or its environment.
+    parameters: pi.zod.object({}),
+    approval: 'read',
+    async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
+      if (signal?.aborted) return errorResult('Cancelled');
+      try {
+        const status = await workspaceStatus(ctx?.cwd ?? process.cwd(), { env });
+        return { content: [{ type: 'text', text: renderStatus(status) }], details: status };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return errorResult(
+          `index-failed: ${message}. Retry once; if it fails again, continue without ei_status and say so in your report.`,
+        );
+      }
+    },
+  });
+}
+
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(
   pi: OmpExtensionApi,
@@ -144,5 +173,11 @@ export default function ksdIntelligenceExtension(
     registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath());
   } catch (error) {
     warnLoad('ei_workflow tool', error);
+  }
+
+  try {
+    registerEiStatus(pi, env);
+  } catch (error) {
+    warnLoad('ei_status tool', error);
   }
 }
