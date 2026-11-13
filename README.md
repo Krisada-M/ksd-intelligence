@@ -1,6 +1,6 @@
 # ksd-intelligence
 
-Personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). The implemented foundation includes the skill router (`M0`), OMP adapter (`M1`), workspace initialization and the merged KSD policy module. The TypeScript code index and impact engine (`M2a`/`M2b`) are **not yet implemented**. The proposed delivery sequence adds a macOS/Linux CI baseline (`M1d`) before indexing. Current scope and gates: `AGENTS.md`, `docs/DESIGN.md`, `docs/briefs/M1d-platform-baseline.md` and `docs/reviews/2026-11-12-practical-roadmap.md`. The library reads allowlisted skills from local checkouts; upstream skill content is not copied into this repo.
+Personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). The implemented foundation includes the skill router (`M0`), OMP adapter (`M1`), workspace initialization and the merged KSD policy module. The TypeScript code index (`M2a`) is built and queried through the CLI and `ei_status`; the impact tools (`ei_impact`, `M2b`) are **not yet implemented**. A macOS/Linux CI baseline (`M1d`) runs every test. Current scope and gates: `AGENTS.md`, `docs/DESIGN.md`, `docs/briefs/M1d-platform-baseline.md` and `docs/reviews/2026-11-12-practical-roadmap.md`. The library reads allowlisted skills from local checkouts; upstream skill content is not copied into this repo.
 
 The router only reads Markdown. It never executes skill scripts, edits code, merges or deploys: every route result has `mayMerge: false` and `mayDeploy: false`.
 
@@ -72,17 +72,20 @@ node dist/adapters/cli/main.js load  --task 'auth vulnerability' --stage verify 
 - `--type bug|feature|refactor|security|performance|ui`: caller-asserted task type, reported as `classifiedBy: "caller"`. An invalid value is an error. Without it, an English keyword classifier runs (`"keyword"`) and falls back to `feature` (`"default"`). A `"default"` guess is shown in the rendered output; non-English or security-sensitive tasks should pass `--type`.
 - `--stage` defaults to `plan`, `--risk` to `normal`.
 
-Code index (M2a part 1: scan census, no extraction yet):
+Code index (M2a: census, declarations, edges; no agent impact tool yet):
 
 ```bash
 node dist/adapters/cli/main.js setup [--check]     # install the pinned TypeScript into ~/.cache/ksd-intelligence/runtime (network, once); --check only verifies
-node dist/adapters/cli/main.js index [--root <path>]   # scan the repository and publish the census to ~/.cache/ksd-intelligence/<repo-id>/index.sqlite
+node dist/adapters/cli/main.js index [--root <path>] [--full]   # incremental update of ~/.cache/ksd-intelligence/<repo-id>/index.sqlite; --full rebuilds cold
 node dist/adapters/cli/main.js status [--root <path>] [--json]   # same text as the ei_status tool
+node dist/adapters/cli/main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]   # cold rebuild diffed against the index; optional find-references check
 ```
 
 - The repository is the nearest directory with `ei.config.json`, else the git work-tree root. Visible files come from `git ls-files` (tracked + untracked − ignored), else a walk honouring `.gitignore`.
-- Every visible file is classified `indexable`, `orphan` (no tsconfig owns it) or `unindexed` with a reason (`secret`, `excluded`, `outside-index-scope`, `other-kind`, `symlink`). Secret and excluded paths (`docs/RISK.md` §6 plus `impact.exclude`) are listed by path only; their content is never read.
-- `index` runs in a separate engine process (Node >= 22.5 from `PATH`, else OMP's Bun) under the repository's build lock and the `impact.maxMemoryMb` limit.
+- Every visible file is classified `indexable`, `orphan` (no tsconfig owns it) or `unindexed` with a reason (`secret`, `excluded`, `outside-index-scope`, `other-kind`, `symlink`). Secret and excluded paths (`docs/RISK.md` §6 plus `impact.exclude`) are listed by path only; their content is never read. Secret name patterns never exclude code files.
+- `index` runs in a separate engine process (Node >= 22.5 from `PATH`, else OMP's Bun) under the repository's build lock and the `impact.maxMemoryMb` limit. It extracts declarations and edges per `docs/adr/0002-stable-keys.md` and `docs/adr/0003-indexed-declarations.md`, verifies the staging database and publishes it by copy-then-rename; a failed verify keeps the previous index.
+- An update re-resolves the changed files and the affected set. Inside a running engine that set is TypeScript's chained builder program plus this repository's export-surface, import and name cross-checks (`affected-set-supplemented` in the status counts what the cross-checks added). The export-surface hash is syntactic: no checker call, signature text where types are written and body or initializer text where they are inferred (`docs/adr/0003-indexed-declarations.md`). A new process, which every CLI call is, has no builder state and uses the cross-checks alone (D47). The engine child exits after a cold build, so a cold build's memory is not kept; the next request starts a new child from the published index. Both paths are tested to equal a cold build. Measurements: `docs/research/m2a-measurements.md`.
+- `doctor --deep` exits 0 only when the cold rebuild equals the index and, with `--differential`, every reference TypeScript's find-references reports is an edge or a recorded unresolved/gap site.
 
 ## 5. OMP adapter
 

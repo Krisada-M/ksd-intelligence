@@ -28,7 +28,15 @@ A use site becomes an edge when, after following import aliases, it resolves to 
 | Nothing, and its name equals the name of some indexed declaration | an unresolved record for the name cross-check (`unresolved-name-match`) |
 | Nothing, any other name | counted as `unresolved-other` in the scan summary; not stored |
 
-String literals are not uses. They are kept only in the per-file name-token table when they equal the name of an indexed declaration, for the `string-name-match` check.
+String literals are not uses, with one exception: a literal that names a property is a use of that member (`obj['k']`, `T['k']`, and the quoted or numeric key of an object literal typed by context), like the identifier forms. Other string literals are kept only in the per-file name-token table when they equal the name of an indexed declaration, for the `string-name-match` check.
+
+**The differential oracle skips the uses of the value a shorthand property names (2026-11-14).** `findReferences` on the property of `{ x }` also lists the uses of the value `x`, which belong to the declaration of `x`, not to the property. The test skips those, counting them under `skipped`; references to the property itself (`obj.x`) are still checked.
+
+**Documentation is not a dependency (2026-11-13, M2a review).** A reference inside a JSDoc comment (`{@link x}`, `@see x`) is documentation. The index need not hold it and the differential test against `findReferences` filters it out, reporting its count separately as `docOnly`. Where the resolver does record a JSDoc type use (JavaScript `@type`), that is a bonus, not a promise.
+
+**Per-file use counters are statistics.** The counts of uses stored and skipped per category (scan summary, `ei_status`) are reported as approximate: TypeScript infers lazily, so a counter can differ between an incremental update and a cold build by checking order. No query, reach, factor or verdict is derived from them; those come from the `edges` table only, and `ei doctor --deep` does not compare the counters (it lists differing files as information).
+
+**The export-surface hash is syntactic (2026-11-13, M2a review).** It is computed from the file's text alone and calls no checker, so it cannot depend on what the checker saw first. Per observable declaration it hashes the text that states the type: the signature when the types are written, the whole declaration (body or initializer) when a type is inferred. A declaration is observable when it is exported or when the text of an observable declaration names it (transitive, by identifier). Export statements, ambient modules, and imports that an inferred type names are hashed whole; JavaScript files are hashed whole. Over-reporting a change only costs re-resolution; missing one is a defect, so anything unrecognised is hashed whole. A file that holds an inferred type can change meaning when a file it imports changes, with no edit to its own text: during an update, such a file resolved because a dependency's surface changed counts as changed itself, so its dependents are re-resolved too.
 
 ## Edge kinds
 

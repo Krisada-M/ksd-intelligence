@@ -5,7 +5,7 @@ import { isRecord } from '../kernel/guards.js';
 export type Message =
   | { type: 'request'; id: string; op: string; args: unknown }
   | { type: 'progress'; id: string; message: string; data?: unknown }
-  | { type: 'result'; id: string; value: unknown }
+  | { type: 'result'; id: string; value: unknown; retire?: boolean }
   | { type: 'error'; id: string; code: string; message: string };
 
 export function encode(message: Message): string {
@@ -28,7 +28,9 @@ export function parseMessage(line: string): Message | string {
   if (raw.type === 'progress' && typeof raw.message === 'string') {
     return { type: 'progress', id, message: raw.message, data: raw.data };
   }
-  if (raw.type === 'result') return { type: 'result', id, value: raw.value };
+  if (raw.type === 'result') {
+    return { type: 'result', id, value: raw.value, retire: raw.retire === true };
+  }
   if (raw.type === 'error' && typeof raw.code === 'string' && typeof raw.message === 'string') {
     return { type: 'error', id, code: raw.code, message: raw.message };
   }

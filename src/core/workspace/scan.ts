@@ -22,7 +22,11 @@ export type CensusReason =
 /** The TypeScript surface the scan needs; the module itself is loaded by absolute path (D44). */
 export type TypescriptApi = Pick<
   typeof TS,
-  'version' | 'sys' | 'getParsedCommandLineOfConfigFile' | 'resolveProjectReferencePath'
+  | 'version'
+  | 'sys'
+  | 'getParsedCommandLineOfConfigFile'
+  | 'resolveProjectReferencePath'
+  | 'readConfigFile'
 >;
 
 /** Boundary check for a module imported by path: the members the scan calls are present. */
@@ -32,13 +36,28 @@ export function isTypescriptApi(value: unknown): value is TypescriptApi {
     typeof value.version === 'string' &&
     isRecord(value.sys) &&
     typeof value.getParsedCommandLineOfConfigFile === 'function' &&
-    typeof value.resolveProjectReferencePath === 'function'
+    typeof value.resolveProjectReferencePath === 'function' &&
+    typeof value.readConfigFile === 'function'
   );
 }
 
-// RISK §6 default excludes: secrets first (reported as `secret`), then build and VCS output.
-const SECRET_PATTERNS = ['**/.env*', '**/*.pem', '**/*.key', '**/*credentials*', '**/secrets/**'];
+// RISK §6 default excludes (D49), two classes. Secrets are reported as `secret`.
+// Always excluded, any kind of file:
+const SECRET_PATTERNS = ['**/.env*', '**/*.pem', '**/*.key'];
 const DEFAULT_EXCLUDES = ['**/node_modules/**', '**/dist/**', '**/.git/**'];
+// Excluded by name only when the file is not code: source that handles credentials is indexed.
+const SECRET_NAME_PATTERNS = ['**/*credentials*', '**/secrets/**'];
+const IS_CODE: Record<FileKind, boolean> = {
+  ts: true,
+  tsx: true,
+  js: true,
+  jsx: true,
+  mjs: true,
+  cjs: true,
+  'd.ts': true,
+  json: false,
+  other: false,
+};
 
 const KINDS: Record<string, FileKind> = {
   '.ts': 'ts',
@@ -60,9 +79,12 @@ export function kindOf(path: string): FileKind {
   return KINDS[extname(path)] ?? 'other';
 }
 
-/** Secret and excluded paths are decided by path alone, so their content is never read. */
+/** Secret and excluded paths are decided by path and kind alone; their content is never read. */
 export function exclusionOf(path: string, impact: ImpactConfig): 'secret' | 'excluded' | null {
   if (SECRET_PATTERNS.some((pattern) => matchGlob(pattern, path))) return 'secret';
+  if (!IS_CODE[kindOf(path)] && SECRET_NAME_PATTERNS.some((pattern) => matchGlob(pattern, path))) {
+    return 'secret';
+  }
   if (matchAny([...DEFAULT_EXCLUDES, ...impact.exclude], path)) return 'excluded';
   return null;
 }
@@ -217,12 +239,28 @@ function extendedConfigs(root: string, configPath: string, raw: unknown): string
   return bases;
 }
 
+/** Whether the parsed config or any config it extends declares `include` or `files`. */
+function hasExplicitInputs(ts: TypescriptApi, parsed: TS.ParsedCommandLine): boolean {
+  const declares = (raw: unknown): boolean =>
+    isRecord(raw) && (raw.include !== undefined || raw.files !== undefined);
+  if (declares(parsed.raw)) return true;
+  // `include` and `files` are inherited through `extends`; the compiler lists the chain here.
+  const configFile = parsed.options.configFile;
+  const chain =
+    isRecord(configFile) && Array.isArray(configFile.extendedSourceFiles)
+      ? configFile.extendedSourceFiles
+      : [];
+  return chain.some(
+    (file) => typeof file === 'string' && declares(ts.readConfigFile(file, ts.sys.readFile).config),
+  );
+}
+
 /**
  * Every tsconfig the visible set holds, plus configs reached through project references, parsed
  * by TypeScript itself so `extends`, `include`/`exclude`/`files` and `allowJs` mean exactly what
  * they mean to the compiler. A base (a config other configs extend, that no reference names and
- * that declares no `include` or `files`, such as `tsconfig.base.json`) is not a project: its
- * implicit `include` of everything below it would claim files no real project compiles.
+ * whose effective inputs are implicit, such as `tsconfig.base.json`) is not a project: its implicit
+ * `include` of everything below it would claim files no real project compiles.
  */
 function parseConfigs(
   root: string,
@@ -233,7 +271,7 @@ function parseConfigs(
   const errors: string[] = [];
   const extended = new Set<string>();
   const referenced = new Set<string>();
-  const implicitInclude = new Set<string>();
+  const implicitInputs = new Set<string>();
   const seen = new Set<string>();
   const queue = [...candidates];
   const host = { ...ts.sys, onUnRecoverableConfigFileDiagnostic: () => undefined };
@@ -252,14 +290,8 @@ function parseConfigs(
       // TS18003 "No inputs were found" is a fact about the config, not a parse problem.
       if (error.code !== 18003) errors.push(`${path}: ${text}`);
     }
-    const raw: unknown = parsed.raw;
-    for (const base of extendedConfigs(root, path, raw)) extended.add(base);
-    // shortcut: only the config's own `include`/`files` count; one inherited through `extends`
-    // looks implicit, so a middle config that is itself extended is treated as a base. Upgrade
-    // to the compiler's resolved specs if a real repository shows such a chain.
-    if (!isRecord(raw) || (raw.include === undefined && raw.files === undefined)) {
-      implicitInclude.add(path);
-    }
+    for (const base of extendedConfigs(root, path, parsed.raw)) extended.add(base);
+    if (!hasExplicitInputs(ts, parsed)) implicitInputs.add(path);
     const files = new Set<string>();
     for (const file of parsed.fileNames) {
       const rel = toPosix(relative(root, file));
@@ -274,7 +306,7 @@ function parseConfigs(
     }
   }
   const isBase = (path: string): boolean =>
-    extended.has(path) && !referenced.has(path) && implicitInclude.has(path);
+    extended.has(path) && !referenced.has(path) && implicitInputs.has(path);
   return {
     configs: parsedConfigs.filter((config) => !isBase(config.path)),
     bases: parsedConfigs.filter((config) => isBase(config.path)).map((config) => config.path),
@@ -362,6 +394,11 @@ export async function scan(
   root: string,
   impact: ImpactConfig,
   ts: TypescriptApi,
+  /**
+   * Stat-level reuse (D22, freshness "stat" only): a file whose size and mtime equal this
+   * fingerprint keeps its hash without being read. Rebuilds and `freshness: "hash"` pass nothing.
+   */
+  fingerprint?: ReadonlyMap<string, Pick<FileRecord, 'size' | 'mtimeMs' | 'hash'>>,
 ): Promise<ScanResult> {
   const started = performance.now();
   const { entries, listing } = await statVisible(root);
@@ -393,7 +430,11 @@ export async function scan(
       };
       return row;
     }
-    const hash = await hashFile(join(root, entry.path), entry.size);
+    const known = fingerprint?.get(entry.path);
+    const hash =
+      known?.hash != null && known.size === entry.size && known.mtimeMs === entry.mtimeMs
+        ? known.hash
+        : await hashFile(join(root, entry.path), entry.size);
     const tsconfig = ownerOf(entry.path, configs);
     const row: CensusRecord = {
       ...base,

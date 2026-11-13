@@ -5,6 +5,8 @@ import { encode, lineReader, parseMessage } from './protocol.js';
 import { runtimeArgs } from './runtime.js';
 const run = promisify(execFile);
 const IDLE_MS = 10 * 60_000;
+/** D35: the longest a tool call waits (first build); every request has at least this limit. */
+const REQUEST_MS = 60_000;
 const IDLE_KILL_GRACE_MS = 5_000;
 const STDERR_TAIL = 4_096;
 const NODE_OOM = /heap out of memory|Reached heap limit|Allocation failed - JavaScript heap/i;
@@ -25,6 +27,7 @@ async function rssMb(pid) {
 export function createEngineHost(options) {
     const { runtime, memoryLimitMb } = options;
     const idleMs = options.idleMs ?? IDLE_MS;
+    const requestMs = options.requestMs ?? REQUEST_MS;
     const watchdog = options.watchdog ?? runtime.kind === 'bun';
     // Test-only child ops need an env the caller passes explicitly; the session's own variables
     // never enable them.
@@ -32,13 +35,16 @@ export function createEngineHost(options) {
     delete inherited.EI_ENGINE_TEST_OPS;
     const base = options.env ?? inherited;
     // Under OMP the runtime is the omp executable, which only acts as plain Bun when asked to.
-    const env = runtime.kind === 'bun' ? { ...base, BUN_BE_BUN: '1' } : base;
+    // The child sizes its background work to the limit it is killed at.
+    const limited = { ...base, EI_MEMORY_LIMIT_MB: String(memoryLimitMb) };
+    const env = runtime.kind === 'bun' ? { ...limited, BUN_BE_BUN: '1' } : limited;
     const childScript = fileURLToPath(new URL('./child.js', import.meta.url));
     let current = null;
     let idleTimer;
     let sequence = 0;
     let starts = 0;
     let lastExit = null;
+    let retiring = null;
     function kill(child, reason) {
         child.killedFor ??= reason;
         child.proc.kill('SIGKILL');
@@ -47,14 +53,19 @@ export function createEngineHost(options) {
         clearInterval(child.sampler);
         if (current === child)
             current = null;
+        if (retiring === child)
+            retiring = null;
         const oom = signal === 'SIGABRT' || code === 134 || NODE_OOM.test(child.stderr);
         const reason = child.killedFor ?? (oom ? 'memory-limit' : 'crashed');
         lastExit = { code, signal, reason };
         const tail = child.stderr.trim().slice(-300);
         const message = reason === 'memory-limit'
             ? `engine exceeded its memory limit of ${memoryLimitMb} MB (${runtime.kind})`
-            : `engine child exited (${signal ?? `code ${code}`}, ${reason})${tail ? `: ${tail}` : ''}`;
+            : reason === 'timeout' && child.timedOut !== null
+                ? `engine did not answer '${child.timedOut.op}' within ${child.timedOut.ms} ms and was killed`
+                : `engine child exited (${signal ?? `code ${code}`}, ${reason})${tail ? `: ${tail}` : ''}`;
         for (const pending of child.pending.values()) {
+            clearTimeout(pending.timer);
             pending.resolve({ ok: false, code: 'index-failed', message, reason });
         }
         child.pending.clear();
@@ -67,23 +78,31 @@ export function createEngineHost(options) {
             pending.onProgress?.(message.message, message.data);
             return;
         }
+        clearTimeout(pending.timer);
         child.pending.delete(message.id);
         pending.resolve(message.type === 'result'
             ? { ok: true, value: message.value }
             : { ok: false, code: message.code, message: message.message });
-        if (child.pending.size === 0)
+        if (message.type === 'result' && message.retire === true && child.pending.size === 0) {
+            retire(child, 'retired');
+        }
+        else if (child.pending.size === 0)
             armIdle(child);
+    }
+    /** Later requests start a fresh child; this one exits when its stdin closes. */
+    function retire(child, reason) {
+        if (current === child)
+            current = null;
+        retiring = child;
+        child.killedFor ??= reason;
+        child.proc.stdin.end();
+        setTimeout(() => kill(child, reason), IDLE_KILL_GRACE_MS).unref();
     }
     function armIdle(child) {
         clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
-            if (current !== child || child.pending.size > 0)
-                return;
-            // Retire: later requests start a fresh child; this one exits when its stdin closes.
-            current = null;
-            child.killedFor = 'idle';
-            child.proc.stdin.end();
-            setTimeout(() => kill(child, 'idle'), IDLE_KILL_GRACE_MS).unref();
+            if (current === child && child.pending.size === 0)
+                retire(child, 'idle');
         }, idleMs);
         idleTimer.unref();
     }
@@ -113,6 +132,7 @@ export function createEngineHost(options) {
             pending: new Map(),
             stderr: '',
             killedFor: null,
+            timedOut: null,
             exited: new Promise((resolve) => (markExited = resolve)),
         };
         let done = false;
@@ -147,22 +167,29 @@ export function createEngineHost(options) {
         starts++;
         return child;
     }
-    function request(op, args, onProgress) {
+    function request(op, args, opts = {}) {
+        // A retiring child still holds its memory: start the next one only after it has exited.
+        if (retiring !== null)
+            return retiring.exited.then(() => request(op, args, opts));
         clearTimeout(idleTimer);
         const child = (current ??= spawnChild());
         const id = String(++sequence);
+        const ms = opts.timeoutMs ?? requestMs;
         return new Promise((resolve) => {
-            child.pending.set(id, { resolve, onProgress });
+            const timer = setTimeout(() => {
+                child.timedOut ??= { op, ms };
+                kill(child, 'timeout');
+            }, ms);
+            child.pending.set(id, { resolve, onProgress: opts.onProgress, timer });
             child.proc.stdin.write(encode({ type: 'request', id, op, args }));
         });
     }
     async function stop() {
         clearTimeout(idleTimer);
-        const child = current;
-        if (!child)
-            return;
-        kill(child, 'stopped');
-        await child.exited;
+        const children = [current, retiring].filter((child) => child !== null);
+        for (const child of children)
+            kill(child, 'stopped');
+        await Promise.all(children.map((child) => child.exited));
     }
     function status() {
         return { runtime, memoryLimitMb, pid: current?.proc.pid ?? null, starts, lastExit };

@@ -21,8 +21,9 @@ export function parseMessage(line) {
     if (raw.type === 'progress' && typeof raw.message === 'string') {
         return { type: 'progress', id, message: raw.message, data: raw.data };
     }
-    if (raw.type === 'result')
-        return { type: 'result', id, value: raw.value };
+    if (raw.type === 'result') {
+        return { type: 'result', id, value: raw.value, retire: raw.retire === true };
+    }
     if (raw.type === 'error' && typeof raw.code === 'string' && typeof raw.message === 'string') {
         return { type: 'error', id, code: raw.code, message: raw.message };
     }

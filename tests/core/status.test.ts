@@ -9,7 +9,12 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { after, before, describe, it } from 'node:test';
 import { buildIndex } from '../../src/core/engine/build.js';
-import { STATUS_BUDGET, renderStatus, workspaceStatus } from '../../src/core/engine/status.js';
+import {
+  STATUS_BUDGET,
+  homeRelative,
+  renderStatus,
+  workspaceStatus,
+} from '../../src/core/engine/status.js';
 import {
   pinnedTypescriptVersion,
   setupTypescriptRuntime,
@@ -88,11 +93,12 @@ describe('ei index and ei_status (M2a.1)', () => {
   it('ei index publishes the census; ei_status is ready, deterministic and within budget', async () => {
     const workspace = await loadWorkspace(repo, cacheHome);
     const progress: string[] = [];
-    assert.deepEqual(
-      await buildIndex(workspace, { cacheHome, onProgress: (message) => progress.push(message) }),
-      { ok: true },
+    assert.equal(
+      (await buildIndex(workspace, { cacheHome, onProgress: (message) => progress.push(message) }))
+        .ok,
+      true,
     );
-    assert.deepEqual(progress, ['scan', 'publish']);
+    assert.deepEqual(progress, ['scan', 'program', 'extract', 'resolve', 'verify', 'publish']);
 
     const status = await workspaceStatus(repo, { cacheHome });
     const text = renderStatus(status);
@@ -100,18 +106,30 @@ describe('ei index and ei_status (M2a.1)', () => {
     assert.equal(lines[0], 'STATUS ready');
     assert.match(
       lines[1] ?? '',
-      /^Index {7}published \d{4}-\d\d-\d\d \d\d:\d\d UTC · fresh \(stat probe\) · last scan \d+\.\d\d s \(git listing\)$/,
+      /^Index {7}published \d{4}-\d\d-\d\d \d\d:\d\d UTC · fresh \(stat probe\) · last cold \d+\.\d s \(scan \d+\.\d · program \d+\.\d · extract \d+\.\d · resolve \d+\.\d · verify \d+\.\d · publish \d+\.\d\)$/,
     );
     assert.equal(lines[2], FIXTURE_COVERAGE);
     assert.equal(
-      lines[3],
+      lines[6],
       'Scope       4 packages · tsconfigs 1 (tsconfig.json) · bases 1 · tsconfig problems none',
     );
-    assert.equal(lines[4], 'Config      ei.config.json ok');
+    assert.equal(lines[7], 'Config      ei.config.json ok');
+    assert.match(
+      lines[3] ?? '',
+      /^Graph {7}\d+ declarations · \d+ edges · programs 1 · affected-set-supplemented 0 \(total 0\)$/,
+    );
+    assert.equal(
+      lines[4],
+      'Problems    0 files failed to parse · 0 not in a program · 0 unresolved imports · 1 unresolved name matches · dependencies installed: yes · incompleteReasons: none',
+    );
+    assert.equal(
+      lines[5],
+      'Gap sites   cjs-require 1 · computed-member-access 1 · dynamic-import 1 · interface-dispatch 1',
+    );
     assert.match(
       text,
       new RegExp(
-        `^Runtime {5}${status.runtime.kind} ${status.runtime.version.replaceAll('.', '\\.')} .* · memory limit [\\d,]+ MB$`,
+        `^Runtime {5}${status.runtime.kind} ${status.runtime.version.replaceAll('.', '\\.')} .* · memory limit [\\d,]+ MB · engine peak [\\d,]+ MB \\(last build\\)$`,
         'm',
       ),
     );
@@ -119,7 +137,20 @@ describe('ei index and ei_status (M2a.1)', () => {
       text,
       /^TypeScript {2}5\.9\.3 \(runtime\) · .*typescript\.js · verified sha256 [0-9a-f]{12}$/m,
     );
-    assert.match(text, /^Store {7}.*index\.sqlite · \d+ KB · schema 1$/m);
+    assert.match(text, /^Store {7}.*index\.sqlite · [\d,]+ KB · schema 2$/m);
+    // ADR 0003: uses stored and uses skipped by category, with the ratio.
+    const uses = status.index?.graph.uses ?? {};
+    assert.ok((uses.indexed ?? 0) > 0 && (uses.local ?? 0) > 0 && (uses.external ?? 0) > 0);
+    assert.match(
+      text,
+      /^Uses {8}approximate · indexed \d+ · skipped external \d+ · local \d+.* · indexed share \d+\.\d%$/m,
+    );
+    // D49: the text shows the cache home-relative; details keep the absolute path.
+    assert.ok(status.index?.path.startsWith(cacheHome));
+    assert.equal(
+      homeRelative(status.index?.path ?? '', cacheHome).startsWith('~/.cache/ksd-intelligence/'),
+      true,
+    );
     assert.ok(text.length <= STATUS_BUDGET);
     assert.equal(
       renderStatus(await workspaceStatus(repo, { cacheHome })),
@@ -131,7 +162,7 @@ describe('ei index and ei_status (M2a.1)', () => {
 
   it('drift after the build: degraded (stale index) naming the files, until the next index', async () => {
     const workspace = await loadWorkspace(repo, cacheHome);
-    assert.deepEqual(await buildIndex(workspace, { cacheHome }), { ok: true });
+    assert.equal((await buildIndex(workspace, { cacheHome })).ok, true);
     await appendFile(join(repo, 'packages/payments/src/fee.ts'), '// drift\n');
 
     const text = renderStatus(await workspaceStatus(repo, { cacheHome }));
@@ -142,7 +173,7 @@ describe('ei index and ei_status (M2a.1)', () => {
     assert.match(text, /· stale: 1 changed · 0 added · 0 deleted \(stat probe\) ·/);
     assert.match(text, /^Drift {7}packages\/payments\/src\/fee\.ts$/m);
 
-    assert.deepEqual(await buildIndex(workspace, { cacheHome }), { ok: true });
+    assert.equal((await buildIndex(workspace, { cacheHome })).ok, true);
     assert.equal(
       renderStatus(await workspaceStatus(repo, { cacheHome })).split('\n')[0],
       'STATUS ready',
@@ -181,19 +212,25 @@ describe('ei index and ei_status (M2a.1)', () => {
       stale,
       new RegExp(`^Lock {8}stale \\(pid ${holder.pid} gone; the next build takes it over\\)$`, 'm'),
     );
-    assert.deepEqual(
-      await buildIndex(workspace, { cacheHome }),
-      { ok: true },
-      'stale lock taken over',
-    );
+    assert.equal((await buildIndex(workspace, { cacheHome })).ok, true, 'stale lock taken over');
   });
 
   it('the CLI prints the same text: ei index, then ei status', async () => {
     const env = { ...process.env, HOME: cacheHome };
     const indexed = await run(process.execPath, [CLI, 'index', '--root', repo], { env });
-    assert.match(indexed.stdout, /^INDEX published in \d+\.\d\d s \(/);
+    assert.match(indexed.stdout, /^INDEX (cold|update|unchanged) in \d+\.\d\d s \(/);
     const status = await run(process.execPath, [CLI, 'status', '--root', repo], { env });
-    assert.equal(status.stdout.trimEnd(), renderStatus(await workspaceStatus(repo, { cacheHome })));
+    // The CLI ran with HOME=cacheHome, so its `~` paths are relative to that home.
+    const home = process.env.HOME;
+    process.env.HOME = cacheHome;
+    try {
+      assert.equal(
+        status.stdout.trimEnd(),
+        renderStatus(await workspaceStatus(repo, { cacheHome })),
+      );
+    } finally {
+      process.env.HOME = home;
+    }
     assert.ok(status.stdout.includes(FIXTURE_COVERAGE));
 
     const disabled = await run(process.execPath, [CLI, 'status', '--root', repo], {
