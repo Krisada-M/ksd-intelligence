@@ -200,7 +200,7 @@ Incoming edges (who calls X) are the inverse of the resolved outgoing edges, so 
 
 The probe has a known blind spot (a same-size edit within the filesystem's mtime granularity). It is accepted for ordinary queries, never for the review gate (`ei_changes`) or a rebuild. `impact.freshness: "hash"` in config forces full hashing on every query; the freshness test cases run in that mode, and one test documents the blind spot on purpose.
 
-The fingerprint (path → size, mtime, hash, plus extractor stamp and scope config) is a small file separate from the index records, so the probe never loads the index. Either file missing degrades safely: no fingerprint → rebuild; no records → cold build.
+The fingerprint (path → size, mtime, hash) is the `files` table of the repository database, with the extractor stamp and scope config hash in `meta` (M2a.1). The probe reads only those two tables and never loads declarations or edges. A missing or unreadable database degrades safely to a cold build.
 
 **When it runs**
 
@@ -619,6 +619,8 @@ Nothing the library generates is written into the repo except learnings the owne
 
 **SQLite (D46):** `node:sqlite` is the store. M1b verified it inside OMP (SQLite 3.54.0, FTS5, WAL) and under Node 24, so it works in either engine runtime. The sharded-JSON fallback and the SQLite entry gate are dropped. `bun:sqlite` is not used because it does not exist under Node.
 
+Publish path (measured in M2a.1 on a 221 MB database, Linux): a full build publishes by rename in 39–48 ms; a small update by copy-then-rename takes 340–410 ms; the same update as an in-place WAL transaction takes 95–100 ms. M2a.2 keeps copy-then-rename for every publish, because it is the one tested recovery path and it fits the update target in §14. M2a.2 measures the real index size and update time on oh-my-pi. In-place transactions for small updates are considered only if a one-file update exceeds 1 s end to end, and then need an ADR covering reader isolation and interrupted-update recovery.
+
 
 ## 12. Safety and failure model
 
@@ -648,7 +650,7 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | 3 | **M1b** ✅ | Runtime spike, facts only | Facts in `docs/research/m1b-runtime-facts.md`; applied as D43–D47 |
 | 3b | **M1c** ✅ | Merge KSD Engineering Proxy as `src/policy/` with history; one extension entry; marketplace packaging; cut-over from the old plugin (`docs/briefs/M1c-ksd-merge.md`) | KSD's 148 tests and this repo's tests all pass; policy and status snapshots byte-identical to 0.6.0; live OMP: one install, commands work, policy injected once, `ei_workflow` still works; rollback tested |
 | 3c | **M1d** | Portable baseline: macOS/Linux CI, canonical-path checks, OS/arch evidence (`docs/briefs/M1d-platform-baseline.md`) | Matrix checks pass on both OS families; OS/arch recorded; real OMP smoke on each OS family remains a separate manual gate |
-| 4 | **M2a.1** | Engine host (child process, runtime choice, memory watchdog, idle exit, lock) · TypeScript provisioning (`ei setup`) · SQLite store · scan · fingerprint and probe · `ei index` (scan only), `ei_status` (`docs/briefs/M2a-index.md`, part 1) | Scan census accounts for every fixture file; probe and lock behaviour tested; child is killed above its memory limit; status reports runtime, TypeScript and store |
+| 4 | **M2a.1** (Linux evidence accepted 2026-11-13; macOS and CI pending) | Engine host (child process, runtime choice, memory watchdog, idle exit, lock) · TypeScript provisioning (`ei setup`) · SQLite store · scan · fingerprint and probe · `ei index` (scan only), `ei_status` (`docs/briefs/M2a-index.md`, part 1) | Scan census accounts for every fixture file; probe and lock behaviour tested; child is killed above its memory limit; status reports runtime, TypeScript and store |
 | 4b | **M2a.2** | Extract-local · resolve (ADR 0002/0003, D43 options) · verify · publish · incremental update · `ei doctor --deep` (`docs/briefs/M2a-index.md`, part 2) | Randomised incremental == full passes; differential test against TypeScript find-references passes on the fixture and on oh-my-pi; cold build and one-file update measured on oh-my-pi |
 | 5 | **M2b** | `ei_impact`: targets, guidance, reach, factors, base verdict, name cross-check, text per `docs/TOOLS.md` | All confirmed engine golden and freshness cases pass; rendering snapshots reviewed by owner; mutation smoke |
 | 6 | **M3** | Dogfood on oh-my-pi repo + one real GitLab project (read-only clone). Starts when M2b is accepted and continues alongside later milestones | 2 weeks of `docs/dogfood-log.md`; ≥ 10 real tasks logged |
@@ -743,6 +745,7 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | D46 | Store is `node:sqlite` (one database per repository, WAL, staged then renamed); JSON fallback and the SQLite gate dropped | 2026-11-12 |
 | D47 | No TypeScript build-info persistence; a new session loads the published index and creates a program only when the probe finds drift | 2026-11-12 |
 | D48 | Practical delivery replan: add M1d macOS/Linux CI baseline before M2a; retain D43–D47 engine design and D28 capability intent, but reorder M2c and lexical search before route/heuristic work; M5 only on measured need, M6b requires separate approval. Accepted by the owner 2026-11-12. Supersedes D33's sequencing and D28's unconditional scheduling of M4b, M5 and M6b | 2026-11-12 |
+| D49 | M2a.1 review: engine and CLI need Node ≥ 22.5 (`engines.node`, ADR 0005); secret name patterns (`*credentials*`, `secrets/**`) exclude only non-code files (`docs/RISK.md` §6); every publish stays copy-then-rename until M2a.2 measurements say otherwise; `ei_status` text shows home-relative paths, full paths stay in `details`; fingerprint lives in the `files` table | 2026-11-13 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 

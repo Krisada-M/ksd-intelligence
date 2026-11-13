@@ -1,3 +1,5 @@
+import { isRecord } from './guards.js';
+
 export interface RiskZoneConfig {
   zone: string;
   floor: 'high' | 'critical';
@@ -14,6 +16,8 @@ export interface ImpactConfig {
   watch: boolean;
   manyCallers: number;
   useWorkspaceTypescript: boolean;
+  /** Engine child memory limit in MB; null = min(8192, half of physical RAM) (D45). */
+  maxMemoryMb: number | null;
 }
 
 export interface GitlabConfig {
@@ -80,6 +84,7 @@ export function defaultConfig(inferred?: { include?: string[]; routes?: string[]
       watch: true,
       manyCallers: 10,
       useWorkspaceTypescript: false,
+      maxMemoryMb: null,
     },
     bridges: {
       B1: true,
@@ -103,12 +108,12 @@ export function defaultConfig(inferred?: { include?: string[]; routes?: string[]
   };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
 
 function parseToggle(
@@ -153,6 +158,10 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
     typeof section.useWorkspaceTypescript === 'boolean'
       ? section.useWorkspaceTypescript
       : fallback.useWorkspaceTypescript;
+  const maxMemoryMb =
+    section.maxMemoryMb === null || isPositiveInteger(section.maxMemoryMb)
+      ? section.maxMemoryMb
+      : fallback.maxMemoryMb;
 
   if (section.enabled !== undefined && typeof section.enabled !== 'boolean') {
     errors.push('impact.enabled must be boolean');
@@ -194,6 +203,13 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
   ) {
     errors.push('impact.useWorkspaceTypescript must be boolean');
   }
+  if (
+    section.maxMemoryMb !== undefined &&
+    section.maxMemoryMb !== null &&
+    !isPositiveInteger(section.maxMemoryMb)
+  ) {
+    errors.push('impact.maxMemoryMb must be a positive integer or null');
+  }
 
   return {
     enabled,
@@ -205,6 +221,7 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
     watch,
     manyCallers,
     useWorkspaceTypescript,
+    maxMemoryMb,
   };
 }
 

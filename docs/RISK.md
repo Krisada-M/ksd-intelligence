@@ -166,7 +166,11 @@ Append-only JSON Lines at `~/.cache/ksd-intelligence/<repo-id>/audit.jsonl`, dir
 
 **Data:**
 
-- Default index excludes: `**/.env*`, `**/*.pem`, `**/*.key`, `**/*credentials*`, `**/secrets/**`, `**/node_modules/**`, `**/dist/**`, `**/.git/**`. Excluded files still count for zone matching by path, never by content.
+- Default index excludes, two classes (D49):
+  - **Always excluded, any kind:** `**/.env*`, `**/*.pem`, `**/*.key`, `**/node_modules/**`, `**/dist/**`, `**/.git/**`.
+  - **Excluded by name only when the file is not code:** `**/*credentials*`, `**/secrets/**`. Code kinds (`ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `d.ts`) are never excluded by these name patterns. Reason: on oh-my-pi the name patterns removed 17 real source files (credential and secret handling code), which is a blind spot exactly where a wrong impact answer costs most. Files of kind `json` and `other` matching these names stay excluded and their content is never read.
+  - The owner can still exclude any path, code included, with `impact.exclude`.
+  - Excluded files still count for zone matching by path, never by content. The scan summary and `ei_status` report the number of files excluded by the secret rules.
 - Cache holds symbol tables and edges, not file contents (beyond what TypeScript keeps in memory).
 - Cache and audit directories are created `0700`. `ei cache clear` removes everything for a repo.
 - GitLab token: env only, never logged, never cached; responses cached only as verification reports with status, not bodies.

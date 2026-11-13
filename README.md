@@ -34,7 +34,7 @@ The prototype's README pointed `EI_POTETO_ROOT` at `cursor-plugins/plugins` whil
 
 ## 2. Build and test
 
-Node >= 20. Dev dependencies are `typescript` and `@types/node` only; there are no runtime dependencies.
+Node >= 22.5 (`node:sqlite`, ADR 0005). Dev dependencies are `typescript` and `@types/node` only; there are no runtime dependencies. The engine loads its own pinned TypeScript (`package.json#eiRuntime`) by absolute path, provisioned once by `ei setup`.
 
 ```bash
 npm ci
@@ -43,7 +43,7 @@ npm test          # tsc build, compile tests to dist-test/, node --test
 npm run build     # src/ -> dist/
 ```
 
-The baseline CI workflow runs `typecheck`, `lint`, `test` and `check:dist` on `ubuntu-latest` and `macos-latest` (Node 24). This checks the current library on two OS families, **not** every CPU architecture, real OMP integration or the future M2 engine. Those require separate acceptance evidence.
+The baseline CI workflow runs `typecheck`, `lint`, `test` and `check:dist` on `ubuntu-latest` and `macos-latest` (Node 24, plus Bun 1.4.4, the runtime OMP 18.19.0 ships, for the engine host tests). This checks the library on two OS families, **not** every CPU architecture or real OMP integration. Those require separate acceptance evidence.
 
 `npm test` expands `dist-test/tests/workflow/*.test.js` through the POSIX shell.
 
@@ -72,9 +72,21 @@ node dist/adapters/cli/main.js load  --task 'auth vulnerability' --stage verify 
 - `--type bug|feature|refactor|security|performance|ui`: caller-asserted task type, reported as `classifiedBy: "caller"`. An invalid value is an error. Without it, an English keyword classifier runs (`"keyword"`) and falls back to `feature` (`"default"`). A `"default"` guess is shown in the rendered output; non-English or security-sensitive tasks should pass `--type`.
 - `--stage` defaults to `plan`, `--risk` to `normal`.
 
+Code index (M2a part 1: scan census, no extraction yet):
+
+```bash
+node dist/adapters/cli/main.js setup [--check]     # install the pinned TypeScript into ~/.cache/ksd-intelligence/runtime (network, once); --check only verifies
+node dist/adapters/cli/main.js index [--root <path>]   # scan the repository and publish the census to ~/.cache/ksd-intelligence/<repo-id>/index.sqlite
+node dist/adapters/cli/main.js status [--root <path>] [--json]   # same text as the ei_status tool
+```
+
+- The repository is the nearest directory with `ei.config.json`, else the git work-tree root. Visible files come from `git ls-files` (tracked + untracked − ignored), else a walk honouring `.gitignore`.
+- Every visible file is classified `indexable`, `orphan` (no tsconfig owns it) or `unindexed` with a reason (`secret`, `excluded`, `outside-index-scope`, `other-kind`, `symlink`). Secret and excluded paths (`docs/RISK.md` §6 plus `impact.exclude`) are listed by path only; their content is never read.
+- `index` runs in a separate engine process (Node >= 22.5 from `PATH`, else OMP's Bun) under the repository's build lock and the `impact.maxMemoryMb` limit.
+
 ## 5. OMP adapter
 
-`src/adapters/omp/extension.ts` registers a read-only (`approval: "read"`) `ei_workflow` tool with `task`, `stage`, optional `risk` and optional `type`. After `npm run build`:
+`src/adapters/omp/extension.ts` registers two read-only (`approval: "read"`) tools: `ei_workflow` (`task`, `stage`, optional `risk` and `type`) and `ei_status` (no input; the status of the index for the session's working directory). `EI_DISABLED=1` registers neither. After `npm run build`:
 
 ```bash
 omp --extension ./dist/adapters/omp/extension.js

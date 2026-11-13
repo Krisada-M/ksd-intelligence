@@ -6,7 +6,7 @@
   "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-policy-to-dist.mjs",
@@ -38,8 +38,11 @@
       "./dist/adapters/omp/extension.js"
     ]
   },
+  "eiRuntime": {
+    "typescript": "5.9.3"
+  },
   "devDependencies": {
-    "@types/node": "^20.19.0",
+    "@types/node": "^22.20.5",
     "eslint": "10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
