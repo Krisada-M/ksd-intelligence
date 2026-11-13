@@ -2,10 +2,11 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import { isRecord } from '../kernel/guards.js';
-import { isTypescriptApi } from '../workspace/scan.js';
+import { doctorDeep } from '../indexing/doctor.js';
+import { Indexer } from '../indexing/indexer.js';
 import { beginBuild, writeFiles } from '../../storage/sqlite.js';
-import { runIndex } from './indexer.js';
 import { encode, lineReader, parseMessage } from './protocol.js';
+import { loadWorkspace } from './workspace.js';
 class OpError extends Error {
     code;
     constructor(code, message) {
@@ -29,6 +30,42 @@ function stringArg(args, key) {
 async function importByPath(path) {
     const loaded = await import(pathToFileURL(path).href);
     return isRecord(loaded) && isRecord(loaded.default) ? loaded.default : loaded;
+}
+function isCompiler(value) {
+    return (isRecord(value) &&
+        typeof value.version === 'string' &&
+        typeof value.createProgram === 'function' &&
+        typeof value.createSemanticDiagnosticsBuilderProgram === 'function');
+}
+const compilers = new Map();
+async function compilerAt(path) {
+    let ts = compilers.get(path);
+    if (ts === undefined) {
+        const loaded = await importByPath(path);
+        if (!isCompiler(loaded)) {
+            throw new OpError('typescript-invalid', `${path} is not a TypeScript compiler`);
+        }
+        ts = loaded;
+        compilers.set(path, ts);
+    }
+    return ts;
+}
+// One indexer per repository: it keeps the last build's programs for the next update.
+const indexers = new Map();
+async function indexerFor(args) {
+    const typescriptPath = stringArg(args, 'typescriptPath');
+    const root = stringArg(args, 'root');
+    const cacheDir = stringArg(args, 'cacheDir');
+    const id = `${typescriptPath}\u0000${root}\u0000${cacheDir}`;
+    let indexer = indexers.get(id);
+    if (indexer === undefined) {
+        const budget = Number(process.env.EI_MEMORY_LIMIT_MB);
+        indexer = new Indexer(await compilerAt(typescriptPath), root, cacheDir, {
+            memoryBudgetMb: Number.isFinite(budget) && budget > 0 ? budget : undefined,
+        });
+        indexers.set(id, indexer);
+    }
+    return indexer;
 }
 // A Map, not an object literal: an op name such as `constructor` must not reach a prototype member.
 const ops = new Map([
@@ -54,14 +91,23 @@ const ops = new Map([
     [
         'index',
         async (args, progress) => {
-            const typescriptPath = stringArg(args, 'typescriptPath');
-            const ts = await importByPath(typescriptPath);
-            if (!isTypescriptApi(ts)) {
-                throw new OpError('typescript-invalid', `${typescriptPath} is not a TypeScript compiler`);
-            }
-            const root = stringArg(args, 'root');
-            const cacheDir = stringArg(args, 'cacheDir');
-            return runIndex({ root, cacheDir, typescriptPath }, ts, progress);
+            const indexer = await indexerFor(args);
+            const workspace = await loadWorkspace(indexer.root);
+            return indexer.index({
+                impact: workspace.config.impact,
+                full: args.full === true,
+                freshness: args.freshness === 'stat' ? 'stat' : 'hash',
+                onProgress: progress,
+            });
+        },
+    ],
+    [
+        'doctor',
+        async (args, progress) => {
+            const indexer = await indexerFor(args);
+            const workspace = await loadWorkspace(indexer.root);
+            const size = typeof args.differential === 'number' ? args.differential : 0;
+            return doctorDeep(await compilerAt(stringArg(args, 'typescriptPath')), indexer, workspace.config.impact, { differential: size, onProgress: progress });
         },
     ],
 ]);
@@ -107,7 +153,10 @@ async function handle(id, op, args) {
     }
     try {
         const value = await run(isRecord(args) ? args : {}, (message, data) => send({ type: 'progress', id, message, data }));
-        send({ type: 'result', id, value });
+        // A cold build leaves the child holding every program of the repository; the next request
+        // starts a fresh child from the published index instead of keeping that memory resident.
+        const retire = op === 'index' && isRecord(value) && value.action === 'cold';
+        send({ type: 'result', id, value, retire });
     }
     catch (error) {
         const code = error instanceof OpError ? error.code : 'index-failed';

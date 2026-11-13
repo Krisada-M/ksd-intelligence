@@ -1,7 +1,10 @@
-import { statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { isRecord } from '../kernel/guards.js';
+import { impactConfigHash } from '../indexing/stamp.js';
 import { probe } from '../workspace/probe.js';
-import { SCHEMA_VERSION, indexPath, openPublished, readFiles, readMeta, readSchemaVersion, } from '../../storage/sqlite.js';
-import { impactConfigHash } from './indexer.js';
+import { FAILURE_FILE, SCHEMA_VERSION, indexPath, openPublished, readFiles, readMeta, readSchemaVersion, } from '../../storage/sqlite.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
 import { chooseRuntime, memoryLimitMb } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript } from './typescript.js';
@@ -33,10 +36,37 @@ export function coverageOf(files) {
             coverage.orphan++;
         if (file.status === 'unindexed')
             coverage.unindexed++;
-        if (file.reason !== null)
+        if (file.reason !== null) {
             coverage.reasons[file.reason] = (coverage.reasons[file.reason] ?? 0) + 1;
+        }
     }
     return coverage;
+}
+function grouped(db, sql) {
+    const result = {};
+    for (const row of db.prepare(sql).all())
+        result[String(row.k)] = Number(row.n);
+    return result;
+}
+function graphOf(db) {
+    const count = (sql) => Number(db.prepare(sql).get()?.n ?? 0);
+    const useRow = db
+        .prepare(`SELECT COALESCE(SUM(indexed_uses), 0) AS indexed,
+         COALESCE(SUM(local_uses), 0) AS local,
+         COALESCE(SUM(external), 0) AS external,
+         COALESCE(SUM(external_unresolved), 0) AS 'external-unresolved',
+         COALESCE(SUM(unresolved_other), 0) AS 'unresolved-other',
+         COALESCE(SUM(outside_scope), 0) AS 'outside-scope' FROM file_index`)
+        .get() ?? {};
+    return {
+        declarations: count("SELECT COUNT(*) AS n FROM declarations WHERE name != '<module>'"),
+        edges: count('SELECT COUNT(*) AS n FROM edges'),
+        uses: Object.fromEntries(Object.entries(useRow).map(([key, value]) => [key, Number(value)])),
+        extraction: grouped(db, 'SELECT extraction AS k, COUNT(*) AS n FROM file_index GROUP BY k'),
+        unresolved: grouped(db, 'SELECT reason AS k, COUNT(*) AS n FROM unresolved GROUP BY k'),
+        gapSites: grouped(db, 'SELECT code AS k, COUNT(*) AS n FROM gap_sites GROUP BY k'),
+        externalUnresolved: count('SELECT COALESCE(SUM(external_unresolved), 0) AS n FROM file_index'),
+    };
 }
 /** The published index, read-only; null when none exists. Throws when it cannot be read. */
 function readIndex(cacheDir) {
@@ -45,8 +75,9 @@ function readIndex(cacheDir) {
         return null;
     try {
         const schemaVersion = readSchemaVersion(db);
-        const meta = readMeta(db);
-        const files = schemaVersion === SCHEMA_VERSION ? readFiles(db) : [];
+        const current = schemaVersion === SCHEMA_VERSION;
+        const meta = current ? readMeta(db) : {};
+        const files = current ? readFiles(db) : [];
         return {
             info: {
                 path: indexPath(cacheDir),
@@ -57,6 +88,17 @@ function readIndex(cacheDir) {
                 tsconfigBases: stringList(meta.tsconfig_bases),
                 tsconfigErrors: stringList(meta.tsconfig_errors),
                 coverage: coverageOf(files),
+                graph: current
+                    ? graphOf(db)
+                    : {
+                        declarations: 0,
+                        edges: 0,
+                        uses: {},
+                        extraction: {},
+                        unresolved: {},
+                        gapSites: {},
+                        externalUnresolved: 0,
+                    },
             },
             files,
         };
@@ -65,11 +107,26 @@ function readIndex(cacheDir) {
         db.close();
     }
 }
+function readFailure(cacheDir, publishedAt) {
+    try {
+        const raw = JSON.parse(readFileSync(join(cacheDir, FAILURE_FILE), 'utf8'));
+        if (!isRecord(raw) || typeof raw.at !== 'string' || typeof raw.reason !== 'string')
+            return null;
+        // A later successful publish supersedes the failure.
+        if (publishedAt !== undefined && publishedAt > raw.at)
+            return null;
+        const problems = Array.isArray(raw.problems) ? raw.problems.map(String) : [];
+        return { at: raw.at, reason: raw.reason, problems };
+    }
+    catch {
+        return null;
+    }
+}
 function driftCount(drift) {
     return drift.added.length + drift.deleted.length + drift.changed.length;
 }
 function degradation(status, configHash) {
-    const { typescript, index, indexError, drift } = status;
+    const { typescript, index, indexError, drift, failure } = status;
     if (!typescript.ok)
         return [typescript.reason, typescript.fix];
     if (indexError !== null)
@@ -82,8 +139,12 @@ function degradation(status, configHash) {
             'run: ei index',
         ];
     }
-    if (index.meta.config_hash !== configHash)
+    if (failure !== null) {
+        return [`last build failed verification, older index kept`, 'run: ei doctor --deep'];
+    }
+    if (index.meta.config_hash !== configHash) {
         return ['impact config changed since the last build', 'run: ei index'];
+    }
     if (index.meta.typescript_version !== typescript.runtime.version) {
         return [
             `index built with typescript ${index.meta.typescript_version}, runtime is ${typescript.runtime.version}`,
@@ -132,6 +193,7 @@ export async function workspaceStatus(start, options = {}) {
         typescript,
         index,
         indexError,
+        failure: readFailure(workspace.cacheDir, index?.meta.built_at),
         drift,
         lock: holder && { pid: holder.pid, startedAt: holder.startedAt, alive: isHolderAlive(holder) },
     };
@@ -143,15 +205,56 @@ export async function workspaceStatus(start, options = {}) {
         ...partial,
     };
 }
+/** DESIGN §14: the engine's peak memory, as of the last build. */
+function peakNote(raw) {
+    return raw === undefined
+        ? ''
+        : ` · engine peak ${Number(raw).toLocaleString('en-US')} MB (last build)`;
+}
+/** Why the index scope needed more than one program (DESIGN §6.2.1), from build metadata. */
+function splitNote(raw) {
+    if (raw === undefined)
+        return '';
+    const parsed = JSON.parse(raw);
+    const keys = Array.isArray(parsed) ? parsed.map(String) : [];
+    return keys.length === 0 ? '' : ` (split by ${list(keys, 4)})`;
+}
+/** D49: the text shows home-relative paths; `details` keeps them absolute. */
+export function homeRelative(path, home = homedir()) {
+    if (home === '' || home === '/')
+        return path;
+    if (path === home)
+        return '~';
+    return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
 function list(items, max) {
     const shown = items.slice(0, max).join(', ');
     return items.length > max ? `${shown} (+${items.length - max} more)` : shown;
 }
 function seconds(ms) {
-    return ms === undefined ? '?' : `${(Number(ms) / 1000).toFixed(2)} s`;
+    return ms === undefined ? '?' : `${(Number(ms) / 1000).toFixed(1)}`;
 }
 function kilobytes(bytes) {
     return `${Math.max(1, Math.round(bytes / 1024)).toLocaleString('en-US')} KB`;
+}
+function counted(record) {
+    const entries = Object.entries(record)
+        .filter(([, n]) => n > 0)
+        .sort(([a], [b]) => (a < b ? -1 : 1));
+    return entries.length === 0 ? 'none' : entries.map(([k, n]) => `${k} ${n}`).join(' · ');
+}
+function phasesOf(meta) {
+    try {
+        const phases = JSON.parse(meta.phases ?? '{}');
+        if (!isRecord(phases))
+            return '';
+        const total = Object.values(phases).reduce((sum, ms) => sum + Number(ms), 0);
+        const parts = Object.entries(phases).map(([name, ms]) => `${name} ${seconds(Number(ms))}`);
+        return `${seconds(total)} s (${parts.join(' · ')})`;
+    }
+    catch {
+        return '';
+    }
 }
 function indexLine(status) {
     const { index, drift } = status;
@@ -169,7 +272,7 @@ function indexLine(status) {
                 ? `fresh (${probeNote})`
                 : `stale: ${drift.changed.length} changed · ${drift.added.length} added · ${drift.deleted.length} deleted (${probeNote})`;
     }
-    return `published ${built} UTC · ${freshness} · last scan ${seconds(index.meta.scan_ms)} (${index.meta.listing ?? '?'} listing)`;
+    return `published ${built} UTC · ${freshness} · last ${index.meta.last_action ?? 'build'} ${phasesOf(index.meta)}`;
 }
 function coverageLine(coverage) {
     const unindexedReasons = Object.entries(coverage.reasons)
@@ -180,15 +283,31 @@ function coverageLine(coverage) {
     return (`${coverage.scanned.toLocaleString('en-US')} scanned · ${coverage.indexable.toLocaleString('en-US')} indexable · ` +
         `${coverage.orphan} orphan (no tsconfig) · ${coverage.unindexed.toLocaleString('en-US')} unindexed${why}`);
 }
+function problemsLine(index, failure) {
+    const { graph } = index;
+    const parts = [
+        `${graph.extraction['parse-error'] ?? 0} files failed to parse`,
+        `${graph.extraction['not-in-program'] ?? 0} not in a program`,
+        `${graph.unresolved['unresolved-import'] ?? 0} unresolved imports`,
+        `${graph.unresolved['unresolved-name-match'] ?? 0} unresolved name matches`,
+        graph.externalUnresolved === 0
+            ? 'dependencies installed: yes'
+            : `dependencies installed: no (${graph.externalUnresolved} bare imports unresolved)`,
+    ];
+    const reasons = failure === null
+        ? 'none'
+        : `${failure.reason}: ${list(failure.problems.map((p) => p.slice(0, 120)), 3)}`;
+    return `${parts.join(' · ')} · incompleteReasons: ${reasons}`;
+}
 function typescriptLine(ts) {
     if (!ts.ok)
         return `${ts.reason} · ${ts.fix}`;
     const trust = ts.sha256 === null
         ? 'workspace copy, not hash-pinned'
         : `verified sha256 ${ts.sha256.slice(0, 12)}`;
-    return `${ts.runtime.version} (${ts.runtime.source}) · ${ts.runtime.path} · ${trust}`;
+    return `${ts.runtime.version} (${ts.runtime.source}) · ${homeRelative(ts.runtime.path)} · ${trust}`;
 }
-/** The `ei_status` / `ei status` text (TOOLS.md §6), limited to what M2a.1 knows. */
+/** The `ei_status` / `ei status` text (TOOLS.md §6). */
 export function renderStatus(status) {
     const lines = [
         status.state === 'ready'
@@ -199,26 +318,35 @@ export function renderStatus(status) {
     const { index, drift } = status;
     if (index !== null) {
         lines.push(`Coverage    ${coverageLine(index.coverage)}`);
-        const problems = index.tsconfigErrors.length === 0
+        const { graph, meta } = index;
+        const supplementedLast = meta.supplemented_last ?? '0';
+        lines.push(`Graph       ${graph.declarations.toLocaleString('en-US')} declarations · ${graph.edges.toLocaleString('en-US')} edges · ` +
+            `programs ${meta.programs ?? '?'}${splitNote(meta.program_split)} · affected-set-supplemented ${supplementedLast} (total ${meta.supplemented_total ?? '0'})`);
+        lines.push(`Problems    ${problemsLine(index, status.failure)}`);
+        lines.push(`Gap sites   ${counted(graph.gapSites)}`);
+        const tsconfigProblems = index.tsconfigErrors.length === 0
             ? 'none'
             : `${index.tsconfigErrors.length}: ${list(index.tsconfigErrors.map((error) => error.slice(0, 160)), 3)}`;
-        lines.push(`Scope       ${index.coverage.packages} packages · tsconfigs ${index.tsconfigs.length} (${list(index.tsconfigs, 6)}) · bases ${index.tsconfigBases.length} · tsconfig problems ${problems}`);
+        lines.push(`Scope       ${index.coverage.packages} packages · tsconfigs ${index.tsconfigs.length} (${list(index.tsconfigs, 6)}) · bases ${index.tsconfigBases.length} · tsconfig problems ${tsconfigProblems}`);
     }
     if (drift !== null && driftCount(drift) > 0) {
         lines.push(`Drift       ${list([...drift.changed, ...drift.added, ...drift.deleted], 5)}`);
     }
     const config = status.config;
-    if (config.path === null)
+    if (config.path === null) {
         lines.push('Config      no ei.config.json · detected defaults (run: ei init)');
-    else if (config.errors.length === 0)
+    }
+    else if (config.errors.length === 0) {
         lines.push('Config      ei.config.json ok');
-    else
+    }
+    else {
         lines.push(`Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)}`);
-    lines.push(`Runtime     ${status.runtime.kind} ${status.runtime.version} (${status.runtime.command}) · memory limit ${status.memoryLimitMb.toLocaleString('en-US')} MB`);
+    }
+    lines.push(`Runtime     ${status.runtime.kind} ${status.runtime.version} (${homeRelative(status.runtime.command)}) · memory limit ${status.memoryLimitMb.toLocaleString('en-US')} MB${peakNote(status.index?.meta.peak_rss_mb)}`);
     lines.push(`TypeScript  ${typescriptLine(status.typescript)}`);
     lines.push(index === null
-        ? `Store       none yet · cache ${status.cacheDir}`
-        : `Store       ${index.path} · ${kilobytes(index.sizeBytes)} · schema ${index.schemaVersion}`);
+        ? `Store       none yet · cache ${homeRelative(status.cacheDir)}`
+        : `Store       ${homeRelative(index.path)} · ${kilobytes(index.sizeBytes)} · schema ${index.schemaVersion}`);
     const lock = status.lock;
     if (lock === null)
         lines.push('Lock        free');
@@ -226,6 +354,12 @@ export function renderStatus(status) {
         lines.push(`Lock        held by pid ${lock.pid} since ${lock.startedAt}`);
     else
         lines.push(`Lock        stale (pid ${lock.pid} gone; the next build takes it over)`);
+    if (index !== null) {
+        const { indexed = 0, ...skippedUses } = index.graph.uses;
+        const useTotal = Object.values(index.graph.uses).reduce((sum, count) => sum + count, 0);
+        lines.push(`Uses        approximate · indexed ${indexed.toLocaleString('en-US')} · skipped ${counted(skippedUses)} · ` +
+            `indexed share ${useTotal === 0 ? 'n/a' : `${((indexed / useTotal) * 100).toFixed(1)}%`}`);
+    }
     const text = lines.join('\n');
     // Budget guard: lists above are already capped with "+N more"; this only fires on huge paths.
     return text.length <= STATUS_BUDGET

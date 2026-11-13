@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { parseArgs } from 'node:util';
-import { buildIndex } from '../../core/engine/build.js';
+import { buildIndex, doctorDeep } from '../../core/engine/build.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { checkTypescriptRuntime, pinnedTypescriptVersion, setupTypescriptRuntime, } from '../../core/engine/typescript.js';
 import { loadWorkspace } from '../../core/engine/workspace.js';
@@ -10,10 +10,45 @@ import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
 import { routeTask } from '../../workflow/router.js';
 import { checkSources, defaultLockPath, formatReports, readLock, reportStatus, writeLock, } from '../../workflow/sources.js';
+function doctorPassed(report) {
+    const differences = report.differences;
+    const count = typeof differences === 'object' && differences !== null && 'count' in differences
+        ? differences.count
+        : 1;
+    const differential = report.differential;
+    const misses = typeof differential === 'object' &&
+        differential !== null &&
+        'misses' in differential &&
+        Array.isArray(differential.misses)
+        ? differential.misses.length
+        : 0;
+    return count === 0 && misses === 0;
+}
+function counterNote(report) {
+    const counters = report.counterDifferences;
+    const count = typeof counters === 'object' && counters !== null && 'count' in counters ? counters.count : 0;
+    return typeof count === 'number' && count > 0
+        ? `INFO ${count} files have use counters that differ from the cold rebuild (statistics only, not a failure: TypeScript infers lazily, so they depend on checking order)`
+        : '';
+}
+function renderDoctor(report) {
+    return [
+        doctorPassed(report) ? 'DOCTOR ok' : 'DOCTOR differences found',
+        counterNote(report),
+        JSON.stringify({
+            differences: report.differences,
+            counterDifferences: report.counterDifferences,
+            differential: report.differential,
+        }, null, 2),
+    ]
+        .filter((line) => line !== '')
+        .join('\n');
+}
 const USAGE = `usage:
   main.js init  [--root <path>] [--force] [--dry-run] [--json]
   main.js setup [--check]                         (installs the pinned TypeScript runtime; --check only verifies)
-  main.js index [--root <path>]                   (scans and publishes the census; part 1 of M2a)
+  main.js index [--root <path>] [--full] [--json] (update the index from the working tree; --full rebuilds cold)
+  main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status [--root <path>] [--json]         (index, coverage, runtime, TypeScript, store, lock)
   main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui]
   main.js load  --task "..." [same options]      (needs checkouts; fails closed)
@@ -34,6 +69,9 @@ async function run(argv) {
             write: { type: 'boolean' },
             lock: { type: 'string' },
             check: { type: 'boolean' },
+            full: { type: 'boolean' },
+            deep: { type: 'boolean' },
+            differential: { type: 'string' },
         },
     });
     const [command, sub] = positionals;
@@ -64,16 +102,50 @@ async function run(argv) {
         const workspace = await loadWorkspace(values.root ?? process.cwd());
         const started = performance.now();
         const outcome = await buildIndex(workspace, {
+            full: values.full === true,
             onProgress: (message) => console.error(`ei index: ${message}`),
         });
         if (!outcome.ok) {
             console.log(`INDEX ${outcome.code}: ${outcome.message} · ${outcome.fix}`);
             return 1;
         }
+        if (values.json === true) {
+            console.log(JSON.stringify(outcome.value, null, 2));
+            return outcome.value.action === 'failed' ? 1 : 0;
+        }
         const seconds = ((performance.now() - started) / 1000).toFixed(2);
-        console.log(`INDEX published in ${seconds} s (${workspace.root})`);
+        const { action, reason } = outcome.value;
+        console.log(`INDEX ${String(action)} in ${seconds} s (${String(reason)})`);
         console.log(renderStatus(await workspaceStatus(workspace.root)));
-        return 0;
+        return action === 'failed' ? 1 : 0;
+    }
+    if (command === 'doctor') {
+        if (values.deep !== true) {
+            console.error(USAGE);
+            return 2;
+        }
+        const workspace = await loadWorkspace(values.root ?? process.cwd());
+        const raw = values.differential ?? '0';
+        const differential = raw === 'all' ? -1 : Number.parseInt(raw, 10);
+        if (!Number.isInteger(differential)) {
+            console.error(`--differential must be a number or "all", got ${raw}`);
+            return 2;
+        }
+        const outcome = await doctorDeep(workspace, {
+            differential,
+            onProgress: (message) => console.error(`ei doctor: ${message}`),
+        });
+        if (!outcome.ok) {
+            console.log(`DOCTOR ${outcome.code}: ${outcome.message} · ${outcome.fix}`);
+            return 1;
+        }
+        if (values.json === true) {
+            console.log(JSON.stringify(outcome.value, null, 2));
+        }
+        else {
+            console.log(renderDoctor(outcome.value));
+        }
+        return doctorPassed(outcome.value) ? 0 : 1;
     }
     if (command === 'init') {
         const result = await initProject({

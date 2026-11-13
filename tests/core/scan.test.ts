@@ -220,4 +220,103 @@ describe('scan census', () => {
     assert.deepEqual(byPath.get('lib/loose.ts')?.slice(2, 4), ['orphan', 'no-tsconfig']);
     assert.deepEqual(summary.tsconfigs, ['lib/project.json', 'tsconfig.json']);
   });
+
+  it('D49: secret name patterns never exclude code; secret data files stay unread', async () => {
+    const copy = join(work, 'secrets');
+    cpSync(FIXTURE, copy, { recursive: true });
+    await mkdir(join(copy, 'packages/api/src/secrets'));
+    await writeFile(join(copy, 'packages/api/src/secrets/vault.ts'), 'export const vault = 1;\n');
+    await writeFile(join(copy, 'packages/api/src/aws-credentials.ts'), 'export const key = 1;\n');
+    await writeFile(join(copy, 'packages/api/src/secrets/x.json'), '{"token":"never-read"}\n');
+    await writeFile(join(copy, 'packages/api/credentials.yaml'), 'token: never-read\n');
+    await writeFile(join(copy, '.env.local'), 'TOKEN=never-read\n');
+    const unread = [
+      'packages/api/src/secrets/x.json',
+      'packages/api/credentials.yaml',
+      '.env.local',
+    ];
+    if (process.getuid?.() !== 0) for (const path of unread) chmodSync(join(copy, path), 0o000);
+
+    const { records, summary } = await scan(copy, fixtureImpact(), ts);
+    const byPath = new Map(rows(records).map((row) => [row[0], row]));
+    for (const code of [
+      'packages/api/src/secrets/vault.ts',
+      'packages/api/src/aws-credentials.ts',
+    ]) {
+      assert.deepEqual(
+        byPath.get(code)?.slice(2),
+        ['indexable', null, 'packages/api', 'tsconfig.json'],
+        code,
+      );
+    }
+    for (const path of unread) {
+      assert.deepEqual(byPath.get(path)?.slice(2, 4), ['unindexed', 'secret'], path);
+      assert.equal(records.find((r) => r.path === path)?.hash, null, `${path} content never read`);
+    }
+    assert.equal(
+      summary.reasons.secret,
+      3,
+      'the summary counts files excluded by the secret rules',
+    );
+  });
+
+  it('ownership: an include inherited through extends is effective (not a base)', async () => {
+    const copy = join(work, 'inherited');
+    cpSync(FIXTURE, copy, { recursive: true });
+    const write = (path: string, json: unknown): Promise<void> =>
+      writeFile(join(copy, path), JSON.stringify(json));
+    // packages/api/tsconfig.json declares no include: it inherits ["src"] from tsconfig.lib.json.
+    // It is extended itself (by tsconfig.test.json), which a base also is.
+    await write('packages/api/tsconfig.lib.json', {
+      extends: '../../tsconfig.base.json',
+      include: ['src'],
+    });
+    await write('packages/api/tsconfig.json', { extends: './tsconfig.lib.json' });
+    await write('packages/api/tsconfig.test.json', {
+      extends: './tsconfig.json',
+      include: ['test'],
+    });
+    await mkdir(join(copy, 'packages/api/tools'));
+    await writeFile(join(copy, 'packages/api/tools/gen.ts'), 'export const gen = 1;\n');
+
+    const { records, summary } = await scan(copy, fixtureImpact(), ts);
+    const owner = (path: string): string | null | undefined =>
+      records.find((r) => r.path === path)?.tsconfig;
+    assert.equal(owner('packages/api/src/charge.ts'), 'packages/api/tsconfig.json');
+    assert.equal(owner('packages/api/src/handlers/refund.ts'), 'packages/api/tsconfig.json');
+    assert.equal(
+      owner('packages/api/tools/gen.ts'),
+      'tsconfig.json',
+      'outside the inherited include',
+    );
+    assert.deepEqual(summary.tsconfigBases, ['tsconfig.base.json']);
+    assert.ok(summary.tsconfigs.includes('packages/api/tsconfig.json'));
+  });
+
+  it('ownership: a config reached only through a project reference owns its files', async () => {
+    const copy = join(work, 'referenced');
+    cpSync(FIXTURE, copy, { recursive: true });
+    await writeFile(
+      join(copy, 'tsconfig.json'),
+      JSON.stringify({
+        extends: './tsconfig.base.json',
+        include: ['packages/payments', 'packages/shared', 'apps'],
+        references: [{ path: './packages/api/project.json' }],
+      }),
+    );
+    await writeFile(
+      join(copy, 'packages/api/project.json'),
+      JSON.stringify({
+        extends: '../../tsconfig.base.json',
+        compilerOptions: { composite: true },
+        include: ['src'],
+      }),
+    );
+    const { records, summary } = await scan(copy, fixtureImpact(), ts);
+    const owner = (path: string): string | null | undefined =>
+      records.find((r) => r.path === path)?.tsconfig;
+    assert.equal(owner('packages/api/src/charge.ts'), 'packages/api/project.json');
+    assert.equal(owner('packages/payments/src/fee.ts'), 'tsconfig.json');
+    assert.deepEqual(summary.tsconfigs, ['packages/api/project.json', 'tsconfig.json']);
+  });
 });

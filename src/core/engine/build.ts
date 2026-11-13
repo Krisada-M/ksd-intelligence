@@ -1,12 +1,15 @@
 import { chmod, mkdir } from 'node:fs/promises';
+import { isRecord } from '../kernel/guards.js';
 import { createEngineHost } from './host.js';
 import { acquireBuildLock } from './lock.js';
 import { chooseRuntime, memoryLimitMb } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript } from './typescript.js';
 import type { Workspace } from './workspace.js';
 
-export type BuildOutcome =
-  | { ok: true }
+/** Owner commands are long (a cold oh-my-pi build is minutes) but never unbounded. */
+const OWNER_COMMAND_MS = 60 * 60_000;
+export type EngineOutcome =
+  | { ok: true; value: Record<string, unknown> }
   | { ok: false; code: 'degraded' | 'busy' | 'index-failed'; message: string; fix: string };
 
 export interface BuildOptions {
@@ -14,16 +17,20 @@ export interface BuildOptions {
   /** Child environment; defaults to this process's environment. */
   env?: NodeJS.ProcessEnv;
   onProgress?: (message: string, data: unknown) => void;
+  /** Time limit of the engine request; default 1 h. */
+  timeoutMs?: number;
 }
 
 /**
- * `ei index` (part 1): with the pinned TypeScript verified and the repository's build lock held,
- * the engine child scans and publishes the census. Only the lock holder starts a child (D35).
+ * Runs one engine op for the repository with the pinned TypeScript verified and its build lock
+ * held. Only the lock holder starts a child (D35); the child is stopped afterwards.
  */
-export async function buildIndex(
+async function runLocked(
   workspace: Workspace,
-  options: BuildOptions = {},
-): Promise<BuildOutcome> {
+  op: 'index' | 'doctor',
+  args: Record<string, unknown>,
+  options: BuildOptions,
+): Promise<EngineOutcome> {
   const typescript = await resolveTypescript({
     version: pinnedTypescriptVersion(),
     cacheHome: options.cacheHome,
@@ -56,22 +63,44 @@ export async function buildIndex(
   });
   try {
     const reply = await host.request(
-      'index',
+      op,
       {
+        ...args,
         root: workspace.root,
         cacheDir: workspace.cacheDir,
         typescriptPath: typescript.runtime.path,
       },
-      options.onProgress,
+      { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS },
     );
-    if (reply.ok) return { ok: true };
+    if (reply.ok && isRecord(reply.value)) return { ok: true, value: reply.value };
+    if (reply.ok) {
+      return { ok: false, code: 'index-failed', message: 'engine reply is not an object', fix: '' };
+    }
     const fix =
       reply.reason === 'memory-limit'
         ? 'narrow impact.include or raise impact.maxMemoryMb, then run: ei index'
-        : 'retry once: ei index';
+        : reply.reason === 'timeout'
+          ? `the engine hung or is far slower than expected; retry ei ${op}`
+          : `retry once: ei ${op}`;
     return { ok: false, code: 'index-failed', message: reply.message, fix };
   } finally {
     await host.stop();
     lock.release();
   }
+}
+
+/** `ei index [--full]`: an update from the published index, or a cold build. */
+export function buildIndex(
+  workspace: Workspace,
+  options: BuildOptions & { full?: boolean } = {},
+): Promise<EngineOutcome> {
+  return runLocked(workspace, 'index', { full: options.full === true, freshness: 'hash' }, options);
+}
+
+/** `ei doctor --deep [--differential N]`: cold rebuild into a temp database, diffed. */
+export function doctorDeep(
+  workspace: Workspace,
+  options: BuildOptions & { differential?: number } = {},
+): Promise<EngineOutcome> {
+  return runLocked(workspace, 'doctor', { differential: options.differential ?? 0 }, options);
 }

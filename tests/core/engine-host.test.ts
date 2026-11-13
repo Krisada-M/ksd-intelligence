@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -49,6 +49,14 @@ async function until(condition: () => boolean, what: string, ms = 5_000): Promis
     if (Date.now() > deadline) assert.fail(`timed out waiting for ${what}`);
     await delay(20);
   }
+}
+
+/** A request that outlives `ms` fails the test; `withHost` then kills the child. */
+async function within<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  const late = Symbol('late');
+  const settled = await Promise.race([promise, delay(ms, late)]);
+  if (settled === late) assert.fail(`timed out waiting for ${what}`);
+  return settled;
 }
 
 function field(value: unknown, key: string): unknown {
@@ -173,6 +181,49 @@ describe('engine host', () => {
     });
   });
 
+  it('the child exits after a cold build; the next request runs in a new child from the published index', async () => {
+    const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-retire-')));
+    const repo = join(work, 'repo');
+    const typescriptPath = createRequire(import.meta.url).resolve('typescript');
+    try {
+      await mkdir(join(repo, 'src'), { recursive: true });
+      await writeFile(
+        join(repo, 'tsconfig.json'),
+        JSON.stringify({ compilerOptions: { strict: true, noEmit: true }, include: ['src'] }),
+      );
+      await writeFile(join(repo, 'src/a.ts'), 'export const a: number = 1;\n');
+      const args = { typescriptPath, root: repo, cacheDir: join(work, 'cache') };
+      await withHost({}, async (host) => {
+        const cold = await host.request('index', args);
+        assert.ok(cold.ok, JSON.stringify(cold));
+        assert.equal(field(cold.value, 'action'), 'cold');
+        await until(
+          () => host.status().lastExit !== null,
+          'the child to exit after the cold build',
+        );
+        assert.equal(host.status().lastExit?.reason, 'retired');
+        assert.equal(host.status().pid, null, 'no child is kept after a cold build');
+
+        await writeFile(join(repo, 'src/a.ts'), 'export const a: number = 2;\n');
+        const update = await host.request('index', { ...args, freshness: 'hash' });
+        assert.ok(update.ok, JSON.stringify(update));
+        assert.equal(field(update.value, 'action'), 'update');
+        assert.equal(host.status().starts, 2, 'a second child answered the update');
+        assert.equal(host.status().lastExit?.reason, 'retired');
+
+        // An update does not retire the child: the next one chains from its programs.
+        const pid = host.status().pid;
+        assert.notEqual(pid, null);
+        await writeFile(join(repo, 'src/a.ts'), 'export const a: number = 3;\n');
+        assert.equal((await host.request('index', { ...args, freshness: 'hash' })).ok, true);
+        assert.equal(host.status().pid, pid);
+        assert.equal(host.status().starts, 2);
+      });
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
   it('node child above its heap limit fails with index-failed / memory-limit', async () => {
     await withHost({ memoryLimitMb: 64 }, async (host) => {
       const reply = await host.request('allocate');
@@ -236,9 +287,15 @@ describe('engine host', () => {
     try {
       await withHost({}, async (host) => {
         let staged = false;
-        const pending = host.request('stage-and-hang', { cacheDir, paths: ['a.ts'] }, (message) => {
-          staged ||= message === 'staged';
-        });
+        const pending = host.request(
+          'stage-and-hang',
+          { cacheDir, paths: ['a.ts'] },
+          {
+            onProgress: (message) => {
+              staged ||= message === 'staged';
+            },
+          },
+        );
         await until(() => staged, 'staging progress');
         const pid = host.status().pid;
         assert.ok(pid);
@@ -250,6 +307,55 @@ describe('engine host', () => {
         const next = await host.request('ping');
         assert.ok(next.ok);
         assert.notEqual(pidOf(next.value), pid);
+      });
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a child that hangs without exiting is killed at the request limit and reported', async () => {
+    const cacheDir = await realpath(await mkdtemp(join(tmpdir(), 'ei-host-hang-')));
+    try {
+      await withHost({ env: TEST_ENV }, async (host) => {
+        const ping = await host.request('ping');
+        assert.ok(ping.ok);
+        const first = pidOf(ping.value);
+        const started = performance.now();
+        // The test op stages a database and then never answers, and never exits.
+        const reply = await within(
+          host.request('stage-and-hang', { cacheDir, paths: ['a.ts'] }, { timeoutMs: 400 }),
+          5_000,
+          'the request limit to kill a hung child',
+        );
+        assert.equal(reply.ok, false);
+        assert.equal(!reply.ok && reply.code, 'index-failed');
+        assert.equal(!reply.ok && reply.reason, 'timeout');
+        assert.match(
+          !reply.ok ? reply.message : '',
+          /did not answer 'stage-and-hang' within 400 ms/,
+        );
+        assert.ok(performance.now() - started < 5_000, 'reported at the limit, not later');
+        assert.equal(host.status().lastExit?.reason, 'timeout');
+        assert.equal(host.status().pid, null, 'the hung child is gone');
+        const next = await host.request('ping');
+        assert.ok(next.ok);
+        assert.notEqual(pidOf(next.value), first, 'a new child answers');
+      });
+    } finally {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  it('a request that sets no limit still has one: the host default', async () => {
+    const cacheDir = await realpath(await mkdtemp(join(tmpdir(), 'ei-host-default-')));
+    try {
+      await withHost({ env: TEST_ENV, requestMs: 300 }, async (host) => {
+        const reply = await within(
+          host.request('stage-and-hang', { cacheDir, paths: ['a.ts'] }),
+          5_000,
+          'the host default limit to end a request that sets none',
+        );
+        assert.equal(!reply.ok && reply.reason, 'timeout');
       });
     } finally {
       await rm(cacheDir, { recursive: true, force: true });
@@ -279,7 +385,7 @@ describe('engine host', () => {
         const pending = host.request(
           'stage-and-hang',
           { cacheDir, paths: ['half-a.ts', 'half-b.ts'] },
-          (message) => (staged ||= message === 'staged'),
+          { onProgress: (message) => (staged ||= message === 'staged') },
         );
         await until(() => staged, 'the child to write its staging database');
         await host.stop();
