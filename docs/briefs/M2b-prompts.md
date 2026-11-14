@@ -4,11 +4,11 @@ Paste one prompt per agent session. Each round ends with a local commit and a sh
 
 | Round | What | Model |
 |---|---|---|
-| 1 | Step 1: index additions | Claude Opus 5.5 · `xhigh` |
-| 2 | Step 2: query core and golden cases | Claude Opus 5.5 · `xhigh` |
-| 3 | Step 3: tool, CLI, rendering, live, latency | Claude Opus 5.5 · `xhigh` |
-| 4 | Independent review, read-only | GPT-5.5 · `xhigh` |
-| 5 | Fix round | Claude Opus 5.5 · `xhigh` |
+| 1 | Step 1: index additions | strongest coding model available (see `README.md`) |
+| 2 | Step 2: query core and golden cases | same |
+| 3 | Step 3: tool, CLI, rendering, live, latency | same |
+| 4 | Independent review, read-only | a model from a different vendor than the one that wrote rounds 1–3 |
+| 5 | Fix round | any of the writing models |
 | — | Contingencies A–D | same model as the round they interrupt |
 
 ## Common rules (included in every prompt below)

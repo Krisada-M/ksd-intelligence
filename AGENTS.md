@@ -21,15 +21,17 @@ In scope, in order:
 | 3c | M1d | macOS + Linux CI baseline and platform compatibility gates (no engine code) | `docs/briefs/M1d-platform-baseline.md` |
 | 4 | M2a ✅ | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
 | 5 | M2b | `ei_impact` passing the engine golden cases | `docs/briefs/M2b-impact.md` |
-| 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | written after M2b review |
-| 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | written after M3 evidence |
-| 8 | M6a | `ei_search`, lexical (no embedding dependency) | written after M3 evidence |
-| 9 | M4a | Route detection (Next.js, Expo Router, Hono) | written when scheduled |
-| 10 | M4b | Heuristic bridges, one proven flow at a time | gated by dogfood evidence |
-| 11 | M5 | Session watcher, worktree seeding | optional; gated by measured need |
-| 12 | M6b | Semantic search (optional local embeddings) | deferred; separate owner approval |
+| 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | `docs/briefs/M3-dogfood.md` |
+| 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | `docs/briefs/M2c-changes.md` (draft; Round 0 first) |
+| 8 | M6a | `ei_search`, lexical (no embedding dependency) | `docs/briefs/M6a-search.md` (draft; Round 0 first) |
+| 9 | M4a | Route detection (Next.js, Expo Router, Hono) | `docs/briefs/M4a-routes.md` (draft; gated per detector) |
+| 10 | M4b | Heuristic bridges, one proven flow at a time | `docs/briefs/gated-M4b-M5-M6b.md`; gated by dogfood evidence |
+| 11 | M5 | Session watcher, worktree seeding | same file; optional, gated by measured need |
+| 12 | M6b | Semantic search (optional local embeddings) | same file; deferred, separate owner approval |
 
-A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
+| 13 | V1 close-out | Audit claims against code, release candidate, fresh-install rehearsal | `docs/briefs/V1-closeout.md` (draft) |
+
+Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
 
 Out of scope until the owner says otherwise: MCP adapter, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
 
