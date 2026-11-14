@@ -24,7 +24,6 @@ export async function doctorDeep(ts, indexer, impact, options) {
     const progress = options.onProgress ?? (() => undefined);
     progress('doctor: update active index');
     const update = await indexer.index({ impact, freshness: 'hash', onProgress: progress });
-    await indexer.release();
     if (update.action === 'failed') {
         throw new Error(`doctor: active index verification failed: ${update.problems.join('; ')}`);
     }
@@ -39,7 +38,6 @@ export async function doctorDeep(ts, indexer, impact, options) {
     try {
         progress('doctor: cold rebuild');
         cold = await rebuild.index({ impact, full: true });
-        await rebuild.release();
         if (cold.action === 'failed') {
             throw new Error(`doctor: cold rebuild verification failed: ${cold.problems.join('; ')}`);
         }
@@ -62,7 +60,6 @@ export async function doctorDeep(ts, indexer, impact, options) {
         };
     }
     finally {
-        await rebuild.release();
         rmSync(temp, { recursive: true, force: true });
     }
     let report = null;

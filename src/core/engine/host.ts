@@ -70,6 +70,8 @@ interface Child {
   /** The limit that expired, for the failure message. */
   timedOut: { op: string; ms: number } | null;
   sampler?: NodeJS.Timeout;
+  /** A build op answered: retire the child once nothing is pending (idle exit is for queries). */
+  retireWhenDone: boolean;
   exited: Promise<void>;
 }
 
@@ -85,7 +87,8 @@ async function rssMb(pid: number): Promise<number | null> {
 
 /**
  * Parent side of the engine (D45): one child process, spawned on the first request and again
- * on the first request after it exits, killed above its memory limit, retired when idle.
+ * on the first request after it exits, killed above its memory limit, retired after every build
+ * or update and, after query ops, when idle.
  */
 export function createEngineHost(options: EngineHostOptions): EngineHost {
   const { runtime, memoryLimitMb } = options;
@@ -150,9 +153,10 @@ export function createEngineHost(options: EngineHostOptions): EngineHost {
         ? { ok: true, value: message.value }
         : { ok: false, code: message.code, message: message.message },
     );
-    if (message.type === 'result' && message.retire === true && child.pending.size === 0) {
-      retire(child, 'retired');
-    } else if (child.pending.size === 0) armIdle(child);
+    if (message.retire === true) child.retireWhenDone = true;
+    if (child.pending.size > 0) return;
+    if (child.retireWhenDone) retire(child, 'retired');
+    else armIdle(child);
   }
 
   /** Later requests start a fresh child; this one exits when its stdin closes. */
@@ -198,6 +202,7 @@ export function createEngineHost(options: EngineHostOptions): EngineHost {
       stderr: '',
       killedFor: null,
       timedOut: null,
+      retireWhenDone: false,
       exited: new Promise((resolve) => (markExited = resolve)),
     };
     let done = false;

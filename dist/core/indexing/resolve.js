@@ -629,7 +629,7 @@ export class Resolver {
             externalImports: [...externalImports.values()],
             exports,
             surface: surface.hash,
-            inferredKeys: surface.inferredKeys,
+            observableKeys: surface.observableKeys,
             global: isGlobalFile(this.ts, this.checker, sf),
             counts,
         };

@@ -57,22 +57,4 @@ describe('analysis programs (D43, DESIGN §6.2.1)', () => {
     assert.deepEqual(groups, []);
     assert.deepEqual(errors, ['missing/tsconfig.json: cannot be read or parsed']);
   });
-
-  it("the compiler can drop a drained builder's program and still chain from it", async () => {
-    // The memory bound of a session relies on this TypeScript-internal method (not in its
-    // typings): after it, the old builder holds signatures and references but no checker.
-    const file = join(root, 'a', 'x.ts');
-    await writeFile(file, 'export const x = 1;\n');
-    const options = { noEmit: true };
-    const host = ts.createIncrementalCompilerHost(options);
-    const first: ts.SemanticDiagnosticsBuilderProgram & { releaseProgram?: () => void } =
-      ts.createSemanticDiagnosticsBuilderProgram([file], options, host);
-    while (first.getSemanticDiagnosticsOfNextAffectedFile() !== undefined);
-    assert.equal(typeof first.releaseProgram, 'function');
-    first.releaseProgram?.();
-    await writeFile(file, 'export const x = 2;\n');
-    const second = ts.createSemanticDiagnosticsBuilderProgram([file], options, host, first);
-    const affected = second.getSemanticDiagnosticsOfNextAffectedFile()?.affected;
-    assert.equal(affected !== undefined && 'fileName' in affected && affected.fileName, file);
-  });
 });

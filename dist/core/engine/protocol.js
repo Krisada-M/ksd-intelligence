@@ -25,7 +25,7 @@ export function parseMessage(line) {
         return { type: 'result', id, value: raw.value, retire: raw.retire === true };
     }
     if (raw.type === 'error' && typeof raw.code === 'string' && typeof raw.message === 'string') {
-        return { type: 'error', id, code: raw.code, message: raw.message };
+        return { type: 'error', id, code: raw.code, message: raw.message, retire: raw.retire === true };
     }
     return `malformed ${String(raw.type)} message`;
 }

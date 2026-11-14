@@ -94,8 +94,8 @@ export interface FileResolution {
    * re-resolved when it changes.
    */
   surface: string;
-  /** Keys of the observable declarations whose type is inferred (`surface.ts`). */
-  inferredKeys: ReadonlySet<string>;
+  /** Keys of the observable declarations (`surface.ts`). */
+  observableKeys: ReadonlySet<string>;
   /** A script, ambient or augmenting file: a change can alter resolution anywhere. */
   global: boolean;
   counts: ResolveCounts;
@@ -762,7 +762,7 @@ export class Resolver {
       externalImports: [...externalImports.values()],
       exports,
       surface: surface.hash,
-      inferredKeys: surface.inferredKeys,
+      observableKeys: surface.observableKeys,
       global: isGlobalFile(this.ts, this.checker, sf),
       counts,
     };

@@ -42,15 +42,13 @@ describe('export-surface hash: syntax only, no checker (DESIGN §6.2.1)', () => 
     different('export const v: number = 1;\n', 'export const v: string = "";\n');
   });
 
-  it('an inferred type includes the body or initializer, and says so', () => {
+  it('an inferred type includes the body or initializer', () => {
     const before = 'export function f() {\n  return 1;\n}\n';
     const after = 'export function f() {\n  return "a";\n}\n';
     different(before, after);
-    assert.deepEqual([...surface(before).inferredKeys], ['a.ts#f']);
     different('export const c = 1;\n', 'export const c = 2;\n');
     different('export const k = () => 1;\n', 'export const k = () => "1";\n');
     different('export function f(a = 1): void {}\n', 'export function f(a = "x"): void {}\n');
-    assert.deepEqual([...surface('export function f(a: number): void {}\n').inferredKeys], []);
   });
 
   it('`const` and `let` infer different literal types', () => {
@@ -69,6 +67,13 @@ describe('export-surface hash: syntax only, no checker (DESIGN §6.2.1)', () => 
     const chain = (body: string): string =>
       `function b() {\n  return ${body};\n}\nfunction a() {\n  return b();\n}\nexport const used = a();\n`;
     different(chain('1'), chain('"a"'));
+    // Observable keys feed update propagation: written or inferred, exported or named.
+    const keys = (source: string): string[] => [...surface(source).observableKeys].sort();
+    assert.deepEqual(keys(chain('1')), ['a.ts#a', 'a.ts#b', 'a.ts#used']);
+    assert.deepEqual(
+      keys('function help() {}\nexport function kept(): number {\n  return 1;\n}\n'),
+      ['a.ts#kept'],
+    );
   });
 
   it('class members: a written member signature hides its body, an inferred one does not', () => {

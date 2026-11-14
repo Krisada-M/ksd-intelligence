@@ -6,7 +6,7 @@ export type Message =
   | { type: 'request'; id: string; op: string; args: unknown }
   | { type: 'progress'; id: string; message: string; data?: unknown }
   | { type: 'result'; id: string; value: unknown; retire?: boolean }
-  | { type: 'error'; id: string; code: string; message: string };
+  | { type: 'error'; id: string; code: string; message: string; retire?: boolean };
 
 export function encode(message: Message): string {
   return `${JSON.stringify(message)}\n`;
@@ -32,7 +32,7 @@ export function parseMessage(line: string): Message | string {
     return { type: 'result', id, value: raw.value, retire: raw.retire === true };
   }
   if (raw.type === 'error' && typeof raw.code === 'string' && typeof raw.message === 'string') {
-    return { type: 'error', id, code: raw.code, message: raw.message };
+    return { type: 'error', id, code: raw.code, message: raw.message, retire: raw.retire === true };
   }
   return `malformed ${String(raw.type)} message`;
 }

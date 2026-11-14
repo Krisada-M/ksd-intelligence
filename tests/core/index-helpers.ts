@@ -77,7 +77,6 @@ export async function assertIncrementalEqualsCold(
 ): Promise<IndexReport> {
   const report = await indexer.index({ impact: impactOf(indexer.root), freshness: 'hash' });
   assert.deepEqual(report.problems, [], `${label}: the update verifies`);
-  await indexer.settle();
   const diff = difference(publishedLines(indexer.cacheDir), await coldLines(indexer.root, coldDir));
   assert.deepEqual(diff, { onlyFirst: [], onlySecond: [] }, `${label}: incremental == cold`);
   return report;

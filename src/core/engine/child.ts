@@ -66,24 +66,15 @@ async function compilerAt(path: string): Promise<Ts> {
   return ts;
 }
 
-// One indexer per repository: it keeps the last build's programs for the next update.
-const indexers = new Map<string, Indexer>();
-
-async function indexerFor(args: Record<string, unknown>): Promise<Indexer> {
-  const typescriptPath = stringArg(args, 'typescriptPath');
-  const root = stringArg(args, 'root');
-  const cacheDir = stringArg(args, 'cacheDir');
-  const id = `${typescriptPath}\u0000${root}\u0000${cacheDir}`;
-  let indexer = indexers.get(id);
-  if (indexer === undefined) {
-    const budget = Number(process.env.EI_MEMORY_LIMIT_MB);
-    indexer = new Indexer(await compilerAt(typescriptPath), root, cacheDir, {
-      memoryBudgetMb: Number.isFinite(budget) && budget > 0 ? budget : undefined,
-    });
-    indexers.set(id, indexer);
-  }
-  return indexer;
+function indexerFor(args: Record<string, unknown>, ts: Ts): Indexer {
+  const budget = Number(process.env.EI_MEMORY_LIMIT_MB);
+  return new Indexer(ts, stringArg(args, 'root'), stringArg(args, 'cacheDir'), {
+    memoryBudgetMb: Number.isFinite(budget) && budget > 0 ? budget : undefined,
+  });
 }
+
+// Builds leave a child holding the programs' memory; the host retires it after each (D50).
+const BUILD_OPS = new Set(['index', 'doctor']);
 
 // A Map, not an object literal: an op name such as `constructor` must not reach a prototype member.
 const ops = new Map<string, Op>([
@@ -109,7 +100,7 @@ const ops = new Map<string, Op>([
   [
     'index',
     async (args, progress) => {
-      const indexer = await indexerFor(args);
+      const indexer = indexerFor(args, await compilerAt(stringArg(args, 'typescriptPath')));
       const workspace = await loadWorkspace(indexer.root);
       return indexer.index({
         impact: workspace.config.impact,
@@ -122,15 +113,14 @@ const ops = new Map<string, Op>([
   [
     'doctor',
     async (args, progress) => {
-      const indexer = await indexerFor(args);
+      const ts = await compilerAt(stringArg(args, 'typescriptPath'));
+      const indexer = indexerFor(args, ts);
       const workspace = await loadWorkspace(indexer.root);
       const size = typeof args.differential === 'number' ? args.differential : 0;
-      return doctorDeep(
-        await compilerAt(stringArg(args, 'typescriptPath')),
-        indexer,
-        workspace.config.impact,
-        { differential: size, onProgress: progress },
-      );
+      return doctorDeep(ts, indexer, workspace.config.impact, {
+        differential: size,
+        onProgress: progress,
+      });
     },
   ],
 ]);
@@ -177,13 +167,11 @@ async function handle(id: string, op: string, args: unknown): Promise<void> {
     send({ type: 'error', id, code: 'INVALID_INPUT', message: `unknown engine op: ${op}` });
     return;
   }
+  const retire = BUILD_OPS.has(op);
   try {
     const value = await run(isRecord(args) ? args : {}, (message, data) =>
       send({ type: 'progress', id, message, data }),
     );
-    // A cold build leaves the child holding every program of the repository; the next request
-    // starts a fresh child from the published index instead of keeping that memory resident.
-    const retire = op === 'index' && isRecord(value) && value.action === 'cold';
     send({ type: 'result', id, value, retire });
   } catch (error) {
     const code = error instanceof OpError ? error.code : 'index-failed';
@@ -192,6 +180,7 @@ async function handle(id: string, op: string, args: unknown): Promise<void> {
       id,
       code,
       message: error instanceof Error ? error.message : String(error),
+      retire,
     });
   }
 }
@@ -209,5 +198,5 @@ process.stdin.on(
     void handle(message.id, message.op, message.args);
   }),
 );
-// The parent closes stdin to retire an idle child, and the pipe closes if the parent dies.
+// The parent closes stdin to retire the child, and the pipe closes if the parent dies.
 process.stdin.on('end', () => process.exit(0));

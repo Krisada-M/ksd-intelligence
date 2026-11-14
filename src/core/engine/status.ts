@@ -411,10 +411,9 @@ export function renderStatus(status: WorkspaceStatus): string {
   if (index !== null) {
     lines.push(`Coverage    ${coverageLine(index.coverage)}`);
     const { graph, meta } = index;
-    const supplementedLast = meta.supplemented_last ?? '0';
     lines.push(
       `Graph       ${graph.declarations.toLocaleString('en-US')} declarations · ${graph.edges.toLocaleString('en-US')} edges · ` +
-        `programs ${meta.programs ?? '?'}${splitNote(meta.program_split)} · affected-set-supplemented ${supplementedLast} (total ${meta.supplemented_total ?? '0'})`,
+        `programs ${meta.programs ?? '?'}${splitNote(meta.program_split)}`,
     );
     lines.push(`Problems    ${problemsLine(index, status.failure)}`);
     lines.push(`Gap sites   ${counted(graph.gapSites)}`);

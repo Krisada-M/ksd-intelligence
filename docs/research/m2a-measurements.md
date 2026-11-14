@@ -1,8 +1,8 @@
-# M2a.2 measurements
+# M2a measurements (M2a.2, M2a.3)
 
 ## Result and scope
 
-**PARTIAL.** Linux tests pass (426/426). In the final round (first section below) the surface hash is syntactic and the per-file semantic check is gone; `ei doctor --deep` on oh-my-pi exits 0 with 0 graph and 0 surface-hash differences, and a 300-declaration differential covers 7,640 of 7,640 references. The DESIGN §14 time targets still FAIL and macOS is NOT VERIFIED. Sections after "History" describe earlier builds. These measurements do not accept M2a.2 or authorize M2b.
+**PARTIAL.** M2a.3 (first section below): Linux tests pass (429/429). Update propagation now follows observable declarations with written or inferred types; the engine child exits after every build and update; no builder state exists. On oh-my-pi `ei doctor --deep --differential 300` exits 0: 0 graph differences, 7,640 of 7,640 references covered by an edge, 0 misses. A signature edit now re-resolves 4,837 files. The DESIGN §14 time targets still FAIL and macOS is NOT VERIFIED. Sections after "History" describe earlier builds. These measurements do not accept M2a or authorize M2b.
 
 The corpus is oh-my-pi commit `04cd1a7549a02d62ad1d24826198d52507595683`, with installed dependencies. The base scan found 10,502 visible files, 6,761 indexable files, 21 orphans, 23 packages and 41 tsconfigs. Conflicting compiler options produced five programs. The edit sequence temporarily added one indexable file.
 
@@ -10,7 +10,99 @@ Runtime: Linux WSL2 `6.18.58.1-microsoft-standard-WSL2`, x86_64, AMD Ryzen 7 870
 
 macOS, other architectures, cross-OS canonical comparison and a new live OMP tool smoke are **NOT VERIFIED**. CLI execution is not live OMP compatibility evidence.
 
-## Final round (2026-11-14): syntactic surface hash, no per-file semantic check
+## M2a.3 round (2026-11-14): update soundness, child exits after every build, differential breakdown
+
+Model: `anthropic/claude-opus-5-5`; effort is not exposed to the session. No independent reviewer ran. Everything below was measured on this machine only (Linux, WSL2, x86_64). macOS is **NOT VERIFIED**.
+
+### 1. Update soundness (new process, no builder state)
+
+`tests/core/update-soundness.test.ts` copies the fixture, adds `a.ts`, `b.ts` and the edited file under `packages/payments/src/sound/`, builds cold, edits one file that `a.ts` neither imports nor names, updates with a new `Indexer` (no state from the build; the engine child also exits after every build now) and asserts the update equals a cold build of the edited tree, counters included.
+
+| Case | Before the fix | What covers it now |
+| --- | --- | --- |
+| a. Overload in `b.ts` with parameter types from `z.ts`; the `z.ts` edit selects the other overload, so `measure('k').size` in `a.ts` moves from `Large.size` to `Small.size` | **FAIL**: the update kept `a.ts#read → b.ts#Large.size` | observable-declaration propagation |
+| b. Conditional type in `b.ts` over a type from `z.ts` | **FAIL**: same | observable-declaration propagation |
+| c. `f()` in `b.ts` returns `T` from `c.ts`; `c.ts` adds the member `a.ts` already reads | pass, through the name check only: `area` was new to the index, so every file whose text contains it was re-resolved. With that scan disabled the test failed | the name scan, and now also observable-declaration propagation (`b.ts#make → c.ts#Shape`) |
+| d. (added) `c.ts` declares a name that `a.ts` reads from an untyped value | — | the name scan only: no type links the files. Added because the first mutation run showed the scan was no longer tested (P01 survived) |
+
+Fix (the owner's rule): during an update a file counts as changed for propagation when one of its observable declarations (exported, or named by an observable declaration's text), with a written or an inferred type, has an edge into a file whose surface changed. Before, only declarations with an inferred type counted. `surface.ts` returns the observable keys instead of the inferred ones, and its `inferred` flag, used for nothing else, is gone. A precision control in `surface.test.ts`: `g.ts` uses `b.ts` only inside a helper that no observable declaration names, and its importer `h.ts` is not re-resolved.
+
+Cost on oh-my-pi: the signature edit of `buildModel` re-resolves **4,837** files (inferred-only rule: 2,171; the earlier checker-based surface: 479).
+
+### 2. The child exits after every build and update
+
+- `child.ts`: a new `Indexer` per request (no per-repository map). `index` and `doctor` replies, results and errors alike, carry `retire`; the host retires the child once nothing is pending. After `ping` and other query ops the child stays until the idle exit (10 min).
+- `Indexer`: no session, no builder, no background semantic pass, no `releaseProgram`, no `settle` or `release`. Every update creates its programs from the census. `lighten` (swap a program for a checker-less one that shares the parsed files) stays: it bounds memory between program groups inside one build.
+- `program.ts`: the analysis host no longer stamps source-file versions; only the builder read them (program reuse compares source-file identity).
+- Status: the `affected-set-supplemented` counter is gone; it counted files the builder missed, and there is no builder. The report fields `builderAffected` and `supplemented` and the meta keys `builder_affected_last`, `supplemented_last` and `supplemented_total` are removed. DESIGN §6.2.1 and D50 record the change.
+- Test: the child is gone after the cold build, after each of two updates and after a failed build; a `ping` then starts a child that stays (`starts` 5). Deleted: the test of TypeScript's internal `releaseProgram` and the chained-builder test. The randomized run that released the session before each step now creates a new `Indexer` before each step.
+
+### 3. Differential report
+
+New fields: `coveredBy.edge` (an edge at the line; an IMPORTS edge for an import binding), `coveredBy.exportStatus` (`export { x }`) and `coveredBy.recordOnly` (only an unresolved record or gap site on that line). `covered` is their sum. On oh-my-pi all 7,640 covered references are covered by an edge; none by a record alone.
+
+"target is not an indexed declaration" is now `target is not an indexed declaration: <kind>`, the language service's kind, with `(outside the repository)` appended for library definitions. A probe on the published oh-my-pi index (same 300-declaration sample) listed every such definition:
+
+| Kind | References | Definitions | What they are | Disposition |
+| --- | ---: | ---: | --- | --- |
+| property | 834 | 1 | `cost: { input: number }` at `packages/catalog/src/types.ts:272`: a member of an anonymous object type inside the `Usage` interface member `cost` | out of scope: ADR 0003 does not index members of anonymous object types. Consequence: `ei_impact` cannot answer for `Usage.cost.input` (834 uses in this sample alone); widening ADR 0003 is an owner decision |
+| property | 12 | 4 | quoted keys such as `"tab.shell": "├─"` in `packages/tui/src/theme/symbols.ts` | **oracle bug, fixed**: TypeScript's span of a quoted name starts inside the quotes, and the oracle compared it with the quote. Now 8 are declaration names of related symbols and 4 are reads such as `this.#symbols["tree.branch"]` |
+| method | 2 | 2 | methods of a class declared inside a test function (`computer.test.ts:3495`) | out of scope: local declarations |
+| method | 1 | 1 | a method of a class expression returned from a function (`native-shell.ts:20`) | out of scope: local declarations |
+
+The 4 reads became misses once matched. `SymbolMap = Record<SymbolKey, string>`, so `this.#symbols["tree.branch"]` uses a mapped-type property that has no declaration. The index stores the edge to `Theme.#symbols` and, per ADR 0003, nothing for the declaration-less property; `findReferences` lists the read under every object literal typed `SymbolMap`. The oracle now skips a reference whose own symbol has no declaration (`use of a property of a mapped type (no declaration)`), like the existing mapped-type key skip. Fixture case: `kindNames[1]` on a `Record<1 | 2, string>`. ADR 0003 records the breakdown and both skips.
+
+### 4. Fixture differential: exact counts
+
+The fixture test asserts `declarations` 31, `references` 48, `coveredBy` `{ edge: 48, exportStatus: 0, recordOnly: 0 }` and `skipped` exactly `{ definition: 33, 'declaration name of a related symbol': 6 }`. The JSDoc, shorthand/mapped-type and new kinds tests pin `docOnly`, `skipped` and `coveredBy` exactly. The miss test inserts a gap site on the missed line and asserts that the reference becomes `recordOnly`, not an edge.
+
+### 5. Measurements on the final build
+
+Each command a new Node process (`/usr/bin/time`), the production engine host (its child exits after each command), lock and copy-then-rename publisher, on the same oh-my-pi checkout. Per run: cold build, body edit, signature edit, add file. Median and range of 3 runs.
+
+| Operation | Wall median (s) | Wall range (s) | Max RSS median (MiB) | RSS range (MiB) | Files resolved |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Cold `index --full` | 144.6 | 129.4–184.2 | 6,978 | 6,935–7,071 | 6,761 |
+| Body edit | 24.7 | 24.0–41.5 | 4,322 | 4,316–4,339 | 1 |
+| Signature edit | 124.4 | 120.8–231.7 | 6,376 | 6,048–6,465 | 4,837 |
+| Add file | 58.4 | 58.3–83.9 | 5,353 | 5,332–5,432 | 1,237 |
+
+Peak RSS over the 12 commands: **7,071 MiB** (a cold build); doctor: 7,410 MiB. The engine limit is 7,997 MiB.
+
+Run 1 was slower in every step (cold 184.2 s, body 41.5 s, signature 231.7 s, add 83.9 s): its body edit spent 32.7 s in `program` against 18.5 and 19.2 s in runs 2 and 3, and its cold resolve took 158.2 s against 122.5 and 109.1 s. Nothing else ran; the cause is not isolated ([INFERENCE] machine state such as the file cache). The medians are effectively runs 2 and 3.
+
+Phases reported by the engine, run 3, in seconds:
+
+| Operation | scan | program | extract | resolve | verify | publish | Sum |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Cold | 2.22 | 14.18 | 1.09 | 109.12 | 1.76 | 0.05 | 128.42 |
+| Body edit | 2.27 | 19.23 | 0.20 | 0.18 | 1.77 | 0.04 | 23.70 |
+| Signature edit | 2.36 | 18.03 | 0.24 | 101.01 | 1.70 | 0.04 | 123.39 |
+| Add file | 2.24 | 18.44 | 0.17 | 33.95 | 2.51 | 0.05 | 57.36 |
+
+Compared with the previous round (same machine, medians): signature edit 92.4 s for 2,171 files, now 124.4 s for 4,837; the other operations are within run-to-run variation.
+
+`ei doctor --deep --differential 300` on the final build: **exit 0**, wall 340.9 s, max RSS 7,410 MiB. Update step: `1 changed · 1 removed · 4960 resolved` (the sequence restored `build.ts` and removed the added file). **0 graph differences.** 17 files have use counters that differ from the cold rebuild (informational, not part of equality; the previous round had 0; the 4,960-file update checked in another order, and the counters are statistics by ADR 0003). Differential: 300 declarations, 7,640 references, **7,640 covered** (`coveredBy`: edge 7,640, exportStatus 0, recordOnly 0), **0 misses**, 13 `docOnly`. Skipped: 301 definitions; 785 declaration names of related symbols; 834 `target is not an indexed declaration: property`; 3 `… : method`; 9 uses of the value a shorthand property names; 4 uses of a property of a mapped type (no declaration); 2 keys of an object literal typed by a mapped type.
+
+| Target (DESIGN §14) | M2a.3 evidence | Outcome |
+| --- | --- | --- |
+| Node cold build below 60 s | median 144.6 s (129.4–184.2) | FAIL |
+| Existing-program body update below 3 s | no program is kept between updates any more (D50) | not applicable; FAIL as a target |
+| New-session drift query below 15 s | body edit median 24.7 s (24.0–41.5), 1 file | FAIL |
+
+### 6. Gates and mutation smoke
+
+`npm test`: **429 tests, 24 suites, 429 pass, 0 fail, 0 cancelled, 0 skipped**. `npm run typecheck`, `npm run lint`, `prettier --check .`: pass.
+
+Mutation smoke on the final code (`mutate6.sh`, one-line mutations of the compiled test tree, each run against the tests that should catch it): **39 of 39 killed**, none hung. Changes to the set: dropped M17 (lighten drops the builder; the line is gone); retargeted R01 (child kept after builds), S06 (observable keys not reported) and S08 (no observable filter); added S11 (inferred-only rule), P01 (name scan off), R02 (error reply never retires), D01 (record-only counted as an edge), D02 (kinds not broken down), D03 (quoted names not matched), L04 (mapped-type accesses not skipped). In the first run P01 survived (case c no longer needed the name scan alone); case d was added and the rerun kills it.
+
+### Not verified
+
+macOS and other architectures; cross-OS canonical comparison; a live OMP tool call; a Bun build; impact-query latency (no query tool yet).
+
+## M2a.2 final round (2026-11-14): syntactic surface hash, no per-file semantic check
+
+Superseded in part by M2a.3 above: the builder, the kept child after an update and the inferred-only propagation rule described below are removed.
 
 Model: `openai-codex/gpt-6-astra`; effort is not exposed. Not Claude Opus 5.5 `xhigh` as the brief asks. No independent reviewer ran. Everything below was measured on this machine only.
 

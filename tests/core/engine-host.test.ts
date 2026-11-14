@@ -181,7 +181,7 @@ describe('engine host', () => {
     });
   });
 
-  it('the child exits after a cold build; the next request runs in a new child from the published index', async () => {
+  it('the child exits after every build and update; a query op keeps it until idle', async () => {
     const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-retire-')));
     const repo = join(work, 'repo');
     const typescriptPath = createRequire(import.meta.url).resolve('typescript');
@@ -204,20 +204,20 @@ describe('engine host', () => {
         assert.equal(host.status().lastExit?.reason, 'retired');
         assert.equal(host.status().pid, null, 'no child is kept after a cold build');
 
-        await writeFile(join(repo, 'src/a.ts'), 'export const a: number = 2;\n');
-        const update = await host.request('index', { ...args, freshness: 'hash' });
-        assert.ok(update.ok, JSON.stringify(update));
-        assert.equal(field(update.value, 'action'), 'update');
-        assert.equal(host.status().starts, 2, 'a second child answered the update');
-        assert.equal(host.status().lastExit?.reason, 'retired');
-
-        // An update does not retire the child: the next one chains from its programs.
-        const pid = host.status().pid;
-        assert.notEqual(pid, null);
-        await writeFile(join(repo, 'src/a.ts'), 'export const a: number = 3;\n');
-        assert.equal((await host.request('index', { ...args, freshness: 'hash' })).ok, true);
-        assert.equal(host.status().pid, pid);
-        assert.equal(host.status().starts, 2);
+        for (const value of [2, 3]) {
+          await writeFile(join(repo, 'src/a.ts'), `export const a: number = ${value};\n`);
+          const update = await host.request('index', { ...args, freshness: 'hash' });
+          assert.ok(update.ok, JSON.stringify(update));
+          assert.equal(field(update.value, 'action'), 'update');
+          assert.equal(host.status().starts, value, 'a new child answered the update');
+          assert.equal(host.status().pid, null, 'no child is kept after an update');
+        }
+        const failed = await host.request('index', { ...args, root: join(work, 'missing') });
+        assert.equal(failed.ok, false, JSON.stringify(failed));
+        assert.equal(host.status().pid, null, 'a failed build retires its child too');
+        assert.ok((await host.request('ping')).ok);
+        assert.equal(host.status().starts, 5);
+        assert.notEqual(host.status().pid, null, 'a query op leaves the child to its idle exit');
       });
     } finally {
       await rm(work, { recursive: true, force: true });
