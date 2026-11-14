@@ -213,7 +213,7 @@ Rules:
 | Situation | Response |
 |---|---|
 | No index yet | Build in the worker; the call blocks up to 60 s with streamed progress, then answers; beyond that, `INDEX BUILDING` guidance |
-| Probe finds drift, this session holds the build lock | Update first, then answer; footer says `index updated (3 files)` |
+| Probe finds drift, this session holds the build lock | Update first (blocks up to 60 s with progress), then answer; footer says `index updated (3 files)`. If the update is still running at 60 s, answer from the published index as `picture partial (stale index)`; the update continues (D52) |
 | Probe finds drift, another session holds the lock | Wait within the call's budget for it to publish; otherwise answer from the published index with `STALE INDEX` |
 | Update failed, older index exists | Answer from it; line 2 becomes `ACTION check-gaps · level unknown · picture partial (stale index)`, with the drifted files under `Gaps` |
 | Engine malfunction or timeout | `isError: true`, `index-failed: <message>. Retry once; if it fails again, continue without ei_impact and say so in your report.` |
