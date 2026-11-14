@@ -184,3 +184,67 @@ The corpus produced no SQL/native syntax marker rows. Their positive and deletio
 - **NOT VERIFIED:** macOS, CI (requires owner push), query-level golden verdicts, live OMP calls, rendering, query latency and independent cross-vendor review. These are not Round 1 claims.
 - `AGENTS.md` was clean; no injected block needed restoration. A pre-existing, untracked and locally ignored GitNexus `CLAUDE.md` was left untouched. No `.ignore` appeared.
 - Branch `m2b-impact` was created from fetched `origin/main`; it was later observed at `2e15bbf` when the new round prompts appeared. No commit to `main`, push, merge, tag, deployment, dependency change or OMP installation/configuration change was performed.
+
+### 7. Requested generic-owner fix
+
+Model: `openai-codex/gpt-6.1-sol`. Scope stays within Round 1.
+
+The explicit-type-argument investigation found six valid TypeScript cases with missing or wrong property edges: a type-only generic function call, an explicit base type paired with a subtype value argument, a constrained generic instantiated with a subtype, an omitted default type, a generic constructor, and a generic method. The index's structural VERIFY passed despite these semantic errors. TypeScript 5.9.3 `findReferences` did not return the key-literal call sites, so the differential alone could not detect the defect. The retained name tokens are not a substitute for the missing compiler-grade edges.
+
+`KeyAccess.instantiate` now matches explicit type arguments to their declaring type parameter before attempting value-argument inference. Constructor arguments bind the class's type parameters; a generic method's arguments do not bind unrelated receiver-class parameters. If inference supplies no binding, defaults are resolved, including defaults that name an earlier type parameter. A visited set prevents recursive defaults from looping on invalid input. Receiver-based inference and the existing constraint fallback remain after the applicable bindings.
+
+Permanent regressions are in `tests/core/key-generics.test.ts`. The first eleven cases were run before the fix: **2 passed, 9 failed**. All six reported defects are represented. Three additional branch controls prevent a default from masking ignored constructor arguments, a later type parameter from incorrectly taking argument zero, and method arguments from leaking into receiver-class bindings.
+
+```text
+npm test
+ℹ tests 459
+ℹ suites 27
+ℹ pass 459
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+```
+
+**VERIFIED:** all fourteen generic-owner cases and the full suite pass. No assertion, golden expectation, base fixture or gap-scope rule was weakened to obtain this result.
+
+Fix mutation smoke: **VERIFIED, 55/55 killed, 0 survived, no timeout**. Command:
+
+```sh
+node /tmp/m2b/generic-fix/extend-mutations.mjs
+bash /tmp/m2b/generic-fix/mutate.sh "$PWD"
+```
+
+This retains the earlier 49 mutants and adds:
+
+| Mutant | Break | Failed tests |
+|---|---|---:|
+| G01 | ignore explicit type arguments | 7 |
+| G02 | ignore constructor type arguments | 1 |
+| G03 | bind every type parameter to argument zero | 2 |
+| G04 | discard default owners | 3 |
+| G05 | resolve a dependent default only to its constraint | 1 |
+| G06 | apply method type arguments to receiver-class parameters | 1 |
+
+Each new mutant is killed by `key-generics.test.ts`; no new mutant hangs, fails parsing or relies on a cancelled test. The existing B01 marker-write mutant still fails the index's produced/read-back invariant during setup, as documented above.
+
+The fixed build was cold-indexed on the same oh-my-pi corpus and checked again:
+
+```sh
+node dist/adapters/cli/main.js index \
+  --root /var/tmp/m2a2/omp-src --full --json
+node dist/adapters/cli/main.js doctor --deep \
+  --root /var/tmp/m2a2/omp-src --differential 300 --json
+```
+
+| Fix verification | Wall (s) | Max RSS (KiB) | Outcome |
+|---|---:|---:|---|
+| cold build | 305.34 | 7,637,296 | exit 0; no VERIFY problems |
+| deep doctor, 300 declarations | 276.96 | 7,615,328 | exit 0; 0 graph/counter differences; 7,640/7,640 references covered; 0 misses |
+
+The mutation campaign overlapped the real-repository commands. These are not isolated speed measurements.
+
+Against the published index before this fix: **32 additional REFERENCES edges**, 0 removed edge records, 1 existing edge record with changed use-site lines, and 0 added or removed gap sites. Examples include `extractReadableText` and `extractStructuredText` referencing `TextLikeContent.text`, and `extractTerminalId` referencing `TerminalIdContainer.terminalId` in `packages/coding-agent/src/modes/acp/acp-event-mapper.ts`.
+
+Against the original pre-Round-1 index, the fixed build adds **2,579 REFERENCES edges** and 6,214 use-site lines. The gap figures are unchanged: 233 new sites, 42 owners, 1,392 owners/members (0.89%), and a conservative depth-10 projection of 26,003 declarations (16.62%). **The generic-owner regressions and all executed correctness gates pass; the separate >5% scoping stop remains unresolved.** No scope rule was narrowed to conceal that gate, and Round 2 was not started.
+
+`npm run typecheck`, `npm run lint` and `npm run format:check` also passed after the final regression additions. macOS, CI, query-level verdicts and live OMP remain **NOT VERIFIED**. This fix changes only `keys.ts`, its built `dist` file, the new generic regression file and this evidence document.

@@ -239,10 +239,29 @@ export class KeyAccess {
         return last?.dotDotDotToken !== undefined ? last : undefined;
     }
     /** A type parameter owner, instantiated at this call where the call shows it. */
-    instantiate(type, call, signature) {
+    instantiate(type, call, signature, seenDefaults) {
         const ts = this.ts;
         if ((type.flags & ts.TypeFlags.TypeParameter) === 0)
             return [type];
+        if (seenDefaults?.has(type))
+            return [];
+        const declaration = type.getSymbol()?.declarations?.[0];
+        const holder = declaration?.parent;
+        // Explicit arguments select T even when an object argument has a narrower subtype.
+        // On `new C<T>(...)`, the type parameters belong to the class, not its constructor.
+        if (declaration !== undefined &&
+            ts.isTypeParameterDeclaration(declaration) &&
+            holder !== undefined) {
+            let parameters;
+            if (holder === signature && ts.isFunctionLike(holder))
+                parameters = holder.typeParameters;
+            if (ts.isNewExpression(call) && ts.isClassLike(holder))
+                parameters = holder.typeParameters;
+            const index = parameters?.indexOf(declaration) ?? -1;
+            const argument = index < 0 ? undefined : call.typeArguments?.[index];
+            if (argument !== undefined)
+                return [this.checker.getTypeFromTypeNode(argument)];
+        }
         // Inferred from an argument declared with exactly this type parameter: `get(o: T, k: K)`.
         if (ts.isFunctionLike(signature)) {
             for (const [index, parameter] of signature.parameters.entries()) {
@@ -255,8 +274,6 @@ export class KeyAccess {
             }
         }
         // A type parameter of the receiver's class or interface: `store.get('k')` on `Store<Usage>`.
-        const declaration = type.getSymbol()?.declarations?.[0];
-        const holder = declaration?.parent;
         const callee = call.expression;
         if (declaration !== undefined &&
             ts.isTypeParameterDeclaration(declaration) &&
@@ -272,6 +289,15 @@ export class KeyAccess {
                     return [argument];
                 }
             }
+        }
+        // Defaults can refer to earlier type parameters; follow their bindings rather than treating
+        // a constraint as the selected owner. Invalid cyclic defaults must not recurse indefinitely.
+        if (declaration !== undefined &&
+            ts.isTypeParameterDeclaration(declaration) &&
+            declaration.default !== undefined) {
+            const seen = new Set(seenDefaults);
+            seen.add(type);
+            return this.instantiate(this.checker.getTypeFromTypeNode(declaration.default), call, signature, seen);
         }
         return this.concrete([type]);
     }
