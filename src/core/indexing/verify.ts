@@ -68,6 +68,7 @@ export function verifyIndex(db: DatabaseSync, expected: TableCounts): string[] {
     `SELECT (SELECT COUNT(*) FROM unresolved u LEFT JOIN file_index i ON i.file = u.file WHERE i.file IS NULL)
           + (SELECT COUNT(*) FROM gap_sites g LEFT JOIN file_index i ON i.file = g.file WHERE i.file IS NULL)
           + (SELECT COUNT(*) FROM name_tokens t LEFT JOIN file_index i ON i.file = t.file WHERE i.file IS NULL)
+          + (SELECT COUNT(*) FROM markers m LEFT JOIN file_index i ON i.file = m.file WHERE i.file IS NULL)
        AS n`,
   );
 

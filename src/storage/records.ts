@@ -76,6 +76,12 @@ export interface ExportRow {
   target: string;
 }
 
+export interface MarkerRow {
+  file: string;
+  line: number;
+  kind: string;
+}
+
 /** Everything one indexed file contributes. */
 export interface FileRows {
   index: FileIndexRow;
@@ -86,6 +92,7 @@ export interface FileRows {
   tokens: readonly TokenRow[];
   externalImports: readonly ExternalImportRow[];
   exports: readonly ExportRow[];
+  markers: readonly MarkerRow[];
 }
 
 export const RECORD_TABLES = [
@@ -97,6 +104,7 @@ export const RECORD_TABLES = [
   'name_tokens',
   'external_imports',
   'exports',
+  'markers',
 ] as const;
 export type RecordTable = (typeof RECORD_TABLES)[number];
 export type TableCounts = Record<RecordTable | 'files', number>;
@@ -112,6 +120,7 @@ export function emptyCounts(): TableCounts {
     name_tokens: 0,
     external_imports: 0,
     exports: 0,
+    markers: 0,
   };
 }
 
@@ -131,6 +140,7 @@ export function deleteFileRecords(db: DatabaseSync, files: Iterable<string>): Ta
       'name_tokens',
       'external_imports',
       'exports',
+      'markers',
     ] as const
   ).map((table) => [table, db.prepare(`DELETE FROM ${table} WHERE file = ?`)] as const);
   for (const file of files) {
@@ -187,6 +197,7 @@ export function recordWriter(db: DatabaseSync): RecordWriter {
     'INSERT INTO external_imports (file, specifier, line) VALUES (?, ?, ?)',
   );
   const exported = db.prepare('INSERT INTO exports (file, name, target) VALUES (?, ?, ?)');
+  const marker = db.prepare('INSERT INTO markers (file, line, kind) VALUES (?, ?, ?)');
   const inserted = emptyCounts();
   return {
     inserted,
@@ -235,6 +246,8 @@ export function recordWriter(db: DatabaseSync): RecordWriter {
       inserted.external_imports += rows.externalImports.length;
       for (const x of rows.exports) exported.run(x.file, x.name, x.target);
       inserted.exports += rows.exports.length;
+      for (const m of rows.markers) marker.run(m.file, m.line, m.kind);
+      inserted.markers += rows.markers.length;
     },
   };
 }
@@ -366,6 +379,7 @@ const CANONICAL: Record<'files' | RecordTable, string> = {
   name_tokens: 'SELECT * FROM name_tokens ORDER BY file, name, kind',
   external_imports: 'SELECT * FROM external_imports ORDER BY file, line, specifier',
   exports: 'SELECT * FROM exports ORDER BY file, name, target',
+  markers: 'SELECT * FROM markers ORDER BY file, line, kind',
 };
 
 /** The use counters of every file, as sorted text lines (statistics only; never graph content). */

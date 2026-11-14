@@ -1,5 +1,6 @@
 import { isAbsolute, posix, relative, sep } from 'node:path';
 import { MODULE_NAME, enclosingKey, fileDeclarations, } from './declarations.js';
+import { KeyAccess } from './keys.js';
 import { surfaceOf } from './surface.js';
 const TEST_FILE = /(^|\/)(__tests__|tests?)\/|\.(test|spec)\.[cm]?[jt]sx?$/;
 export function isTestFile(path) {
@@ -21,6 +22,7 @@ export class Resolver {
     declarationCache = new Map();
     fileCache = new Map();
     checkerInstance;
+    keyAccessInstance;
     declarationKinds;
     constructor(ts, program, scope) {
         this.ts = ts;
@@ -64,6 +66,34 @@ export class Resolver {
     get checker() {
         this.checkerInstance ??= this.program.getTypeChecker();
         return this.checkerInstance;
+    }
+    get keys() {
+        this.keyAccessInstance ??= new KeyAccess(this.ts, this.checker, {
+            indexedTargets: (property) => {
+                const keys = new Set();
+                for (const node of this.targetNodes(property)) {
+                    const target = this.targetOfDeclaration(node);
+                    if (typeof target === 'object')
+                        keys.add(target.key);
+                }
+                return [...keys];
+            },
+            ownerKey: (declaration) => {
+                // Anonymous types have no key of their own (D51); scope the gap to their indexed parent.
+                // This also covers `keyof typeof obj`, whose literal belongs to its variable declaration.
+                let node = declaration;
+                while (node !== undefined) {
+                    const target = this.targetOfDeclaration(node);
+                    if (typeof target === 'object')
+                        return target.key;
+                    if (target === 'outside' || target === 'external')
+                        return null;
+                    node = node.parent;
+                }
+                return null;
+            },
+        });
+        return this.keyAccessInstance;
     }
     repoPath(fileName) {
         const rel = relative(this.scope.root, fileName);
@@ -194,6 +224,11 @@ export class Resolver {
         };
         const addGap = (record) => {
             gaps.set(`${record.line}\u0000${record.code}\u0000${record.detail}`, record);
+        };
+        const markers = new Map();
+        const addMarker = (kind, at) => {
+            const record = { file, line: line(at), kind };
+            markers.set(`${record.line}\u0000${kind}`, record);
         };
         const edgeTo = (source, node, kind, at) => {
             const target = this.targetOfDeclaration(node);
@@ -417,6 +452,56 @@ export class Resolver {
                     if (!(property.declarations ?? []).includes(parent))
                         use(node, property);
                 }
+                return;
+            }
+            if (ts.isStringLiteralLike(node) && isKeyPosition(node))
+                keyLiteral(node);
+        };
+        // Declared names, `T["k"]` and `obj["k"]` are handled above and in elementAccess.
+        // Do not filter by indexed names: an unindexed anonymous member still needs an owner gap.
+        const isKeyPosition = (node) => {
+            const parent = node.parent;
+            if (ts.isLiteralTypeNode(parent) || ts.isExternalModuleReference(parent))
+                return false;
+            if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node)
+                return false;
+            return !('name' in parent && parent.name === node);
+        };
+        /** `get(u, "cost")` with `K extends keyof Usage`: an edge to `Usage.cost`, or gaps. */
+        const keyLiteral = (node) => {
+            const found = this.keys.literal(node);
+            if (found === null)
+                return;
+            if (found.kind === 'property') {
+                use(node, found.property);
+                return;
+            }
+            keyGaps(node, found.owners);
+        };
+        /** A key that may name any member of each owner: every member's picture is partial. */
+        const keyGaps = (node, owners) => {
+            const source = enclosingKey(node, declarations);
+            for (const owner of owners) {
+                addGap({ file, line: line(node), code: 'computed-member-access', detail: owner, source });
+            }
+        };
+        /** `get(u, k)` with `k: keyof Usage` passed where a key is declared: a gap on Usage. */
+        const keyArguments = (node) => {
+            if (node.expression.kind === ts.SyntaxKind.ImportKeyword)
+                return;
+            for (const argument of node.arguments ?? []) {
+                // Literals are handled separately; containers and callbacks are not scalar keys.
+                if (ts.isStringLiteralLike(argument) ||
+                    ts.isNumericLiteral(argument) ||
+                    ts.isArrayLiteralExpression(argument) ||
+                    ts.isObjectLiteralExpression(argument) ||
+                    ts.isArrowFunction(argument) ||
+                    ts.isFunctionExpression(argument)) {
+                    continue;
+                }
+                const owners = this.keys.expression(argument);
+                if (owners.length > 0 && this.keys.takesKey(node, argument))
+                    keyGaps(argument, owners);
             }
         };
         const heritage = (node) => {
@@ -516,6 +601,8 @@ export class Resolver {
                     use(argument, symbol);
                 return;
             }
+            // `u[k]` with `k: keyof Usage`: any member of Usage may be read.
+            keyGaps(node, this.keys.expression(argument));
             const receiver = ts.isPropertyAccessExpression(node.expression)
                 ? node.expression.name
                 : node.expression;
@@ -545,6 +632,16 @@ export class Resolver {
                 }
             }
         };
+        // docs/RISK.md §3.2: `NativeModules` or `TurboModuleRegistry` imported from react-native.
+        const nativeImport = (node) => {
+            const bindings = node.importClause?.namedBindings;
+            if (bindings === undefined || !ts.isNamedImports(bindings))
+                return;
+            const names = bindings.elements.map((element) => (element.propertyName ?? element.name).text);
+            if (names.includes('NativeModules') || names.includes('TurboModuleRegistry')) {
+                addMarker('boundary:native', node);
+            }
+        };
         const visit = (node) => {
             // JSDoc types (JavaScript) and {@link} references are uses too; each comment once, from its host.
             if ('jsDoc' in node) {
@@ -571,6 +668,8 @@ export class Resolver {
                         }
                     }
                 }
+                if (node.moduleSpecifier.text === 'react-native')
+                    nativeImport(node);
                 return; // import bindings are not uses; the file-level IMPORTS edge records them
             }
             if (ts.isExportDeclaration(node)) {
@@ -601,8 +700,16 @@ export class Resolver {
             }
             if (ts.isCallExpression(node))
                 call(node);
+            if (ts.isCallExpression(node) || ts.isNewExpression(node))
+                keyArguments(node);
             if (ts.isElementAccessExpression(node))
                 elementAccess(node);
+            // docs/RISK.md §3.2: a `sql` tagged template (`sql\`…\``, `db.sql\`…\``) talks to a database.
+            if (ts.isTaggedTemplateExpression(node) &&
+                ((ts.isIdentifier(node.tag) && node.tag.text === 'sql') ||
+                    (ts.isPropertyAccessExpression(node.tag) && node.tag.name.text === 'sql'))) {
+                addMarker('boundary:sql', node);
+            }
             if (ts.isStringLiteralLike(node) || ts.isNumericLiteral(node))
                 propertyNameLiteral(node);
             if (ts.isClassLike(node) || ts.isInterfaceDeclaration(node))
@@ -628,6 +735,7 @@ export class Resolver {
             tokens: this.tokensOf(sf, file),
             externalImports: [...externalImports.values()],
             exports,
+            markers: [...markers.values()],
             surface: surface.hash,
             observableKeys: surface.observableKeys,
             global: isGlobalFile(this.ts, this.checker, sf),
