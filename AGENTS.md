@@ -28,7 +28,6 @@ In scope, in order:
 | 10 | M4b | Heuristic bridges, one proven flow at a time | `docs/briefs/gated-M4b-M5-M6b.md`; gated by dogfood evidence |
 | 11 | M5 | Session watcher, worktree seeding | same file; optional, gated by measured need |
 | 12 | M6b | Semantic search (optional local embeddings) | same file; deferred, separate owner approval |
-
 | 13 | V1 close-out | Audit claims against code, release candidate, fresh-install rehearsal | `docs/briefs/V1-closeout.md` (draft) |
 
 Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
