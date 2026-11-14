@@ -6,6 +6,7 @@ import { scan } from '../workspace/scan.js';
 import { FAILURE_FILE, SCHEMA_VERSION, beginBuild, beginUpdate, discardBuild, openPublished, publishBuild, readFiles, readMeta, readSchemaVersion, transaction, writeFiles, writeMeta, } from '../../storage/sqlite.js';
 import { RECORD_TABLES, declarationNamesOf, deleteFileRecords, deleteOrphanSymbols, emptyCounts, filesImportingPrefix, filesReferencingNames, filesWithEdgesInto, filesWithUnresolvedImports, readFileIndex, recordWriter, simpleNameCounts, tableCounts, } from '../../storage/records.js';
 import { fileDeclarations } from './declarations.js';
+import { readPackages } from './packages.js';
 import { createAnalysisHost, groupPrograms, splitBy } from './program.js';
 import { Resolver, isGlobalFile } from './resolve.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
@@ -89,6 +90,7 @@ function rowsOf(file, sf, declarations, resolution) {
             tokens: [],
             externalImports: [],
             exports: [],
+            markers: [],
         };
     }
     const parseError = resolution.gaps.some((gap) => gap.code === 'parse-error');
@@ -108,6 +110,7 @@ function rowsOf(file, sf, declarations, resolution) {
         tokens: resolution.tokens,
         externalImports: resolution.externalImports,
         exports: resolution.exports,
+        markers: resolution.markers,
     };
 }
 function roundPhases(phases) {
@@ -624,6 +627,7 @@ export class Indexer {
             extractor_stamp: stamp,
             typescript_version: this.ts.version,
             config_hash: impactConfigHash(request.impact),
+            packages: JSON.stringify(readPackages(this.root, census.records)),
             runtime: `${process.versions.bun === undefined ? 'node' : 'bun'} ${process.versions.bun ?? process.versions.node}`,
             scan_ms: String(Math.round(phases.scan)),
             listing: census.summary.listing,

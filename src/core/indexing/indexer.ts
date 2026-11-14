@@ -40,6 +40,7 @@ import {
   type TableCounts,
 } from '../../storage/records.js';
 import { fileDeclarations, type FileDeclarations, type Ts } from './declarations.js';
+import { readPackages } from './packages.js';
 import { createAnalysisHost, groupPrograms, splitBy, type ProgramGroup } from './program.js';
 import { Resolver, isGlobalFile, type FileResolution, type ResolveScope } from './resolve.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
@@ -206,6 +207,7 @@ function rowsOf(
       tokens: [],
       externalImports: [],
       exports: [],
+      markers: [],
     };
   }
   const parseError = resolution.gaps.some((gap) => gap.code === 'parse-error');
@@ -225,6 +227,7 @@ function rowsOf(
     tokens: resolution.tokens,
     externalImports: resolution.externalImports,
     exports: resolution.exports,
+    markers: resolution.markers,
   };
 }
 
@@ -774,6 +777,7 @@ export class Indexer {
       extractor_stamp: stamp,
       typescript_version: this.ts.version,
       config_hash: impactConfigHash(request.impact),
+      packages: JSON.stringify(readPackages(this.root, census.records)),
       runtime: `${process.versions.bun === undefined ? 'node' : 'bun'} ${process.versions.bun ?? process.versions.node}`,
       scan_ms: String(Math.round(phases.scan)),
       listing: census.summary.listing,
