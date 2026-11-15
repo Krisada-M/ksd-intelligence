@@ -89,6 +89,7 @@ Rules for the block:
 - Over budget: keep depth 1 complete as far as possible, then summarise: `Depth 3: 41 more in 12 files. Call again with depth 3 and a single target to list them.`
 - `Gaps:` lists each completeness reason as `code path:line — what to check`, for example
   `dynamic-import packages/api/src/handlers.ts:12 — computed path; check whether it can load this file`.
+- Footer: when the repository has limits that are not completeness reasons for this target, the footer names them, for example `— index fresh · 1,204 files · limits: 15 unbounded dynamic imports, 64 excluded files · ts 5.9.3 · engine 0.1.0`. They never change the verdict (D55).
 - `Next:` is one sentence and names only what follows from the result. It never tells the agent to grep or re-read what the block already shows.
 
 **Guidance responses (success-shaped)**

@@ -100,7 +100,7 @@ The workflow header gains one line per stage telling the agent which evidence to
 The main danger is a result marked `complete` that silently misses a caller. After the semantic traversal, the engine runs an independent lexical pass for the target's name over the index scope:
 
 1. Collect every identifier token and string literal equal to the target's name (TS scanner; comments excluded).
-2. Drop tokens already accounted for: the declaration, resolved references in the result, and identifiers the checker resolves to a **different** declaration.
+2. Drop tokens already accounted for: the declaration, resolved references in the result, identifiers the checker resolves to a **different** declaration, and string literals whose contextual type is a literal type or union not built from `keyof` (D55).
 3. Anything left is a potential hidden reference:
    - identifier the checker cannot resolve (`any`, error type, untyped JS) → reason `unresolved-name-match: file:line`
    - string literal with the same text → reason `string-name-match: file:line`

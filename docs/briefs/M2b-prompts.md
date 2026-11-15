@@ -163,6 +163,79 @@ Checks before you stop:
 Stop after Step 2.
 ```
 
+## Round 2b — scoping decisions after the 84% unknown run (D55, G14)
+
+```text
+Read AGENTS.md, docs/briefs/M2b-impact.md, docs/DESIGN.md decisions D54
+and D55, golden policies P4 and G13–G14, and
+docs/research/m2b-measurements.md. Round 2 is committed on
+m2b-impact-r2. Do Round 2b only.
+
+[Common rules]
+
+First: `git fetch origin`. If origin/main now contains Round 1 and the
+decision commits, rebase m2b-impact-r2 onto origin/main and drop the
+cherry-picked copies; otherwise cherry-pick the newest commit of
+docs/m2b-golden-decisions. Say which you did.
+
+Implement D55, each item with a test that fails first:
+1. Traversal to closure, node budget 50,000. depth 1–10 only limits the
+   listing. Tests: a chain of 25 callers is complete and counted in
+   reach; a cycle terminates; the budget (set small in the test) gives
+   depth-limit and partial; the result is identical for depth 1 and 10.
+2. Prefix-less import(x) and computed require(x): scope is exported
+   declarations in files with no static importer, test files and package
+   entry files excepted. Tests: a target in such a file is partial with
+   the site listed; a target in a statically imported file is not, and
+   its footer names the limit; an import with a prefix behaves as before
+   (C11 unchanged).
+3. Repository limits: unbounded dynamic imports, excluded files, files
+   that failed to index. Returned in the result (a `limits` field in
+   details) and by ei_status; never a completeness reason in ei_impact.
+4. Code files without a tsconfig: scanned lexically (TypeScript scanner,
+   no program) into the name tables, so C22-style matches from them make
+   the matching target partial. Secret and excluded files are never read.
+5. String literals whose contextual type is a literal type or a union
+   not built from keyof are not string-name-match. Tests: a discriminant
+   `kind: "input"` does not match a declaration named input; the same
+   text typed string does (C23 unchanged); a literal typed any does.
+6. Object-literal members: whole-value users of each enclosing object are
+   dependents (spread, passed as an argument, returned, assigned, read by
+   a computed or declaration-less key). If the index cannot tell a
+   whole-value use from a member access, all users of the enclosing
+   object count; say which you implemented. C12 stays as confirmed.
+   Test with the shape that was found: a const object of presets, spread
+   into another object, stored in a class field typed Record<K, string>,
+   read by key in a method. The storing symbol must be listed.
+7. Arrays: `const hs = [a, b]; function run(i) { hs[i]() }` — impact of
+   `a` lists hs at depth 1 and run at depth 2, complete, no gap. If it
+   does not, report; do not add a gap rule.
+
+Items 4–6 change the extractor: randomised incremental == cold,
+update-soundness, the fixture differential (explain each changed count)
+and the mutation smoke must stay green; extend the smoke with one
+mutation per item.
+
+Then re-measure on oh-my-pi with the same seed and the same 200 targets:
+- distribution low / medium / unknown, before and after;
+- per reason: targets carrying it, and targets where it is the only one;
+- how many hit the node budget; p50/p95 traversal time and the largest
+  closure;
+- for string-name-match and unresolved-name-match that remain: the
+  twenty most frequent names, how many declarations share each name, and
+  three example sites each;
+- the 10 lows hand-checked again (first 10 by the same order), plus 10
+  more. Count as wrong only a reference to the target itself that
+  findReferences reports inside the index scope and the result neither
+  lists nor covers by a reason. A read of a container the value was
+  stored into is value flow (D55 item 6), not a wrong low, when the
+  storing symbol is listed; list such cases separately.
+
+Gate: if unknown is at most 60% and no wrong low remains, say so and
+stop; Round 3 may start. If unknown is still above 60%, change nothing
+further: report the table and stop. One wrong low is a blocker.
+```
+
 ## Round 3 — Step 3: tool, CLI, rendering, live, latency
 
 ```text
