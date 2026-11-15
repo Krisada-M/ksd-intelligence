@@ -42,7 +42,7 @@ An ambiguous or unknown target is a **guidance** outcome (`ambiguous-target`, `t
 
 - `byDepth[n]` is compared as a **set** of `symbol` + `via`, order-insensitive. "Includes" means the listed nodes must be present; extras are allowed unless the case says "exactly".
 - `reasons` and `factors` are matched by **code** (the prefix before `:`).
-- `--depth` limits only what is listed. Completeness, reach, factors and verdict always come from the full traversal (cap: depth 10; hitting it with unvisited nodes adds `depth-limit`).
+- `--depth` limits only what is listed. Completeness, reach, factors and verdict always come from the full traversal: the whole transitive closure of incoming edges, with no depth cap. `depth-limit` is added only when the traversal stops at its node budget (50,000 visited symbols) with symbols unvisited (G14).
 - A case that names a symbol only as "a node in `<file>`" accepts any stable key in that file.
 
 ---
@@ -83,10 +83,11 @@ Adding a code needs an ADR and the owner.
 - [x] Owner confirmed
 
 - `parse-error`: affects every target in the index scope. The base fixture must parse cleanly; C16 uses a copy.
-- `dynamic-import` with a computed specifier: affects targets in files its static prefix can match.
-- `computed-member-access`: affects values stored in the accessed object.
+- `dynamic-import` with a computed specifier: affects targets in files its static prefix can match. With **no** static prefix (also a computed `require`): affects exported declarations in files that no indexed file imports statically, test files and package entry files excepted. For every other target it is a repository limit, shown in the footer and in `ei_status`, not a completeness reason (G14).
+- `computed-member-access`: affects values stored in the accessed object. A member of an object literal additionally has the whole-value users of its enclosing objects (spread, passed, returned, assigned, read by a computed or declaration-less key) as dependents; that is reach, not a gap (G14).
 - `interface-dispatch`: affects implementations of that interface member.
-- `unresolved-name-match`, `string-name-match`: affect the declaration whose name matched.
+- `unresolved-name-match`, `string-name-match`: affect the declaration whose name matched. A string literal whose contextual type is a literal type or union not built from `keyof` (a discriminant, an enum-like value) is accounted for and is not a match; a literal typed `string`, `any` or `unknown` is (G14). Code files without a tsconfig are scanned for names lexically, so the check covers them.
+- `outside-index-scope`: not a per-target reason in `ei_impact`. Files the owner excluded are a repository limit (footer, `ei_status`). It stays a reason in `ei_changes` for changed files that are not indexed.
 
 ---
 
@@ -243,7 +244,7 @@ The agent may add files a case needs and lists them in the report. No added file
 - [x] Owner confirmed
 
 **Query:** `impact charge` (bare name)
-**Expected:** guidance `ambiguous-target`, no merged result. Candidates are exactly: `packages/payments/src/service.ts#PaymentService.charge`, `packages/payments/src/stripe.ts#StripeProcessor.charge`, `packages/payments/src/manual.ts#ManualProcessor.charge`, `packages/payments/src/processor.ts#PaymentProcessor.charge`.
+**Expected:** guidance `ambiguous-target`, no merged result. Candidates are exactly: `packages/payments/src/service.ts#PaymentService.charge`, `packages/payments/src/stripe.ts#StripeProcessor.charge`, `packages/payments/src/manual.ts#ManualProcessor.charge`, `packages/payments/src/processor.ts#PaymentProcessor.charge`, `packages/api/src/handlers.ts#registry.charge` (G13).
 
 ### C16 — Parse error in scope (temp copy)
 - [x] Owner confirmed
@@ -427,5 +428,7 @@ Run with `riskZones: "default"` (payments, auth, migrations, prod-config; `docs/
 | G10 | Name cross-check cases C22–C23 and boundary case C24 are engine cases (M2b) | 2026-11-11 |
 | G11 | Freshness cases run with full hashing; F06 documents the stat probe's blind spot | 2026-11-11 |
 | G12 | Policy and changes cases P01–P05, X01–X03 confirmed for M2c | 2026-11-11 |
+| G14 | After the 200-target run on oh-my-pi gave 84% `unknown`: traversal runs to closure (a depth-10 cap made 51% of targets partial); a prefix-less dynamic import is scoped to files without a static importer and is otherwise a repository limit; excluded files are a repository limit; typed string literals are not name matches; object-literal members inherit the whole-value users of their enclosing objects. A reason present on almost every target carries no information and trains the agent to ignore `unknown` | 2026-11-15 |
+| G13 | C15 has five candidates: ADR 0003 indexes members of module-level object literals, so `handlers.ts#registry.charge` is a declaration named `charge`; a candidate is never hidden. C14: the base fixture must hold no use of `localOnly` (a stray `void localOnly;` is removed from the fixture, the expectation stands). P4 stands as written: a gap makes a result partial only when its scope covers the **target**; a gap on an impacted symbol does not (C01, C02, C04, C05 stay complete) and is shown as a row marker instead (DESIGN D54) | 2026-11-15 |
 
 Bridge cases (M4b) and route-detection cases (M4a) are written and confirmed when those milestones are briefed.
