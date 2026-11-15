@@ -68,6 +68,8 @@ export interface ImpactNode {
   via: EdgeKind;
   strength: Strength;
   span: Span;
+  /** This caller has scoped gaps of its own; it does not change the target's picture (D54). */
+  gapScoped?: boolean;
   /** Set on bridged edges. */
   synthesizedBy?: string;
   /** Set on bridged edges. */

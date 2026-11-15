@@ -248,3 +248,117 @@ Against the published index before this fix: **32 additional REFERENCES edges**,
 Against the original pre-Round-1 index, the fixed build adds **2,579 REFERENCES edges** and 6,214 use-site lines. The gap figures are unchanged: 233 new sites, 42 owners, 1,392 owners/members (0.89%), and a conservative depth-10 projection of 26,003 declarations (16.62%). **The generic-owner regressions and all executed correctness gates pass; the separate >5% scoping stop remains unresolved.** No scope rule was narrowed to conceal that gate, and Round 2 was not started.
 
 `npm run typecheck`, `npm run lint` and `npm run format:check` also passed after the final regression additions. macOS, CI, query-level verdicts and live OMP remain **NOT VERIFIED**. This fix changes only `keys.ts`, its built `dist` file, the new generic regression file and this evidence document.
+
+## Round 2 — Step 2: query core and golden cases
+
+Model: `anthropic/claude-opus-5-5` (integration, query-core rewrite, regressions, measurements). Two `openai-codex/gpt-6-sol` sub-agents wrote the first golden/freshness tests and first drafts of `query.ts` and `session.ts`; both stopped on a usage limit, and their output was reviewed and corrected here. Runtime: Linux WSL2 x86_64, Node `24.21.0`, TypeScript `5.9.3`, `omp/18.20.2` (no live OMP call this round).
+
+### 1. Starting point
+
+- Branch `m2b-impact-r2` from fetched `origin/main` (`2e15bbf`). Round 1 was not on main: commits `46c6bd3` and `75a5669` were cherry-picked with the owner's approval, then the owner-approved decision commit `5ce1047` (D54, G13) from `origin/docs/m2b-golden-decisions`.
+- Fixture correction (G13): removed `void localOnly;` from `tests/fixtures/mono/packages/payments/src/fee.ts`. The fixture still type-checks (`fixture.test.ts`). Exact counts changed only in `tests/core/differential.test.ts`, each by the one removed reference: base fixture references 48 → 47 and `coveredBy.edge` 48 → 47; shorthand copy `coveredBy.edge` 52 → 51; anonymous-kinds copy `coveredBy.edge` 58 → 57. No other number moved.
+
+### 2. Tests written first
+
+`tests/core/impact-golden.test.ts` (C01–C26, never-low sweep), `tests/core/impact-freshness.test.ts` (F01–F06 and the freshness risky cases) and `tests/core/impact-risk.test.ts` (target, completeness and factor risky cases) were compiled and run before any query code existed: every suite failed on the missing `src/core/impact/query.js` / `session.js`.
+
+Review of the first `query.ts` against golden P4, DESIGN §7.2 and the oh-my-pi index found defects the fixture does not exercise. Six regressions were written and **observed failing** first, each on its defect (four as wrong `low`/`complete` answers):
+
+| Regression | Defect in the first draft | Observed before the fix |
+|---|---|---|
+| `import(p)` with no static prefix | gap detail `*` scoped to nothing (`file.startsWith('*')`); all 15 oh-my-pi dynamic-import gaps have detail `*` | `{"status":"complete","reasons":[]}` |
+| `require(p)` of a computed path | gap detail `*` scoped to nothing | `{"status":"complete","reasons":[]}` |
+| public package, wildcard subpath export (`./*` → `./src/*.ts`) | unresolved entries ignored; 12 public oh-my-pi packages use wildcard subpaths | factors `[]` (level `low`) |
+| public package, `main` is unbuilt output | unresolved code entries ignored | factors `[]` (level `low`) |
+| caller reached only through a heuristic interface hop | counted in compiler-grade reach | `reach.total` 1, expected 0 |
+| engine stamp; dotted names | engine version hard-coded `0.3.0` (package is `0.1.0`); D51 parent fallback missing for `Owner.member.sub`, and accepting any dotted input such as `calculateFee.ts` | `'0.3.0' !== '0.1.0'` |
+
+The rewrite also replaced a per-row `prepare` and a scan of every gap row per impacted symbol (≈21k rows on oh-my-pi) with gap sites indexed by scope, cached statements and cached incoming edges.
+
+Scoping as implemented (golden P4, D54, target only; an impacted symbol in scope gets `gapScoped: true`):
+
+| Code | Scope |
+|---|---|
+| `parse-error` (and any unrecognised code) | every target |
+| `dynamic-import` | exported declarations in files under the static prefix; no prefix, or a prefix that names no indexed file, → every exported declaration (a module namespace exposes exports only) |
+| `cjs-require` | declarations of the required file; computed path (`*`) → every exported declaration; an external module name → none |
+| `interface-dispatch` | implementations of that interface member (`IMPLEMENTS`) |
+| `computed-member-access` | the accessed owner, its members, and values stored in them (a `REFERENCES` edge from the owner or a member) |
+| `unresolved-name-match`, `unresolved-import`, `string-name-match` | the declaration whose simple name matched |
+| `depth-limit` | the target, when either traversal is capped at 10 with unvisited callers |
+
+Reach uses a compiler-only traversal; listing, factors and tests use the listing traversal (compiler plus heuristic interface callers), so a factor can only be added, never lost.
+
+### 3. Local checks
+
+Two freshness-test defects were fixed in the tests (product behaviour verified separately): F06 restored a sub-millisecond mtime through a `Date`, so the stat probe saw real drift (the existing index-level F06 test uses whole seconds for this reason; `buildIndex` on the same edit reports `update`); and gated builds were released but not awaited, so a real build outlived its test, held the lock and wrote into a removed temp dir. `npm test` isolates `HOME`, so real builds need the pinned runtime there: `ensureRuntime()` provisions it offline from this repository's TypeScript, as `status.test.ts` already does.
+
+```text
+npm test
+ℹ tests 518
+ℹ suites 35
+ℹ pass 518
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+```
+
+**VERIFIED** on Linux. Golden C01–C26 and F01–F06 all pass at query level; none is left failing. C17 takes outcome **B** (`partial` + `cjs-require`). The never-low sweep covers C06, C11, C12, C17 on the base fixture, C16, C22, C23 through `copyCase` and F04, at depth 1–10.
+
+### 4. oh-my-pi distribution (index built, no drift)
+
+Corpus and index as in Round 1 (`04cd1a7`, 156,421 non-module declarations, schema 3, extractor `7498355c17278a57`); stat probe before the run: 0 added, 0 changed, 0 deleted. 200 targets by the seeded shuffle of `differential.ts` (seed 1), queried at depth 10 with one `ImpactQuery`. Script and raw output kept outside the repository (`/tmp/ksd-m2b-r2/measure.mjs`, `distribution.json`).
+
+| Level | Count | Share |
+|---|---:|---:|
+| low | 21 | 10.5% |
+| medium | 11 | 5.5% |
+| unknown | 168 | 84.0% |
+
+| Completeness reason (targets carrying it) | Count | Sole reason of an unknown |
+|---|---:|---:|
+| `dynamic-import` | 110 | 17 |
+| `depth-limit` | 102 | 15 |
+| `string-name-match` | 83 | 12 |
+| `unresolved-name-match` | 54 | 0 |
+| `computed-member-access` | 9 | 2 |
+| `interface-dispatch` | 4 | 0 |
+| `cjs-require` | 1 | 0 |
+
+Only seven reason codes occur. Unknown results carry a median of 16 reasons (max 3,380, `string-name-match` on a common name). Removing any one code alone would leave at least 151 of the 168 unknown: no single rule explains the share.
+
+**STOP GATE: more than 60% unknown.** Per the prompt nothing was tuned. The largest contributor is `dynamic-import` with detail `*`: 15 sites (11 in `packages/coding-agent/src`, 4 in tests) with no static prefix, which under P4 ("files its static prefix can match") put every exported declaration in scope. Narrowing that, or `depth-limit` on long reference chains, is the owner's decision.
+
+### 5. The first ten lows against `findReferences`
+
+The first ten `low` results of the sample in key order (no selection by kind or outcome), checked with the TypeScript language service over the same program grouping (`/tmp/ksd-m2b-r2/check-lows.mjs`). "Unlisted" counts references to the declaration itself whose enclosing symbol is neither listed at depth 1 nor the target.
+
+| Target | Kind | Index direct / total | TS references | Unlisted |
+|---|---|---:|---:|---:|
+| `packages/ai/test/issue-6913-harmony-marker-escaping.test.ts#ESCAPED` | variable | 1 / 1 | 7 (1 source) | 0 |
+| `packages/ai/test/kimi-usage.test.ts#makeCredential` | function | 1 / 1 | 8 (1 source) | 0 |
+| `packages/coding-agent/src/cli/images-cli.ts#DEFAULT_DEPENDENCIES.loadProviderFileCache` | method | 0 / 0 | 0 (1 to the interface member it implements) | 0 |
+| `packages/coding-agent/src/mnemopi/backend.ts#clampLimit` | function | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/btw-session-lifecycle.test.ts#SideTurn` | interface | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/mcp-lost-remote-retry.test.ts#FAST.retryBaseMs` | property | 0 / 0 | 0 (2 to `MCPReconnectPolicy.retryBaseMs`) | 0 |
+| `packages/coding-agent/test/mcp/config-request-id-format.test.ts#fallbackAgentDir` | variable | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/memories/stage1-input.test.ts#referenceItems` | function | 1 / 1 | 1 | 0 |
+| `packages/metaharness/adapters/edit/runner.ts#TaskRunItem` | interface | 3 / 5 | 3 (3 sources) | 0 |
+| `packages/tui/src/theme/symbols.ts#UNICODE_SYMBOLS.boxRound.topRight` | property | 0 / 0 | 1 | **1** |
+
+**Candidate wrong `low` (blocker until the owner rules):** `packages/tui/src/theme/theme-class.ts:589`, `topRight: this.#symbols["boxRound.topRight"]` inside `Theme.boxRound`. `#symbols` is `SymbolMap = Record<SymbolKey, string>`; the presets (`UNICODE_SYMBOLS`, `NERD_SYMBOLS`, `ASCII_SYMBOLS`) are spread into it, so a change to the preset value reaches `Theme.boxRound` at runtime. The checker binds the literal to a transient mapped-type symbol with **0 declarations** (`/tmp/ksd-m2b-r2/miss-symbol.mjs`: `mapped: true, declarations: 0`). ADR 0003 and Round 1 record no edge and no gap for a declaration-less `Record` key, and the differential oracle skips this read as "use of a property of a mapped type (no declaration)"; raw `findReferences` lists it. Under the oracle the low holds; under `findReferences` it is a missed reader. Nothing was changed: the layer is the index rule (Step 1), not the query.
+
+### 6. Not acted on (owner questions)
+
+1. Whether an empty-prefix `dynamic-import` should scope every export (84% unknown, §4).
+2. Whether 102/200 `depth-limit` results reflect real chains longer than 10 or call for a different cap.
+3. The `Record`-alias read in §5: accept it as ADR 0003 policy, or add a gap for reads through a mapped-type alias of an object literal's type.
+4. Files outside the index scope (63 `.ts`/`.tsx`/`.d.ts` and 1 `.js` under `outside-index-scope`) and 21 orphan `.js` files may call in-scope targets; P4 defines no scope for `outside-index-scope`, so it is not applied to targets.
+5. Index layer: a computed index into an array (`list[i]()`) records no `computed-member-access` gap (only object literals, classes, enums and namespaces do).
+6. `unresolved-import` is scoped by imported name; a broken `default` import does not match the target's own name.
+
+**NOT VERIFIED:** macOS, CI, rendering, the agent tool and CLI (Round 3), query latency, live OMP.

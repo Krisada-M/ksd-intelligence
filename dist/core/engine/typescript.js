@@ -14,24 +14,35 @@ const REQUIRED_LIB_FILES = ['lib.d.ts', 'lib.es5.d.ts'];
 function readJson(path) {
     return JSON.parse(readFileSync(path, 'utf8'));
 }
-/** `eiRuntime.typescript` from this package's own package.json: the one pinned version. */
-export function pinnedTypescriptVersion() {
+/** This package's own package.json, found by walking up from the built module. */
+function ownPackage() {
     let dir = dirname(fileURLToPath(import.meta.url));
     for (;;) {
         const file = join(dir, 'package.json');
         const pkg = existsSync(file) ? readJson(file) : null;
-        if (isRecord(pkg) && pkg.name === 'ksd-intelligence') {
-            const pinned = isRecord(pkg.eiRuntime) ? pkg.eiRuntime.typescript : undefined;
-            if (typeof pinned !== 'string' || !/^\d+\.\d+\.\d+$/.test(pinned)) {
-                throw new Error(`eiRuntime.typescript must be an exact version in ${file}`);
-            }
-            return pinned;
-        }
+        if (isRecord(pkg) && pkg.name === 'ksd-intelligence')
+            return { file, pkg };
         const parent = dirname(dir);
         if (parent === dir)
             throw new Error(`ksd-intelligence package.json not found above ${dir}`);
         dir = parent;
     }
+}
+/** `eiRuntime.typescript` from this package's own package.json: the one pinned version. */
+export function pinnedTypescriptVersion() {
+    const { file, pkg } = ownPackage();
+    const pinned = isRecord(pkg.eiRuntime) ? pkg.eiRuntime.typescript : undefined;
+    if (typeof pinned !== 'string' || !/^\d+\.\d+\.\d+$/.test(pinned)) {
+        throw new Error(`eiRuntime.typescript must be an exact version in ${file}`);
+    }
+    return pinned;
+}
+/** The engine version every result carries (DESIGN §7.1): this package's own version. */
+export function engineVersion() {
+    const { file, pkg } = ownPackage();
+    if (typeof pkg.version !== 'string')
+        throw new Error(`version missing in ${file}`);
+    return pkg.version;
 }
 export function typescriptRuntimeDir(options) {
     const home = options.cacheHome ?? homedir();
