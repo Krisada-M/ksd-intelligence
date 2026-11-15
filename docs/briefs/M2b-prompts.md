@@ -69,8 +69,9 @@ After the change:
   where 1.1 legitimately changes it and explain each changed number.
 - On oh-my-pi: cold build, then `ei doctor --deep --differential 300`.
   It must exit 0. Report how many new edges and how many new gap sites
-  1.1 produced, and how many declarations are now partial because of a
-  keyof gap. If more than 5% of declarations became partial, stop and
+  1.1 produced, and how many declarations are directly inside the scope
+  of a keyof gap (the owner types and their members; not the caller
+  chains above them). If that is more than 5% of declarations, stop and
   report before going on: the gap rule is too broad.
 
 Stop after Step 1.
@@ -85,6 +86,13 @@ Step 1 is committed on m2b-impact. Do Step 2 only.
 
 [Common rules]
 
+Before anything else (fixture correction, G13): remove the line
+`void localOnly;` from tests/fixtures/mono/packages/payments/src/fee.ts.
+The fixture must still type-check. Update only the exact counts in
+existing tests that this one removed reference legitimately changes,
+and list each changed number with its reason. Change nothing else in
+the fixture.
+
 Order of work:
 1. Write the golden tests first, one per case C01–C26 and F01–F06,
    named with the case id, asserting exactly what the case states. They
@@ -97,8 +105,11 @@ you think the expectation is wrong. Do not adjust either side.
 
 Risky cases you must cover with a test each (beyond the golden cases):
 Completeness
-- A gap on a symbol three levels up the caller chain makes the target
-  partial; a gap on an unrelated symbol in the same file does not.
+- A gap whose scope covers the target makes it partial. A gap whose
+  scope covers only an impacted symbol (one or three levels up the
+  caller chain) does NOT: the target stays complete and that row has
+  gapScoped: true (G13, D54). A gap on an unrelated symbol in the same
+  file changes nothing.
 - depth 1 and depth 10 give the same completeness, reach, factors and
   verdict; only the listing differs.
 - Traversal cap reached with unvisited nodes -> depth-limit, partial.
