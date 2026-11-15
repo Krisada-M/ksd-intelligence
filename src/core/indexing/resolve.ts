@@ -7,6 +7,7 @@ import {
   type FileDeclarations,
   type Ts,
 } from './declarations.js';
+import { KeyAccess } from './keys.js';
 import { surfaceOf } from './surface.js';
 
 export type EdgeKind = 'CALLS' | 'CONSTRUCTS' | 'REFERENCES' | 'IMPORTS' | 'IMPLEMENTS' | 'TESTS';
@@ -60,6 +61,15 @@ export interface ExternalImport {
   line: number;
 }
 
+export type MarkerKind = 'boundary:sql' | 'boundary:native';
+
+/** Out-of-index boundaries a file's syntax shows (docs/RISK.md §3.2) beyond its bare imports. */
+export interface MarkerRecord {
+  file: string;
+  line: number;
+  kind: MarkerKind;
+}
+
 /** One name a module exports and the in-scope declaration it resolves to, re-exports followed. */
 export interface ExportRecord {
   file: string;
@@ -89,6 +99,7 @@ export interface FileResolution {
   tokens: NameToken[];
   externalImports: ExternalImport[];
   exports: ExportRecord[];
+  markers: MarkerRecord[];
   /**
    * What other files can observe of this one, from syntax alone (`surface.ts`); dependents are
    * re-resolved when it changes.
@@ -141,6 +152,7 @@ export class Resolver {
   private readonly declarationCache = new Map<TS.SourceFile, FileDeclarations>();
   private readonly fileCache = new Map<TS.SourceFile, FileInfo>();
   private checkerInstance: TS.TypeChecker | undefined;
+  private keyAccessInstance: KeyAccess | undefined;
   private readonly declarationKinds: ReadonlySet<TS.SyntaxKind>;
 
   constructor(
@@ -187,6 +199,32 @@ export class Resolver {
   private get checker(): TS.TypeChecker {
     this.checkerInstance ??= this.program.getTypeChecker();
     return this.checkerInstance;
+  }
+
+  private get keys(): KeyAccess {
+    this.keyAccessInstance ??= new KeyAccess(this.ts, this.checker, {
+      indexedTargets: (property) => {
+        const keys = new Set<string>();
+        for (const node of this.targetNodes(property)) {
+          const target = this.targetOfDeclaration(node);
+          if (typeof target === 'object') keys.add(target.key);
+        }
+        return [...keys];
+      },
+      ownerKey: (declaration) => {
+        // Anonymous types have no key of their own (D51); scope the gap to their indexed parent.
+        // This also covers `keyof typeof obj`, whose literal belongs to its variable declaration.
+        let node: TS.Node | undefined = declaration;
+        while (node !== undefined) {
+          const target = this.targetOfDeclaration(node);
+          if (typeof target === 'object') return target.key;
+          if (target === 'outside' || target === 'external') return null;
+          node = node.parent;
+        }
+        return null;
+      },
+    });
+    return this.keyAccessInstance;
   }
 
   repoPath(fileName: string): string | null {
@@ -329,6 +367,11 @@ export class Resolver {
     };
     const addGap = (record: GapRecord): void => {
       gaps.set(`${record.line}\u0000${record.code}\u0000${record.detail}`, record);
+    };
+    const markers = new Map<string, MarkerRecord>();
+    const addMarker = (kind: MarkerKind, at: TS.Node): void => {
+      const record: MarkerRecord = { file, line: line(at), kind };
+      markers.set(`${record.line}\u0000${kind}`, record);
     };
 
     const edgeTo = (source: string, node: TS.Node, kind: EdgeKind, at: number): Target => {
@@ -560,6 +603,56 @@ export class Resolver {
         for (const property of propertiesOfType(contextualTypeOf(parent.parent), node.text)) {
           if (!(property.declarations ?? []).includes(parent)) use(node, property);
         }
+        return;
+      }
+      if (ts.isStringLiteralLike(node) && isKeyPosition(node)) keyLiteral(node);
+    };
+
+    // Declared names, `T["k"]` and `obj["k"]` are handled above and in elementAccess.
+    // Do not filter by indexed names: an unindexed anonymous member still needs an owner gap.
+    const isKeyPosition = (node: TS.StringLiteralLike): boolean => {
+      const parent = node.parent;
+      if (ts.isLiteralTypeNode(parent) || ts.isExternalModuleReference(parent)) return false;
+      if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return false;
+      return !('name' in parent && parent.name === node);
+    };
+
+    /** `get(u, "cost")` with `K extends keyof Usage`: an edge to `Usage.cost`, or gaps. */
+    const keyLiteral = (node: TS.StringLiteralLike): void => {
+      const found = this.keys.literal(node);
+      if (found === null) return;
+      if (found.kind === 'property') {
+        use(node, found.property);
+        return;
+      }
+      keyGaps(node, found.owners);
+    };
+
+    /** A key that may name any member of each owner: every member's picture is partial. */
+    const keyGaps = (node: TS.Node, owners: readonly string[]): void => {
+      const source = enclosingKey(node, declarations);
+      for (const owner of owners) {
+        addGap({ file, line: line(node), code: 'computed-member-access', detail: owner, source });
+      }
+    };
+
+    /** `get(u, k)` with `k: keyof Usage` passed where a key is declared: a gap on Usage. */
+    const keyArguments = (node: TS.CallExpression | TS.NewExpression): void => {
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) return;
+      for (const argument of node.arguments ?? []) {
+        // Literals are handled separately; containers and callbacks are not scalar keys.
+        if (
+          ts.isStringLiteralLike(argument) ||
+          ts.isNumericLiteral(argument) ||
+          ts.isArrayLiteralExpression(argument) ||
+          ts.isObjectLiteralExpression(argument) ||
+          ts.isArrowFunction(argument) ||
+          ts.isFunctionExpression(argument)
+        ) {
+          continue;
+        }
+        const owners = this.keys.expression(argument);
+        if (owners.length > 0 && this.keys.takesKey(node, argument)) keyGaps(argument, owners);
       }
     };
 
@@ -652,6 +745,8 @@ export class Resolver {
         if (symbol !== undefined) use(argument, symbol);
         return;
       }
+      // `u[k]` with `k: keyof Usage`: any member of Usage may be read.
+      keyGaps(node, this.keys.expression(argument));
       const receiver = ts.isPropertyAccessExpression(node.expression)
         ? node.expression.name
         : node.expression;
@@ -680,6 +775,16 @@ export class Resolver {
       }
     };
 
+    // docs/RISK.md §3.2: `NativeModules` or `TurboModuleRegistry` imported from react-native.
+    const nativeImport = (node: TS.ImportDeclaration): void => {
+      const bindings = node.importClause?.namedBindings;
+      if (bindings === undefined || !ts.isNamedImports(bindings)) return;
+      const names = bindings.elements.map((element) => (element.propertyName ?? element.name).text);
+      if (names.includes('NativeModules') || names.includes('TurboModuleRegistry')) {
+        addMarker('boundary:native', node);
+      }
+    };
+
     const visit = (node: TS.Node): void => {
       // JSDoc types (JavaScript) and {@link} references are uses too; each comment once, from its host.
       if ('jsDoc' in node) {
@@ -704,6 +809,7 @@ export class Resolver {
             }
           }
         }
+        if (node.moduleSpecifier.text === 'react-native') nativeImport(node);
         return; // import bindings are not uses; the file-level IMPORTS edge records them
       }
       if (ts.isExportDeclaration(node)) {
@@ -735,7 +841,16 @@ export class Resolver {
         fileImport(node.argument.literal, node);
       }
       if (ts.isCallExpression(node)) call(node);
+      if (ts.isCallExpression(node) || ts.isNewExpression(node)) keyArguments(node);
       if (ts.isElementAccessExpression(node)) elementAccess(node);
+      // docs/RISK.md §3.2: a `sql` tagged template (`sql\`…\``, `db.sql\`…\``) talks to a database.
+      if (
+        ts.isTaggedTemplateExpression(node) &&
+        ((ts.isIdentifier(node.tag) && node.tag.text === 'sql') ||
+          (ts.isPropertyAccessExpression(node.tag) && node.tag.name.text === 'sql'))
+      ) {
+        addMarker('boundary:sql', node);
+      }
       if (ts.isStringLiteralLike(node) || ts.isNumericLiteral(node)) propertyNameLiteral(node);
       if (ts.isClassLike(node) || ts.isInterfaceDeclaration(node)) heritage(node);
       ts.forEachChild(node, visit);
@@ -761,6 +876,7 @@ export class Resolver {
       tokens: this.tokensOf(sf, file),
       externalImports: [...externalImports.values()],
       exports,
+      markers: [...markers.values()],
       surface: surface.hash,
       observableKeys: surface.observableKeys,
       global: isGlobalFile(this.ts, this.checker, sf),

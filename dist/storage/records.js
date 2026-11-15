@@ -7,6 +7,7 @@ export const RECORD_TABLES = [
     'name_tokens',
     'external_imports',
     'exports',
+    'markers',
 ];
 export function emptyCounts() {
     return {
@@ -19,6 +20,7 @@ export function emptyCounts() {
         name_tokens: 0,
         external_imports: 0,
         exports: 0,
+        markers: 0,
     };
 }
 /** Deletes every record these files contributed; returns rows deleted per table. */
@@ -34,6 +36,7 @@ export function deleteFileRecords(db, files) {
         'name_tokens',
         'external_imports',
         'exports',
+        'markers',
     ].map((table) => [table, db.prepare(`DELETE FROM ${table} WHERE file = ?`)]);
     for (const file of files) {
         deleted.edges += Number(edges.run(file).changes);
@@ -68,6 +71,7 @@ export function recordWriter(db) {
     const token = db.prepare('INSERT INTO name_tokens (file, name, kind, lines) VALUES (?, ?, ?, ?)');
     const external = db.prepare('INSERT INTO external_imports (file, specifier, line) VALUES (?, ?, ?)');
     const exported = db.prepare('INSERT INTO exports (file, name, target) VALUES (?, ?, ?)');
+    const marker = db.prepare('INSERT INTO markers (file, line, kind) VALUES (?, ?, ?)');
     const inserted = emptyCounts();
     return {
         inserted,
@@ -98,6 +102,9 @@ export function recordWriter(db) {
             for (const x of rows.exports)
                 exported.run(x.file, x.name, x.target);
             inserted.exports += rows.exports.length;
+            for (const m of rows.markers)
+                marker.run(m.file, m.line, m.kind);
+            inserted.markers += rows.markers.length;
         },
     };
 }
@@ -196,6 +203,7 @@ const CANONICAL = {
     name_tokens: 'SELECT * FROM name_tokens ORDER BY file, name, kind',
     external_imports: 'SELECT * FROM external_imports ORDER BY file, line, specifier',
     exports: 'SELECT * FROM exports ORDER BY file, name, target',
+    markers: 'SELECT * FROM markers ORDER BY file, line, kind',
 };
 /** The use counters of every file, as sorted text lines (statistics only; never graph content). */
 export function counterLines(db) {

@@ -107,6 +107,17 @@ const MIGRATIONS = [
       ) STRICT, WITHOUT ROWID;
       CREATE INDEX exports_target ON exports (target);`,
     },
+    {
+        // M2b: boundary markers a file's syntax shows beyond its bare imports (docs/RISK.md §3.2).
+        version: 3,
+        sql: `
+      CREATE TABLE markers (
+        file TEXT NOT NULL,
+        line INTEGER NOT NULL,
+        kind TEXT NOT NULL
+      ) STRICT;
+      CREATE INDEX markers_file ON markers (file);`,
+    },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.length;
 export function indexPath(cacheDir) {
