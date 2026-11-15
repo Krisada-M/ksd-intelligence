@@ -57,7 +57,7 @@ Accept each form in `docs/TOOLS.md` §4: bare name, qualified `Owner.member`, `p
 Build `ImpactResult` exactly as in `tests/golden/M2-impact-cases.md` "Result contract" (types already in `src/core/kernel/types.ts`).
 
 - **Traversal:** full depth (cap 10) always; `depth` only limits what is listed. Hitting the cap with unvisited nodes adds `depth-limit`.
-- **Completeness:** from gap sites and unresolved records, scoped per golden P4. A gap that applies to the target or to any impacted symbol counts. Reasons are `code: detail` with `path:line`.
+- **Completeness:** from gap sites and unresolved records, scoped per golden P4 **to the target only** (G13, D54). A gap whose scope covers an impacted symbol but not the target does not make the result partial: golden C01, C02, C04 and C05 are complete although `chargeHandler` sits under the `registry` gap. Such an impacted symbol is returned with `gapScoped: true` on its `ImpactNode` (new optional field) and rendered with the `gap` row marker (TOOLS §4). Reasons are `code: detail` with `path:line`.
 - **Reach:** per DESIGN §7.2, over compiler-grade edges only.
 - **Factors:** per golden P2. `route` comes from `impact.routes` globs only (route detection is M4a). Boundaries per `docs/RISK.md` §3.2.
 - **Tests:** files reached through `TESTS` edges and test files among the impacted symbols.

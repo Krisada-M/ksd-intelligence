@@ -84,7 +84,7 @@ Rules for the block:
 - Line 1: resolved target and declaration location. If the input was a line inside a local function, line 1 adds `(nearest indexed declaration enclosing line N)`.
 - Line 2, **the only verdict**: action, level, and the state of the picture. With a risk zone: `ACTION run-tests · level high (zone payments) · picture complete`. Incomplete: `ACTION check-gaps · level unknown · picture partial (2 gaps)`.
 - Line 3: reach and factors. Reach counts compiler-grade edges only.
-- Callers: grouped by depth; each row is `path:line`, enclosing symbol, edge kind, then markers (`route`, `heuristic`, `boundary:sql`).
+- Callers: grouped by depth; each row is `path:line`, enclosing symbol, edge kind, then markers (`route`, `heuristic`, `boundary:sql`, `gap`). `gap` means the listed symbol is itself inside the scope of a completeness gap, so its own users may be incomplete; it does not change this target's picture (D54). When any row carries it, `Next:` adds: `Rows marked gap may have users the index cannot see; call ei_impact on them if you change what they receive.`
 - From M4b, `Possible (heuristic)`: bridged edges (DESIGN §6.9) in their own section after compiler-grade callers, each naming the bridge and what matched, for example `apps/web/src/api.ts:22  postCharge  REQUESTS  via B3 POST /charge`. They never count toward reach, and a gap they relate to still appears under `Gaps`, annotated `bridged: n candidates`.
 - Over budget: keep depth 1 complete as far as possible, then summarise: `Depth 3: 41 more in 12 files. Call again with depth 3 and a single target to list them.`
 - `Gaps:` lists each completeness reason as `code path:line — what to check`, for example
@@ -94,11 +94,12 @@ Rules for the block:
 **Guidance responses (success-shaped)**
 
 ```text
-AMBIGUOUS charge — 4 declarations. Call again with one of:
+AMBIGUOUS charge — 5 declarations. Call again with one of:
   packages/payments/src/service.ts#PaymentService.charge
   packages/payments/src/stripe.ts#StripeProcessor.charge
   packages/payments/src/manual.ts#ManualProcessor.charge
   packages/payments/src/processor.ts#PaymentProcessor.charge
+  packages/api/src/handlers.ts#registry.charge
 ```
 
 ```text

@@ -243,7 +243,7 @@ The agent may add files a case needs and lists them in the report. No added file
 - [x] Owner confirmed
 
 **Query:** `impact charge` (bare name)
-**Expected:** guidance `ambiguous-target`, no merged result. Candidates are exactly: `packages/payments/src/service.ts#PaymentService.charge`, `packages/payments/src/stripe.ts#StripeProcessor.charge`, `packages/payments/src/manual.ts#ManualProcessor.charge`, `packages/payments/src/processor.ts#PaymentProcessor.charge`.
+**Expected:** guidance `ambiguous-target`, no merged result. Candidates are exactly: `packages/payments/src/service.ts#PaymentService.charge`, `packages/payments/src/stripe.ts#StripeProcessor.charge`, `packages/payments/src/manual.ts#ManualProcessor.charge`, `packages/payments/src/processor.ts#PaymentProcessor.charge`, `packages/api/src/handlers.ts#registry.charge` (G13).
 
 ### C16 — Parse error in scope (temp copy)
 - [x] Owner confirmed
@@ -427,5 +427,6 @@ Run with `riskZones: "default"` (payments, auth, migrations, prod-config; `docs/
 | G10 | Name cross-check cases C22–C23 and boundary case C24 are engine cases (M2b) | 2026-11-11 |
 | G11 | Freshness cases run with full hashing; F06 documents the stat probe's blind spot | 2026-11-11 |
 | G12 | Policy and changes cases P01–P05, X01–X03 confirmed for M2c | 2026-11-11 |
+| G13 | C15 has five candidates: ADR 0003 indexes members of module-level object literals, so `handlers.ts#registry.charge` is a declaration named `charge`; a candidate is never hidden. C14: the base fixture must hold no use of `localOnly` (a stray `void localOnly;` is removed from the fixture, the expectation stands). P4 stands as written: a gap makes a result partial only when its scope covers the **target**; a gap on an impacted symbol does not (C01, C02, C04, C05 stay complete) and is shown as a row marker instead (DESIGN D54) | 2026-11-15 |
 
 Bridge cases (M4b) and route-detection cases (M4a) are written and confirmed when those milestones are briefed.
