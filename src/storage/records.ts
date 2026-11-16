@@ -4,7 +4,8 @@ import type { DatabaseSync } from 'node:sqlite';
 
 export interface FileIndexRow {
   file: string;
-  /** `ok`, `parse-error` (indexed, with a gap site) or `not-in-program` (listed, not indexed). */
+  /** `ok`, `parse-error` (indexed, with a gap site), `not-in-program` (listed, not indexed) or
+   * `lexical` (census orphan: scanner-only name rows, D55). */
   extraction: string;
   lines: number;
   surface: string;

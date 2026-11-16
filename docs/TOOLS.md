@@ -57,6 +57,8 @@ Derived from this project's principles and from what a reference project measure
 | `targets` | `string[]`, 1–5 | Each: bare name · qualified `Class.member` · `path#name` · `path:line` (the indexed declaration enclosing that line) · `path` (exported declarations of the file that have callers outside it, plus a count of the rest) |
 | `depth` | integer 1–10, default 2 | How many levels to **list**. Completeness, reach and the verdict always use the full traversal |
 
+The engine follows references, not arbitrary value flow: storing a value in a field, array or map reaches the storing symbol, not every later read of the stored value. Indexed references to that container can continue the chain. Object-literal members include whole-value users of their enclosing objects (D55).
+
 **Output, one block per target (budget: 4,000 characters per target, 12,000 in total)**
 
 ```text
@@ -223,6 +225,8 @@ Rules:
 | Target in an excluded or secret path | Guidance: `NOT INDEXED <path> — excluded by configuration` |
 
 `details` on every result carries the typed object from DESIGN §7 (`ImpactResult[]`, `ChangesResult`, status, search hits), so tests and future UIs never parse the text.
+
+Impact results additionally carry `limits: { unboundedDynamicImports, excludedFiles, failedFiles }` (counts). These repository limits are context, never verdict inputs. `excludedFiles` counts policy exclusions and code outside `impact.include`, not non-code census metadata; `failedFiles` counts files with `not-in-program` extraction. Parse errors remain their existing completeness reasons (C16).
 
 ## 9. Helping the agent choose the tools
 

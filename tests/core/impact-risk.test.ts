@@ -121,12 +121,29 @@ describe('impact query edge cases and D54 target-only gaps', () => {
     assert.equal(result(query.query(`${FLOW}#leaf`, 1)).byDepth.length, 1);
   });
 
-  it('an unvisited caller past depth ten makes the picture partial', () => {
+  it('a chain longer than ten closes completely; only the node budget adds depth-limit', () => {
     const value = result(query.query(`${SHARED}/chain.ts#chain0`, 10));
     assert.equal(value.byDepth.length, 10);
-    assert.equal(value.reach.total, 10);
-    assert.ok(reason(value, 'depth-limit'));
-    assert.equal(value.verdict.level, 'unknown');
+    assert.equal(value.reach.total, 12);
+    assert.equal(value.completeness.status, 'complete');
+    assert.ok(value.factors.includes('many-callers'));
+    assert.equal(value.verdict.level, 'medium');
+    const capped = result(
+      new ImpactQuery(db, impactOf(repo), { nodeBudget: 3 }).query(`${SHARED}/chain.ts#chain0`, 10),
+    );
+    assert.ok(reason(capped, 'depth-limit'));
+    assert.equal(capped.verdict.level, 'unknown');
+  });
+
+  it('a cycle terminates without counting its starting declaration twice', () => {
+    const cycle = result(query.query('packages/payments/src/cycle-a.ts#a', 10));
+    assert.equal(cycle.reach.direct, 1);
+    assert.equal(cycle.reach.total, 1);
+    assert.deepEqual(
+      cycle.byDepth.flat().map((node) => node.symbol),
+      ['packages/payments/src/cycle-b.ts#b'],
+    );
+    assert.equal(cycle.completeness.status, 'complete');
   });
 
   it('name lookup preserves ambiguity and provides at most five closest names', () => {
@@ -261,14 +278,19 @@ async function sharedManifest(repo: string, manifest: Record<string, unknown>): 
 const SOLO = { 'packages/shared/src/solo.ts': 'export function solo(): number { return 1; }\n' };
 
 describe('scopes and surfaces the base fixture does not exercise (no wrong low)', () => {
-  it('an import() with no static prefix makes every exported target partial, not unexported ones', async () => {
+  it('a prefix-less import() makes exports partial only in files with no static importer', async () => {
     const { query, close } = await copyQuery('impact-dyn-any', {
       'packages/api/src/loader.ts': 'export function loadAny(p: string) { return import(p); }\n',
+      'packages/api/src/isolated.ts': 'export function island(): number { return 1; }\n',
     });
     try {
-      const exported = result(query.query('packages/payments/src/cycle-a.ts#a'));
-      assert.ok(reason(exported, 'dynamic-import'), JSON.stringify(exported.completeness));
-      assert.equal(exported.verdict.level, 'unknown');
+      const island = result(query.query('packages/api/src/isolated.ts#island'));
+      assert.ok(reason(island, 'dynamic-import'), JSON.stringify(island.completeness));
+      assert.equal(island.verdict.level, 'unknown');
+      // cycle-b.ts imports cycle-a.ts statically: out of scope, a repository limit instead.
+      const imported = result(query.query('packages/payments/src/cycle-a.ts#a'));
+      assert.equal(imported.completeness.status, 'complete');
+      assert.equal(imported.limits.unboundedDynamicImports, 1);
       const local = result(query.query('packages/payments/src/fee.ts#localOnly'));
       assert.equal(
         local.completeness.status,
@@ -279,16 +301,67 @@ describe('scopes and surfaces the base fixture does not exercise (no wrong low)'
       await close();
     }
   });
+  it('a literal dynamic import is not a static importer for a prefix-less gap', async () => {
+    const { query, close } = await copyQuery('impact-dyn-literal', {
+      'packages/api/src/loader.ts':
+        'export function load(p: string) { void import("./isolated"); return import(p); }\n',
+      'packages/api/src/isolated.ts': 'export function island(): number { return 1; }\n',
+    });
+    try {
+      const island = result(query.query('packages/api/src/isolated.ts#island'));
+      assert.ok(reason(island, 'dynamic-import'), JSON.stringify(island.completeness));
+      assert.equal(island.limits.unboundedDynamicImports, 1);
+    } finally {
+      await close();
+    }
+  });
 
-  it('a require() of a computed path makes exported targets partial', async () => {
+  it('a computed require() follows the same no-static-importer scope', async () => {
     const { query, close } = await copyQuery('impact-req-any', {
       'packages/api/src/requirer.ts':
         'export function requireAny(p: string): unknown { return require(p); }\n',
+      'packages/api/src/isolated.ts': 'export function island(): number { return 1; }\n',
     });
     try {
+      const island = result(query.query('packages/api/src/isolated.ts#island'));
+      assert.ok(reason(island, 'cjs-require'), JSON.stringify(island.completeness));
+      assert.equal(island.verdict.level, 'unknown');
+      const imported = result(query.query('packages/payments/src/cycle-a.ts#a'));
+      assert.equal(imported.completeness.status, 'complete');
+      assert.equal(imported.limits.unboundedDynamicImports, 1);
+    } finally {
+      await close();
+    }
+  });
+
+  it('an unmatched computed import prefix remains a visible gap, not a silent limit', async () => {
+    const { query, close } = await copyQuery('impact-dyn-alias', {
+      'packages/api/src/loader.ts':
+        'export function load(name: string) { return import("@handlers/" + name); }\n',
+      'packages/api/src/isolated.ts': 'export function island(): number { return 1; }\n',
+    });
+    try {
+      const island = result(query.query('packages/api/src/isolated.ts#island'));
+      assert.ok(reason(island, 'dynamic-import'), JSON.stringify(island.completeness));
+      assert.equal(island.limits.unboundedDynamicImports, 0);
+      const local = result(query.query('packages/payments/src/fee.ts#localOnly'));
+      assert.equal(local.completeness.status, 'complete');
+    } finally {
+      await close();
+    }
+  });
+
+  it('a literal require of an external package does not scope repository declarations', async () => {
+    const { query, close } = await copyQuery('impact-external-require', {
+      'packages/api/src/external-requirer.ts':
+        'export function readExternal() { return require("not-installed-external"); }\n',
+    });
+    try {
+      const local = result(query.query('packages/payments/src/fee.ts#localOnly'));
       const exported = result(query.query('packages/payments/src/cycle-a.ts#a'));
-      assert.ok(reason(exported, 'cjs-require'), JSON.stringify(exported.completeness));
-      assert.equal(exported.verdict.level, 'unknown');
+      assert.equal(local.completeness.status, 'complete');
+      assert.equal(exported.completeness.status, 'complete');
+      assert.equal(exported.limits.unboundedDynamicImports, 0);
     } finally {
       await close();
     }

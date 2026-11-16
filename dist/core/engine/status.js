@@ -1,6 +1,7 @@
 import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { repositoryLimits } from '../graph/limits.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { probe } from '../workspace/probe.js';
@@ -66,6 +67,7 @@ function graphOf(db) {
         unresolved: grouped(db, 'SELECT reason AS k, COUNT(*) AS n FROM unresolved GROUP BY k'),
         gapSites: grouped(db, 'SELECT code AS k, COUNT(*) AS n FROM gap_sites GROUP BY k'),
         externalUnresolved: count('SELECT COALESCE(SUM(external_unresolved), 0) AS n FROM file_index'),
+        limits: repositoryLimits(db),
     };
 }
 /** The published index, read-only; null when none exists. Throws when it cannot be read. */
@@ -98,6 +100,7 @@ function readIndex(cacheDir) {
                         unresolved: {},
                         gapSites: {},
                         externalUnresolved: 0,
+                        limits: { unboundedDynamicImports: 0, excludedFiles: 0, failedFiles: 0 },
                     },
             },
             files,
@@ -323,6 +326,8 @@ export function renderStatus(status) {
             `programs ${meta.programs ?? '?'}${splitNote(meta.program_split)}`);
         lines.push(`Problems    ${problemsLine(index, status.failure)}`);
         lines.push(`Gap sites   ${counted(graph.gapSites)}`);
+        const { limits } = graph;
+        lines.push(`Limits      ${limits.unboundedDynamicImports} unbounded dynamic imports · ${limits.excludedFiles} excluded files · ${limits.failedFiles} failed to index`);
         const tsconfigProblems = index.tsconfigErrors.length === 0
             ? 'none'
             : `${index.tsconfigErrors.length}: ${list(index.tsconfigErrors.map((error) => error.slice(0, 160)), 3)}`;

@@ -9,6 +9,7 @@ import { fileDeclarations } from './declarations.js';
 import { readPackages } from './packages.js';
 import { createAnalysisHost, groupPrograms, splitBy } from './program.js';
 import { Resolver, isGlobalFile } from './resolve.js';
+import { scanLexically } from './lexical.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
 import { verifyIndex } from './verify.js';
 const LOCKFILES = new Set([
@@ -396,6 +397,7 @@ export class Indexer {
                     }
                     this.lighten(group);
                 }
+                this.writeOrphans(writer, census, declarationNames);
             });
             phases.resolve = performance.now() - started;
             return this.finish(db, census, writer.inserted, stamp, request, phases, progress, programs, {
@@ -409,6 +411,14 @@ export class Indexer {
         catch (error) {
             discardBuild(db, this.cacheDir);
             throw error;
+        }
+    }
+    /** Lexical rows for every census orphan: names in files no program covers still cross-check. */
+    writeOrphans(writer, census, names, only) {
+        for (const record of census.records) {
+            if (record.status !== 'orphan' || (only !== undefined && !only.has(record.path)))
+                continue;
+            writer.write(scanLexically(this.ts, record.path, readFileSync(join(this.root, record.path), 'utf8'), names));
         }
     }
     update(census, drift, published, stamp, request, phases, progress, programs) {
@@ -464,6 +474,8 @@ export class Indexer {
                     names.add(simple);
             names.delete('<module>');
             const entering = [...declarationNames].filter((name) => !oldNames.has(name));
+            const orphanNamesChanged = entering.length > 0 ||
+                [...oldNames].some((name) => name !== '<module>' && !declarationNames.has(name));
             phases.extract = performance.now() - started;
             // Affected set: changed files and this repository's cross-checks (no builder state, D47).
             started = performance.now();
@@ -565,10 +577,20 @@ export class Indexer {
             transaction(db, () => {
                 db.exec('DELETE FROM files');
                 writeFiles(db, census.records);
-                const deleted = deleteFileRecords(db, [...resolved.keys(), ...removed]);
+                const orphanNow = new Set(census.records
+                    .filter((record) => record.status === 'orphan')
+                    .map((record) => record.path));
+                const orphanBefore = new Set(published.files
+                    .filter((record) => record.status === 'orphan')
+                    .map((record) => record.path));
+                const orphans = new Set(orphanNamesChanged
+                    ? [...orphanNow, ...orphanBefore]
+                    : [...drift.changed, ...drift.added, ...drift.deleted].filter((path) => orphanNow.has(path) || orphanBefore.has(path)));
+                const deleted = deleteFileRecords(db, [...resolved.keys(), ...removed, ...orphans]);
                 const writer = recordWriter(db);
                 for (const rows of resolved.values())
                     writer.write(rows);
+                this.writeOrphans(writer, census, declarationNames, orphans);
                 for (const table of RECORD_TABLES) {
                     expected[table] = before[table] - deleted[table] + writer.inserted[table];
                 }

@@ -55,13 +55,42 @@ export function verifyIndex(db: DatabaseSync, expected: TableCounts): string[] {
   check(
     'index records for files that are not indexable',
     `SELECT COUNT(*) AS n FROM file_index i LEFT JOIN files f ON f.path = i.file
-     WHERE f.path IS NULL OR f.status != 'indexable'`,
+    WHERE f.path IS NULL
+      OR (f.status = 'orphan' AND i.extraction != 'lexical')
+      OR (f.status = 'indexable' AND i.extraction = 'lexical')
+      OR f.status NOT IN ('orphan', 'indexable')`,
   );
   check(
     'indexed files without their module declaration',
     `SELECT COUNT(*) AS n FROM file_index i
      LEFT JOIN symbols s ON s.key = i.file || '#<module>' LEFT JOIN declarations d ON d.id = s.id
-     WHERE i.extraction != 'not-in-program' AND d.id IS NULL`,
+     WHERE i.extraction NOT IN ('not-in-program', 'lexical') AND d.id IS NULL`,
+  );
+  check(
+    'lexical records contain compiler-only facts',
+    `SELECT
+      (SELECT COUNT(*) FROM declarations d JOIN file_index i ON i.file = d.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM edges e JOIN declarations d ON d.id = e.source JOIN file_index i ON i.file = d.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM gap_sites g JOIN file_index i ON i.file = g.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM external_imports x JOIN file_index i ON i.file = x.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM exports x JOIN file_index i ON i.file = x.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM markers m JOIN file_index i ON i.file = m.file WHERE i.extraction = 'lexical')
+      + (SELECT COUNT(*) FROM unresolved u JOIN file_index i ON i.file = u.file WHERE i.extraction = 'lexical' AND u.reason != 'unresolved-name-match')
+      + (SELECT COUNT(*) FROM name_tokens t JOIN file_index i ON i.file = t.file WHERE i.extraction = 'lexical' AND t.kind != 'str')
+      AS n`,
+  );
+  check(
+    'static import marker without matching import edge',
+    `SELECT COUNT(*) AS n FROM markers m
+     WHERE m.kind LIKE 'static-import:%'
+       AND NOT EXISTS (
+         SELECT 1 FROM edges e
+         JOIN symbols s ON s.id = e.source JOIN symbols t ON t.id = e.target,
+              json_each(e.lines) site
+         WHERE e.kind = 'IMPORTS' AND s.key = m.file || '#<module>'
+           AND t.key = substr(m.kind, length('static-import:') + 1) || '#<module>'
+           AND site.value = m.line
+       )`,
   );
   check(
     'records of files that are not indexed',

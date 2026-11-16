@@ -76,6 +76,16 @@ export interface ImpactNode {
   registeredAt?: Span;
 }
 
+/** Repository-wide limits that are never completeness reasons (D55, G14). */
+export interface ImpactLimits {
+  /** Prefix-less `import(x)`/`require(x)` sites and dynamic prefixes naming no indexed file. */
+  unboundedDynamicImports: number;
+  /** Files never read by policy: excluded, secret, symlinked, outside the include scope. */
+  excludedFiles: number;
+  /** Indexable files whose owning tsconfig could not be read: listed, not indexed. */
+  failedFiles: number;
+}
+
 export interface ImpactResult {
   /** "<repo-relative path>#<qualified name>" (ADR 0002). */
   target: string;
@@ -87,6 +97,8 @@ export interface ImpactResult {
   completeness: Completeness;
   reach: Reach;
   factors: string[];
+  /** Repository limits carried in `details` and the footer; they never change the verdict. */
+  limits: ImpactLimits;
   verdict: Verdict;
   freshness: { workingTreeHash: string; includesUntracked: boolean };
   engine: EngineStamp;

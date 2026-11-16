@@ -2,11 +2,13 @@ import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { engineVersion } from '../engine/typescript.js';
 import { Graph } from '../graph/graph.js';
+import { repositoryLimits } from '../graph/limits.js';
 import { isTestFile } from '../indexing/resolve.js';
 import { matchAny, matchGlob } from '../kernel/glob.js';
 import { isRecord } from '../kernel/guards.js';
 import { readMeta } from '../../storage/sqlite.js';
-const CAP = 10;
+/** G14: the traversal always runs to closure; this budget is the only stop. */
+const NODE_BUDGET = 50_000;
 const EDGE_KINDS = {
     CALLS: true,
     REFERENCES: true,
@@ -71,6 +73,10 @@ function packagesOf(raw) {
 export class ImpactQuery {
     db;
     impact;
+    /** Prefix-less `import(x)`/`require(x)` sites: scoped per D55 to files nothing imports statically. */
+    noImporter = [];
+    /** Unmatched alias/package prefixes retain their pre-D55 conservative export scope. */
+    unmatchedPrefix = [];
     graph;
     meta;
     engine;
@@ -78,22 +84,29 @@ export class ImpactQuery {
     packageOf = new Map();
     // Gap sites by how golden P4 scopes them.
     everywhere = [];
-    anyExport = [];
     byPrefix = [];
     byFile = new Map();
     byInterface = new Map();
     byOwner = new Map();
     unresolvedByName = new Map();
     publicKeys = new Set();
-    /** Public packages whose entry the index cannot follow: every export in them is public. */
     openPackages = [];
+    /** Enclosing object literals: their whole-value users depend on every member (D55). */
+    containers = new Set();
+    /** Files some indexed file imports statically: a prefix-less import adds nothing there (D55). */
+    staticImported = new Set();
+    /** Entry files of workspace packages: loaded directly, never "unimported" (D55). */
+    entryFiles = new Set();
+    limits;
+    nodeBudget;
     markers = new Map();
     boundaryCache = new Map();
     incomingCache = new Map();
     statements;
-    constructor(db, impact) {
+    constructor(db, impact, options = {}) {
         this.db = db;
         this.impact = impact;
+        this.nodeBudget = options.nodeBudget ?? NODE_BUDGET;
         this.graph = new Graph(db);
         this.meta = readMeta(db);
         this.engine = {
@@ -122,7 +135,7 @@ export class ImpactQuery {
         const hash = createHash('sha256');
         const indexable = [];
         for (const row of db
-            .prepare('SELECT path, hash, package, status FROM files ORDER BY path')
+            .prepare('SELECT path, hash, package, status, reason FROM files ORDER BY path')
             .all()) {
             const path = String(row.path);
             hash.update(`${path}\0${String(row.hash)}\n`);
@@ -160,11 +173,22 @@ export class ImpactQuery {
             this.unresolvedByName.set(gap.detail, list);
         }
         for (const row of db.prepare('SELECT file, kind FROM markers').all()) {
+            const kind = String(row.kind);
+            if (kind.startsWith('static-import:')) {
+                this.staticImported.add(kind.slice('static-import:'.length));
+                continue;
+            }
             const kinds = this.markers.get(String(row.file)) ?? new Set();
-            kinds.add(String(row.kind));
+            kinds.add(kind);
             this.markers.set(String(row.file), kinds);
         }
-        this.publicSurface(packagesOf(this.meta.packages), indexable);
+        const packages = packagesOf(this.meta.packages);
+        for (const pkg of packages)
+            for (const entry of pkg.entries)
+                this.entryFiles.add(entry);
+        this.publicSurface(packages, indexable);
+        this.readContainers();
+        this.limits = repositoryLimits(db);
     }
     classify(gap, indexable) {
         const push = (map, key) => {
@@ -178,18 +202,18 @@ export class ImpactQuery {
                 this.everywhere.push(gap);
                 return;
             case 'dynamic-import':
-                // No static prefix, or one that names no indexed file (a bare or alias specifier): the
-                // import can load any module, so every export is in scope.
-                if (gap.detail !== '*' && indexable.some((path) => path.startsWith(gap.detail)))
+                if (gap.detail === '*')
+                    this.noImporter.push(gap);
+                else if (indexable.some((path) => path.startsWith(gap.detail)))
                     this.byPrefix.push(gap);
                 else
-                    this.anyExport.push(gap);
+                    this.unmatchedPrefix.push(gap);
                 return;
             case 'cjs-require':
                 if (gap.detail === '*')
-                    this.anyExport.push(gap);
+                    this.noImporter.push(gap);
                 else
-                    push(this.byFile, gap.detail); // an external module name scopes no indexed file
+                    push(this.byFile, gap.detail); // External package names scope no indexed file.
                 return;
             case 'interface-dispatch':
                 push(this.byInterface, gap.detail);
@@ -227,6 +251,30 @@ export class ImpactQuery {
             }
         }
     }
+    /**
+     * Keys of object-literal holders: a module-level `const` or a property that ADR 0003 indexes
+     * members under (kind `variable`/`property` with dotted children). Classes, interfaces, enums
+     * and namespaces hold members too, but a use of the whole container does not read a member's
+     * value, so they are not containers in the D55 sense.
+     */
+    readContainers() {
+        const kindOf = this.db.prepare('SELECT d.kind AS kind FROM declarations d JOIN symbols s ON s.id = d.id WHERE s.key = ?');
+        const dottedKinds = new Map();
+        const parents = new Set();
+        for (const row of this.db
+            .prepare("SELECT s.key AS key, d.kind AS kind FROM declarations d JOIN symbols s ON s.id = d.id WHERE d.name LIKE '%.%'")
+            .all()) {
+            const key = String(row.key);
+            dottedKinds.set(key, String(row.kind));
+            for (let dot = key.indexOf('.', key.indexOf('#')); dot !== -1; dot = key.indexOf('.', dot + 1))
+                parents.add(key.slice(0, dot));
+        }
+        for (const parent of parents) {
+            const kind = dottedKinds.get(parent) ?? kindOf.get(parent)?.kind;
+            if (kind === 'variable' || kind === 'property')
+                this.containers.add(parent);
+        }
+    }
     isPublic(decl) {
         if ([decl.key, ...ancestors(decl.key)].some((key) => this.publicKeys.has(key)))
             return true;
@@ -260,10 +308,17 @@ export class ImpactQuery {
     gapsOf(decl) {
         const found = [...this.everywhere];
         if (decl.exported) {
-            found.push(...this.anyExport);
+            found.push(...this.unmatchedPrefix);
             for (const gap of this.byPrefix)
                 if (decl.file.startsWith(gap.detail))
                     found.push(gap);
+            // D55: a prefix-less import can load any module nothing else loads; package entries and
+            // test files are loaded directly or by a runner, so they are out of this scope.
+            if (!isTestFile(decl.file) &&
+                !this.staticImported.has(decl.file) &&
+                !this.entryFiles.has(decl.file)) {
+                found.push(...this.noImporter);
+            }
         }
         found.push(...(this.byFile.get(decl.file) ?? []));
         for (const row of this.statements.implements.all(decl.key)) {
@@ -318,7 +373,7 @@ export class ImpactQuery {
             target.trim() === '' ||
             !Number.isInteger(depth) ||
             depth < 1 ||
-            depth > CAP) {
+            depth > 10) {
             return {
                 input: String(target),
                 kind: 'failure',
@@ -415,30 +470,27 @@ export class ImpactQuery {
         };
     }
     /**
-     * Breadth first over incoming edges, each symbol once at its shallowest depth, capped at 10.
-     * `heuristic` adds the callers of interface members the symbol implements (golden C06).
+     * Breadth first over incoming edges to closure: each symbol once at its shallowest depth,
+     * stopped only by the node budget (G14); `depth` limits listing elsewhere. `heuristic` adds
+     * the callers of interface members the symbol implements (golden C06).
      */
     traverse(key, heuristic) {
         const seen = new Set([key]);
         const levels = [];
         let frontier = [key];
-        while (frontier.length > 0 && levels.length < CAP) {
+        let capped = false;
+        while (frontier.length > 0) {
             const level = [];
             for (const current of frontier) {
-                const edges = [...this.incoming(current)];
-                if (heuristic) {
-                    for (const row of this.statements.implements.all(current)) {
-                        for (const edge of this.incoming(String(row.key))) {
-                            if (edge.kind === 'CALLS')
-                                edges.push({ ...edge, strength: 'heuristic' });
-                        }
-                    }
-                }
-                for (const edge of edges) {
+                for (const edge of this.dependentsOf(current, heuristic)) {
                     if (!heuristic && (edge.strength === 'heuristic' || edge.strength === 'unknown'))
                         continue;
                     if (seen.has(edge.source))
                         continue;
+                    if (seen.size >= this.nodeBudget) {
+                        capped = true;
+                        continue;
+                    }
                     seen.add(edge.source);
                     level.push({ key: edge.source, edge });
                 }
@@ -449,9 +501,29 @@ export class ImpactQuery {
             levels.push(level);
             frontier = level.map((item) => item.key);
         }
-        const capped = levels.length === CAP &&
-            frontier.some((item) => this.incoming(item).some((edge) => !seen.has(edge.source)));
         return { levels, capped };
+    }
+    /**
+     * Who depends on `key`: its incoming edges, plus the whole-value users of each enclosing
+     * object literal (spread, passed, returned, assigned — D55; that is reach, not a gap).
+     * `heuristic` adds the callers of interface members the symbol implements.
+     */
+    dependentsOf(key, heuristic) {
+        const edges = [...this.incoming(key)];
+        for (const parent of ancestors(key)) {
+            if (!this.containers.has(parent))
+                continue;
+            edges.push(...this.incoming(parent));
+        }
+        if (!heuristic)
+            return edges;
+        for (const row of this.statements.implements.all(key)) {
+            for (const edge of this.incoming(String(row.key))) {
+                if (edge.kind === 'CALLS')
+                    edges.push({ ...edge, strength: 'heuristic' });
+            }
+        }
+        return edges;
     }
     impactOf(key, depth, anonymous) {
         const target = this.get(key);
@@ -466,7 +538,7 @@ export class ImpactQuery {
         if (anonymous)
             reasons.add(ANONYMOUS_REASON);
         if (listing.capped || compiler.capped)
-            reasons.add('depth-limit: callers continue past depth 10');
+            reasons.add('depth-limit: node budget reached with callers unvisited');
         const byDepth = [];
         const listed = [];
         for (const level of listing.levels) {
@@ -526,6 +598,7 @@ export class ImpactQuery {
             completeness: { status: incomplete ? 'partial' : 'complete', reasons: sortedReasons },
             reach,
             factors,
+            limits: { ...this.limits },
             verdict: {
                 level: incomplete ? 'unknown' : factors.length > 0 ? 'medium' : 'low',
                 action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',

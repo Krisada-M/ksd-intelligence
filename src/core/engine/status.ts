@@ -2,6 +2,8 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import { repositoryLimits } from '../graph/limits.js';
+import type { ImpactLimits } from '../kernel/types.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { probe, type ProbeResult } from '../workspace/probe.js';
@@ -45,8 +47,9 @@ export interface GraphCounts {
   gapSites: Record<string, number>;
   /** Bare imports that resolve to nothing: dependencies not installed. */
   externalUnresolved: number;
+  /** Repository limits (D55): never completeness reasons; shown in the footer and here. */
+  limits: ImpactLimits;
 }
-
 export interface IndexInfo {
   path: string;
   sizeBytes: number;
@@ -142,6 +145,7 @@ function graphOf(db: DatabaseSync): GraphCounts {
     unresolved: grouped(db, 'SELECT reason AS k, COUNT(*) AS n FROM unresolved GROUP BY k'),
     gapSites: grouped(db, 'SELECT code AS k, COUNT(*) AS n FROM gap_sites GROUP BY k'),
     externalUnresolved: count('SELECT COALESCE(SUM(external_unresolved), 0) AS n FROM file_index'),
+    limits: repositoryLimits(db),
   };
 }
 
@@ -174,6 +178,7 @@ function readIndex(cacheDir: string): { info: IndexInfo; files: FileRecord[] } |
               unresolved: {},
               gapSites: {},
               externalUnresolved: 0,
+              limits: { unboundedDynamicImports: 0, excludedFiles: 0, failedFiles: 0 },
             },
       },
       files,
@@ -417,6 +422,10 @@ export function renderStatus(status: WorkspaceStatus): string {
     );
     lines.push(`Problems    ${problemsLine(index, status.failure)}`);
     lines.push(`Gap sites   ${counted(graph.gapSites)}`);
+    const { limits } = graph;
+    lines.push(
+      `Limits      ${limits.unboundedDynamicImports} unbounded dynamic imports · ${limits.excludedFiles} excluded files · ${limits.failedFiles} failed to index`,
+    );
     const tsconfigProblems =
       index.tsconfigErrors.length === 0
         ? 'none'

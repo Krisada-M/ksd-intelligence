@@ -111,9 +111,13 @@ describe('ei index and ei_status (M2a.1)', () => {
     assert.equal(lines[2], FIXTURE_COVERAGE);
     assert.equal(
       lines[6],
+      'Limits      0 unbounded dynamic imports · 0 excluded files · 0 failed to index',
+    );
+    assert.equal(
+      lines[7],
       'Scope       4 packages · tsconfigs 1 (tsconfig.json) · bases 1 · tsconfig problems none',
     );
-    assert.equal(lines[7], 'Config      ei.config.json ok');
+    assert.equal(lines[8], 'Config      ei.config.json ok');
     assert.match(lines[3] ?? '', /^Graph {7}\d+ declarations · \d+ edges · programs 1$/);
     assert.equal(
       lines[4],

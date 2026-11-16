@@ -280,6 +280,12 @@ export class Resolver {
             }
             return null;
         };
+        const staticImport = (spec, at) => {
+            const target = fileImport(spec, at);
+            if (target !== null)
+                addMarker(`static-import:${target}`, at);
+            return target;
+        };
         /** An import or re-export binding is unresolved when the module has no such export. */
         const binding = (name, imported, at) => {
             const symbol = checker.getSymbolAtLocation(name);
@@ -656,7 +662,7 @@ export class Resolver {
                 return;
             }
             if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) {
-                const target = fileImport(node.moduleSpecifier, node);
+                const target = staticImport(node.moduleSpecifier, node);
                 const clause = node.importClause;
                 if (target !== null && clause !== undefined) {
                     if (clause.name !== undefined)
@@ -678,7 +684,7 @@ export class Resolver {
                 // `export { a }` names local declarations: their export status, not a use
                 if (spec === undefined || !ts.isStringLiteralLike(spec))
                     return;
-                if (fileImport(spec, node) === null || clause === undefined)
+                if (staticImport(spec, node) === null || clause === undefined)
                     return;
                 if (ts.isNamedExports(clause)) {
                     for (const element of clause.elements) {
@@ -690,13 +696,13 @@ export class Resolver {
             if (ts.isImportEqualsDeclaration(node) &&
                 ts.isExternalModuleReference(node.moduleReference) &&
                 ts.isStringLiteralLike(node.moduleReference.expression)) {
-                fileImport(node.moduleReference.expression, node);
+                staticImport(node.moduleReference.expression, node);
                 return;
             }
             if (ts.isImportTypeNode(node) &&
                 ts.isLiteralTypeNode(node.argument) &&
                 ts.isStringLiteralLike(node.argument.literal)) {
-                fileImport(node.argument.literal, node);
+                staticImport(node.argument.literal, node);
             }
             if (ts.isCallExpression(node))
                 call(node);
@@ -756,14 +762,29 @@ export class Resolver {
         }
         return records;
     }
-    /** String literals whose text is an indexed declaration's simple name. */
+    /**
+     * String literals whose text is an indexed declaration's simple name, from a position that
+     * could name a symbol: no contextual type (an untyped const, golden C23) or one of
+     * `string`/`any`/`unknown`. A discriminant, enum-like or keyof-typed literal is resolved by
+     * the checker and is not a match (D55, G14).
+     */
     tokensOf(sf, file) {
         const ts = this.ts;
+        const checker = this.checker;
         const names = this.scope.declarationNames;
+        const couldName = (node) => {
+            if (ts.isLiteralTypeNode(node.parent))
+                return false; // a type position declares a shape
+            const contextual = checker.getContextualType(node);
+            if (contextual === undefined)
+                return true;
+            return ((contextual.flags & (ts.TypeFlags.String | ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0);
+        };
         const found = new Map();
         const walk = (node) => {
             if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-                names.has(node.text)) {
+                names.has(node.text) &&
+                couldName(node)) {
                 const at = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
                 const token = found.get(node.text);
                 if (token === undefined)
