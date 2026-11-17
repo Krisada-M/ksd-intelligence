@@ -306,6 +306,43 @@ must be killed.
 Stop after Step 3. Do not start M2c.
 ```
 
+## Round 5b — wrong low found in round 3 (D57)
+
+```text
+Read docs/briefs/README.md, docs/briefs/M2b-impact.md, DESIGN D55–D57
+and docs/reviews/2026-11-17-m2b-round-3.md. Round 3 is on m2b-impact
+(rebase onto origin/main first). Fix W1, W3 and W4 only. This follows
+contingency D: a wrong low stops other work.
+
+[Common rules]
+
+W1:
+1. First a failing test that reproduces it on a fixture copy: a repo
+   with src/ and tests/ (each with its own tsconfig, tests extending the
+   root), no ei.config.json include override; ei init's proposed config;
+   a function in src called only from tests/. Expected: the caller and
+   the test file are listed, or the result is partial with an
+   unresolved-name-match pointing at the test file. Never low/complete.
+2. Fix both layers per D57: ei init include, and the lexical name scan
+   over every visible out-of-scope code file (not secret, not default
+   excluded). Tests: an owner-excluded generated/ file that names the
+   target makes it partial; node_modules and a secret-named .json never
+   are read; a name shared by > commonName declarations gives
+   common-name, not a reason.
+3. On this repository: delete the cache, run ei init --dry-run (paste),
+   accept it, ei index, then through omp -p ask for ei_impact on
+   Graph.incoming. Paste the output. It must list the test callers.
+W3, W4: per the review; re-propose the changed snapshots.
+
+Then on the WSL machine (/var/tmp/m2a2/omp-src), W2: rebuild, rerun the
+same 200 targets, report low / medium / unknown, the per-reason table,
+how many carry common-name, and hand-check 20 lows. One wrong low is a
+blocker. Also the oh-my-pi whole-call latency split (R8).
+
+Rerun all checks and the mutation smoke; add a mutation that drops
+out-of-scope files from the lexical scan. Stop and report.
+```
+
 ## Round 4 — independent review (read-only)
 
 ```text
