@@ -68,10 +68,22 @@ export interface ImpactNode {
   via: EdgeKind;
   strength: Strength;
   span: Span;
+  /** This caller has scoped gaps of its own; it does not change the target's picture (D54). */
+  gapScoped?: boolean;
   /** Set on bridged edges. */
   synthesizedBy?: string;
   /** Set on bridged edges. */
   registeredAt?: Span;
+}
+
+/** Repository-wide limits that are never completeness reasons (D55, G14). */
+export interface ImpactLimits {
+  /** Prefix-less `import(x)`/`require(x)` sites and dynamic prefixes naming no indexed file. */
+  unboundedDynamicImports: number;
+  /** Files never read by policy: excluded, secret, symlinked, outside the include scope. */
+  excludedFiles: number;
+  /** Indexable files whose owning tsconfig could not be read: listed, not indexed. */
+  failedFiles: number;
 }
 
 export interface ImpactResult {
@@ -85,6 +97,8 @@ export interface ImpactResult {
   completeness: Completeness;
   reach: Reach;
   factors: string[];
+  /** Repository limits carried in `details` and the footer; they never change the verdict. */
+  limits: ImpactLimits;
   verdict: Verdict;
   freshness: { workingTreeHash: string; includesUntracked: boolean };
   engine: EngineStamp;

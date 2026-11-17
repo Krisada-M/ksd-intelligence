@@ -24,8 +24,8 @@ describe('differential test against TypeScript find-references (D36)', () => {
         const report = differential(ts, repo, db, { size: 0 });
         assert.deepEqual(report.misses, []);
         assert.equal(report.declarations, 31);
-        assert.equal(report.references, 48);
-        assert.deepEqual(report.coveredBy, { edge: 48, exportStatus: 0, recordOnly: 0 });
+        assert.equal(report.references, 47);
+        assert.deepEqual(report.coveredBy, { edge: 47, exportStatus: 0, recordOnly: 0 });
         assert.equal(report.covered, report.references);
         // Exact, so a reference that moves into a skip reason cannot pass unnoticed.
         assert.deepEqual(report.skipped, {
@@ -134,7 +134,7 @@ describe('differential test against TypeScript find-references (D36)', () => {
           // `kindNames[1]`: the `Record` property it reads has no declaration.
           'use of a property of a mapped type (no declaration)': 1,
         });
-        assert.deepEqual(report.coveredBy, { edge: 52, exportStatus: 0, recordOnly: 0 });
+        assert.deepEqual(report.coveredBy, { edge: 51, exportStatus: 0, recordOnly: 0 });
       } finally {
         db.close();
       }
@@ -180,7 +180,7 @@ describe('differential test against TypeScript find-references (D36)', () => {
           'declaration name of a related symbol': 14,
           'target is not an indexed declaration: property': 2,
         });
-        assert.deepEqual(report.coveredBy, { edge: 58, exportStatus: 0, recordOnly: 0 });
+        assert.deepEqual(report.coveredBy, { edge: 57, exportStatus: 0, recordOnly: 0 });
       } finally {
         db.close();
       }

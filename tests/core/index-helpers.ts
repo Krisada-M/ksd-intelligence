@@ -1,17 +1,48 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { cpSync, readFileSync } from 'node:fs';
-import { mkdtemp, realpath } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import ts from 'typescript';
+import {
+  checkTypescriptRuntime,
+  pinnedTypescriptVersion,
+  setupTypescriptRuntime,
+} from '../../src/core/engine/typescript.js';
 import { parseProjectConfig, type ImpactConfig } from '../../src/core/kernel/config.js';
 import { Indexer, type IndexReport } from '../../src/core/indexing/indexer.js';
 import { canonicalLines } from '../../src/storage/records.js';
 import { openPublished } from '../../src/storage/sqlite.js';
 
+const run = promisify(execFile);
+
 export const FIXTURE = fileURLToPath(new URL('../../../tests/fixtures/mono', import.meta.url));
+
+/**
+ * The pinned TypeScript runtime in this process's HOME, which `npm test` isolates per file.
+ * Provisioned offline from this repository's own TypeScript package when it is absent.
+ */
+export async function ensureRuntime(): Promise<void> {
+  const version = pinnedTypescriptVersion();
+  if ((await checkTypescriptRuntime({ version })).ok) return;
+  const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-runtime-')));
+  try {
+    const env = { ...process.env, npm_config_offline: 'true', npm_config_cache: join(work, 'npm') };
+    const typescriptDir = dirname(dirname(createRequire(import.meta.url).resolve('typescript')));
+    const { stdout } = await run('npm', ['pack', '--pack-destination', work, typescriptDir], {
+      env,
+    });
+    const spec = join(work, stdout.trim().split('\n').at(-1) ?? '');
+    const setup = await setupTypescriptRuntime({ version, spec, installer: 'npm', env });
+    assert.ok(setup.ok, JSON.stringify(setup));
+  } finally {
+    await rm(work, { recursive: true, force: true });
+  }
+}
 
 /** A temp copy of the fixture as a git repository with the base committed (golden F-cases). */
 export async function fixtureRepo(prefix: string): Promise<string> {

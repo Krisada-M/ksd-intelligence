@@ -248,3 +248,341 @@ Against the published index before this fix: **32 additional REFERENCES edges**,
 Against the original pre-Round-1 index, the fixed build adds **2,579 REFERENCES edges** and 6,214 use-site lines. The gap figures are unchanged: 233 new sites, 42 owners, 1,392 owners/members (0.89%), and a conservative depth-10 projection of 26,003 declarations (16.62%). **The generic-owner regressions and all executed correctness gates pass; the separate >5% scoping stop remains unresolved.** No scope rule was narrowed to conceal that gate, and Round 2 was not started.
 
 `npm run typecheck`, `npm run lint` and `npm run format:check` also passed after the final regression additions. macOS, CI, query-level verdicts and live OMP remain **NOT VERIFIED**. This fix changes only `keys.ts`, its built `dist` file, the new generic regression file and this evidence document.
+
+## Round 2 — Step 2: query core and golden cases
+
+Model: `anthropic/claude-opus-5-5` (integration, query-core rewrite, regressions, measurements). Two `openai-codex/gpt-6-sol` sub-agents wrote the first golden/freshness tests and first drafts of `query.ts` and `session.ts`; both stopped on a usage limit, and their output was reviewed and corrected here. Runtime: Linux WSL2 x86_64, Node `24.21.0`, TypeScript `5.9.3`, `omp/18.20.2` (no live OMP call this round).
+
+### 1. Starting point
+
+- Branch `m2b-impact-r2` from fetched `origin/main` (`2e15bbf`). Round 1 was not on main: commits `46c6bd3` and `75a5669` were cherry-picked with the owner's approval, then the owner-approved decision commit `5ce1047` (D54, G13) from `origin/docs/m2b-golden-decisions`.
+- Fixture correction (G13): removed `void localOnly;` from `tests/fixtures/mono/packages/payments/src/fee.ts`. The fixture still type-checks (`fixture.test.ts`). Exact counts changed only in `tests/core/differential.test.ts`, each by the one removed reference: base fixture references 48 → 47 and `coveredBy.edge` 48 → 47; shorthand copy `coveredBy.edge` 52 → 51; anonymous-kinds copy `coveredBy.edge` 58 → 57. No other number moved.
+
+### 2. Tests written first
+
+`tests/core/impact-golden.test.ts` (C01–C26, never-low sweep), `tests/core/impact-freshness.test.ts` (F01–F06 and the freshness risky cases) and `tests/core/impact-risk.test.ts` (target, completeness and factor risky cases) were compiled and run before any query code existed: every suite failed on the missing `src/core/impact/query.js` / `session.js`.
+
+Review of the first `query.ts` against golden P4, DESIGN §7.2 and the oh-my-pi index found defects the fixture does not exercise. Six regressions were written and **observed failing** first, each on its defect (four as wrong `low`/`complete` answers):
+
+| Regression | Defect in the first draft | Observed before the fix |
+|---|---|---|
+| `import(p)` with no static prefix | gap detail `*` scoped to nothing (`file.startsWith('*')`); all 15 oh-my-pi dynamic-import gaps have detail `*` | `{"status":"complete","reasons":[]}` |
+| `require(p)` of a computed path | gap detail `*` scoped to nothing | `{"status":"complete","reasons":[]}` |
+| public package, wildcard subpath export (`./*` → `./src/*.ts`) | unresolved entries ignored; 12 public oh-my-pi packages use wildcard subpaths | factors `[]` (level `low`) |
+| public package, `main` is unbuilt output | unresolved code entries ignored | factors `[]` (level `low`) |
+| caller reached only through a heuristic interface hop | counted in compiler-grade reach | `reach.total` 1, expected 0 |
+| engine stamp; dotted names | engine version hard-coded `0.3.0` (package is `0.1.0`); D51 parent fallback missing for `Owner.member.sub`, and accepting any dotted input such as `calculateFee.ts` | `'0.3.0' !== '0.1.0'` |
+
+The rewrite also replaced a per-row `prepare` and a scan of every gap row per impacted symbol (≈21k rows on oh-my-pi) with gap sites indexed by scope, cached statements and cached incoming edges.
+
+Scoping as implemented (golden P4, D54, target only; an impacted symbol in scope gets `gapScoped: true`):
+
+| Code | Scope |
+|---|---|
+| `parse-error` (and any unrecognised code) | every target |
+| `dynamic-import` | exported declarations in files under the static prefix; no prefix, or a prefix that names no indexed file, → every exported declaration (a module namespace exposes exports only) |
+| `cjs-require` | declarations of the required file; computed path (`*`) → every exported declaration; an external module name → none |
+| `interface-dispatch` | implementations of that interface member (`IMPLEMENTS`) |
+| `computed-member-access` | the accessed owner, its members, and values stored in them (a `REFERENCES` edge from the owner or a member) |
+| `unresolved-name-match`, `unresolved-import`, `string-name-match` | the declaration whose simple name matched |
+| `depth-limit` | the target, when either traversal is capped at 10 with unvisited callers |
+
+Reach uses a compiler-only traversal; listing, factors and tests use the listing traversal (compiler plus heuristic interface callers), so a factor can only be added, never lost.
+
+### 3. Local checks
+
+Two freshness-test defects were fixed in the tests (product behaviour verified separately): F06 restored a sub-millisecond mtime through a `Date`, so the stat probe saw real drift (the existing index-level F06 test uses whole seconds for this reason; `buildIndex` on the same edit reports `update`); and gated builds were released but not awaited, so a real build outlived its test, held the lock and wrote into a removed temp dir. `npm test` isolates `HOME`, so real builds need the pinned runtime there: `ensureRuntime()` provisions it offline from this repository's TypeScript, as `status.test.ts` already does.
+
+```text
+npm test
+ℹ tests 518
+ℹ suites 35
+ℹ pass 518
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+```
+
+**VERIFIED** on Linux. Golden C01–C26 and F01–F06 all pass at query level; none is left failing. C17 takes outcome **B** (`partial` + `cjs-require`). The never-low sweep covers C06, C11, C12, C17 on the base fixture, C16, C22, C23 through `copyCase` and F04, at depth 1–10.
+
+### 4. oh-my-pi distribution (index built, no drift)
+
+Corpus and index as in Round 1 (`04cd1a7`, 156,421 non-module declarations, schema 3, extractor `7498355c17278a57`); stat probe before the run: 0 added, 0 changed, 0 deleted. 200 targets by the seeded shuffle of `differential.ts` (seed 1), queried at depth 10 with one `ImpactQuery`. Script and raw output kept outside the repository (`/tmp/ksd-m2b-r2/measure.mjs`, `distribution.json`).
+
+| Level | Count | Share |
+|---|---:|---:|
+| low | 21 | 10.5% |
+| medium | 11 | 5.5% |
+| unknown | 168 | 84.0% |
+
+| Completeness reason (targets carrying it) | Count | Sole reason of an unknown |
+|---|---:|---:|
+| `dynamic-import` | 110 | 17 |
+| `depth-limit` | 102 | 15 |
+| `string-name-match` | 83 | 12 |
+| `unresolved-name-match` | 54 | 0 |
+| `computed-member-access` | 9 | 2 |
+| `interface-dispatch` | 4 | 0 |
+| `cjs-require` | 1 | 0 |
+
+Only seven reason codes occur. Unknown results carry a median of 16 reasons (max 3,380, `string-name-match` on a common name). Removing any one code alone would leave at least 151 of the 168 unknown: no single rule explains the share.
+
+**STOP GATE: more than 60% unknown.** Per the prompt nothing was tuned. The largest contributor is `dynamic-import` with detail `*`: 15 sites (11 in `packages/coding-agent/src`, 4 in tests) with no static prefix, which under P4 ("files its static prefix can match") put every exported declaration in scope. Narrowing that, or `depth-limit` on long reference chains, is the owner's decision.
+
+### 5. The first ten lows against `findReferences`
+
+The first ten `low` results of the sample in key order (no selection by kind or outcome), checked with the TypeScript language service over the same program grouping (`/tmp/ksd-m2b-r2/check-lows.mjs`). "Unlisted" counts references to the declaration itself whose enclosing symbol is neither listed at depth 1 nor the target.
+
+| Target | Kind | Index direct / total | TS references | Unlisted |
+|---|---|---:|---:|---:|
+| `packages/ai/test/issue-6913-harmony-marker-escaping.test.ts#ESCAPED` | variable | 1 / 1 | 7 (1 source) | 0 |
+| `packages/ai/test/kimi-usage.test.ts#makeCredential` | function | 1 / 1 | 8 (1 source) | 0 |
+| `packages/coding-agent/src/cli/images-cli.ts#DEFAULT_DEPENDENCIES.loadProviderFileCache` | method | 0 / 0 | 0 (1 to the interface member it implements) | 0 |
+| `packages/coding-agent/src/mnemopi/backend.ts#clampLimit` | function | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/btw-session-lifecycle.test.ts#SideTurn` | interface | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/mcp-lost-remote-retry.test.ts#FAST.retryBaseMs` | property | 0 / 0 | 0 (2 to `MCPReconnectPolicy.retryBaseMs`) | 0 |
+| `packages/coding-agent/test/mcp/config-request-id-format.test.ts#fallbackAgentDir` | variable | 1 / 1 | 1 | 0 |
+| `packages/coding-agent/test/memories/stage1-input.test.ts#referenceItems` | function | 1 / 1 | 1 | 0 |
+| `packages/metaharness/adapters/edit/runner.ts#TaskRunItem` | interface | 3 / 5 | 3 (3 sources) | 0 |
+| `packages/tui/src/theme/symbols.ts#UNICODE_SYMBOLS.boxRound.topRight` | property | 0 / 0 | 1 | **1** |
+
+**Candidate wrong `low` (blocker until the owner rules):** `packages/tui/src/theme/theme-class.ts:589`, `topRight: this.#symbols["boxRound.topRight"]` inside `Theme.boxRound`. `#symbols` is `SymbolMap = Record<SymbolKey, string>`; the presets (`UNICODE_SYMBOLS`, `NERD_SYMBOLS`, `ASCII_SYMBOLS`) are spread into it, so a change to the preset value reaches `Theme.boxRound` at runtime. The checker binds the literal to a transient mapped-type symbol with **0 declarations** (`/tmp/ksd-m2b-r2/miss-symbol.mjs`: `mapped: true, declarations: 0`). ADR 0003 and Round 1 record no edge and no gap for a declaration-less `Record` key, and the differential oracle skips this read as "use of a property of a mapped type (no declaration)"; raw `findReferences` lists it. Under the oracle the low holds; under `findReferences` it is a missed reader. Nothing was changed: the layer is the index rule (Step 1), not the query.
+
+### 6. Not acted on (owner questions)
+
+1. Whether an empty-prefix `dynamic-import` should scope every export (84% unknown, §4).
+2. Whether 102/200 `depth-limit` results reflect real chains longer than 10 or call for a different cap.
+3. The `Record`-alias read in §5: accept it as ADR 0003 policy, or add a gap for reads through a mapped-type alias of an object literal's type.
+4. Files outside the index scope (63 `.ts`/`.tsx`/`.d.ts` and 1 `.js` under `outside-index-scope`) and 21 orphan `.js` files may call in-scope targets; P4 defines no scope for `outside-index-scope`, so it is not applied to targets.
+5. Index layer: a computed index into an array (`list[i]()`) records no `computed-member-access` gap (only object literals, classes, enums and namespaces do).
+6. `unresolved-import` is scoped by imported name; a broken `default` import does not match the target's own name.
+
+**NOT VERIFIED:** macOS, CI, rendering, the agent tool and CLI (Round 3), query latency, live OMP.
+
+
+## Round 2b — D55 / G14 scoping decisions
+
+**VERIFIED:** Linux x64 (WSL2), Node 24.21.0, TypeScript 5.9.3. Implementing model: `openai-codex/gpt-6.1-sol`. No OMP adapter was changed or loaded.
+
+### 1. Starting point and scope
+
+`origin/main` was fetched at `5956c16`. The local Round 2 branch contained equivalent Round 1 work on older ancestry; its Round 1 tree matched the upstream squash. Rebased the Round 2 commit onto `origin/main` using `git rebase --onto origin/main 40c90a9 m2b-impact-r2`; the retained Round 2 commit is `d50cdbc`. No work was pushed.
+
+Installed packages matched the lockfile (0 non-link version mismatches), so dependencies were not reinstalled. No dependency, golden oracle, base fixture, policy module, OMP adapter or OMP configuration changed. Round 3 was not started.
+
+### 2. Implemented decisions
+
+|Item|Implementation|Regression evidence|
+|---|---|---|
+|1|Traverse the incoming closure with a 50,000-symbol budget, including the target. Only skipped unseen symbols add `depth-limit`; display depth stays 1–10.|25 callers, injected small budget, cycle, and depth-invariant reach/completeness/factors/verdict.|
+|2|Prefix-less import/require gaps affect exported targets in files without static importers, except tests and package entries. Resolved static-import sites use existing marker rows; literal dynamic imports are not static importers.|Isolated export, static importer, dynamic-only importer and exceptions. C11 and existing prefix/literal-require scopes preserved.|
+|3|Shared `repositoryLimits` supplies `{ unboundedDynamicImports, excludedFiles, failedFiles }` to impact results and status, independently of completeness/verdict.|Real SQL counts and actual status output. Failed files means `not-in-program`; C16 parse-error behavior is unchanged.|
+|4|Orphan code files receive scanner-only lexical name rows, never declarations/compiler edges. Content and declaration-name changes invalidate them; timestamp-only changes preserve them.|Identifiers, decoded strings, comments/regex/templates, exclusions/secrets and incremental == cold across touch/edit/delete/add/name changes.|
+|5|Exclude literal type positions and contextual literal/union types. Keep strings with no contextual type (C23), or contextual `string`, `any` or `unknown`.|Discriminants, literal annotations, finite unions and optional-string unions excluded; broad strings/any/unknown/untyped constants retained.|
+|6|Use the permitted conservative fallback: include indexed users of every enclosing object literal. Existing edges do not distinguish whole-value use from member access.|Dotted preset spread into a `Record<K, string>` class field; storing field at depth 1 and reader at depth 2. No value-flow gap invented.|
+|7|Keep existing array reference traversal.|`a → hs → run`: complete, two dependents, no computed-member gap.|
+
+### 3. Regression and mutation evidence
+
+**VERIFIED:** the new Round 2b regression file run against archived `d50cdbc` produced **13 tests: 5 pass, 8 fail, 0 cancelled**. Failures covered closure/budget, dynamic-import scoping, limits, orphan names, discriminants and the storing symbol; the array case already passed. The first successful baseline-red run happened after initial integration edits; earlier compile/setup failures were not counted. This deviates from the requested fail-first execution order.
+
+Integration regressions for unmatched prefixes and external literal requires failed before their original scopes were restored. The 12-caller expectation was aligned with golden P2 (`many-callers`, `medium`), not weakened to `low`. A final optional-string-union regression failed with actual lines `[5,6,7,8]` versus expected `[6,7,8]`; the contextual filter was corrected, followed by the full checks below.
+
+```text
+npm test
+tests 538 · suites 41 · pass 538 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck: exit 0
+npm run lint: exit 0
+npm run format:check: All matched files use Prettier code style!
+```
+
+Includes C01–C26, F01–F06, never-low depth sweeps, four seeded randomized incremental/cold comparisons, update soundness, and exact fixture differential: **31 declarations, 47 references, 47 edge-covered, 0 misses**. Those differential counts are unchanged from Round 2.
+
+|Mutation group|Intended mutants|Killed|
+|---|---:|---:|
+|Retained M2a smoke|39|39|
+|Reconstructed Round 1 keyof/metadata/generic-owner smoke|16|16|
+|D55 items 4–6|3|3|
+|Query-core controls|6|6|
+|Total|64|64|
+
+The typed-literal mutant was rerun and killed after the final contextual-union correction. No intended mutant timed out. B01 was killed by a produced/read-back VERIFY invariant (four setup cancellations), not syntax failure; all 25 additional mutations were syntax-checked. An initial malformed K05 experiment attached its invented gap to the module and survived. Correcting its source to the enclosing use symbol killed two negative controls, without changing production code or weakening tests.
+
+### 4. Same 200 targets, before and after
+
+Corpus: oh-my-pi `04cd1a7549a02d62ad1d24826198d52507595683`; 10,502 visible files, 6,761 compiler-indexable files, 156,421 non-module declarations. Seed 1 and the original Fisher–Yates shuffle reproduced the Round 2 84% baseline. The final run reused exactly the same 200 saved keys and key order. Both probes reported no added/changed/deleted files. No corpus source was edited.
+
+|Level|Before|Before share|After|After share|
+|---|---:|---:|---:|---:|
+|low|21|10.5%|17|8.5%|
+|medium|11|5.5%|94|47.0%|
+|unknown|168|84.0%|89|44.5%|
+
+Each target is counted once per reason; “sole” means no other reason code.
+
+|Reason|Before targets|Before sole|After targets|After sole|
+|---|---:|---:|---:|---:|
+|`dynamic-import`|110|17|2|0|
+|`depth-limit`|102|15|0|0|
+|`string-name-match`|83|12|78|18|
+|`unresolved-name-match`|54|0|59|2|
+|`computed-member-access`|9|2|9|6|
+|`interface-dispatch`|4|0|4|2|
+|`cjs-require`|1|0|1|1|
+
+|Traversal measurement|Before|After|
+|---|---:|---:|
+|p50, sum of both passes (ms)|0.58|101.75|
+|p95, sum of both passes (ms)|58.34|166.35|
+|Largest listing closure, including target|12,751|17,816|
+|Largest compiler closure, including target|6,777|10,741|
+|Depth-cap stops|102|0|
+|50,000-node budget hits|not applicable|0|
+
+These are traversal timings, not whole-call/renderer latency. Some original measurements overlapped correctness work; they are not isolated performance benchmarks. No performance tuning was done. Round 3 owns whole-call latency.
+
+Final cold index: **VERIFIED exit 0**, wall=162.38 maxrss_kb=7459552 exit=0. No VERIFY problems.
+
+### 5. Remaining name matches
+
+Top 20 names among sampled targets still carrying each reason, ranked by distinct matching `file:line` sites. Declaration counts cover the whole index. Sites on one line count once; up to three examples are shown. No additional name-scoping change was made.
+
+#### string-name-match
+
+|Name|Matching sites|Sampled targets|Declarations sharing name|Example sites|
+|---|---:|---:|---:|---|
+|`"error"`|1266|1|293|`packages/agent/src/agent-loop.ts:1613`; `packages/agent/src/agent-loop.ts:2352`; `packages/agent/src/agent-loop.ts:2398`|
+|`"default"`|789|1|123|`packages/ai/src/auth-gateway/http.ts:303`; `packages/ai/src/auth/usage-cache.ts:297`; `packages/ai/src/auth/usage-cache.ts:311`|
+|`"model"`|436|1|503|`packages/agent/test/remote-compaction.test.ts:120`; `packages/ai/src/images/openai-images.ts:86`; `packages/ai/src/providers/factory-droid/gemini.ts:347`|
+|`"session"`|403|1|220|`packages/ai/src/providers/openai-codex-responses.ts:4279`; `packages/ai/src/usage/claude.ts:33`; `packages/ai/src/usage/claude.ts:768`|
+|`"run"`|367|1|114|`packages/agent/test/agent-loop.test.ts:1726`; `packages/agent/test/agent-loop.test.ts:1788`; `packages/agent/test/agent-loop.test.ts:1836`|
+|`"path"`|280|1|432|`packages/agent/bench/normalize-tools.bench.ts:49`; `packages/agent/bench/normalize-tools.bench.ts:84`; `packages/agent/src/speculative-execution.ts:103`|
+|`"close"`|241|2|219|`packages/agent/test/remote-compaction.test.ts:180`; `packages/ai/test/gitlab-duo-workflow-provider.test.ts:4805`; `packages/ai/test/gitlab-duo-workflow-provider.test.ts:969`|
+|`"id"`|217|1|984|`packages/ai/src/providers/gitlab-duo-workflow.ts:1626`; `packages/ai/src/providers/gitlab-duo-workflow.ts:1674`; `packages/ai/src/providers/gitlab-duo-workflow.ts:3152`|
+|`"type"`|209|4|1108|`packages/agent/src/agent-loop.ts:348`; `packages/agent/src/agent-loop.ts:605`; `packages/agent/src/compaction/compaction-v2-streaming.ts:682`|
+|`"name"`|204|5|996|`packages/agent/src/compaction/utils.ts:104`; `packages/agent/src/telemetry.ts:801`; `packages/ai/src/dialect/anthropic.ts:358`|
+|`"input"`|194|1|393|`packages/ai/src/providers/openai-codex-responses.ts:3578`; `packages/ai/test/helpers/factory-droid-native.ts:120`; `packages/ai/test/issue-2080-repro.test.ts:33`|
+|`"status"`|194|1|387|`packages/agent/src/compaction/compaction-v2-streaming.ts:645`; `packages/ai/src/auth-gateway/routes/embeddings.ts:51`; `packages/ai/src/auth-gateway/routes/images.ts:84`|
+|`"role"`|139|1|230|`packages/agent/src/agent-loop.ts:1956`; `packages/ai/src/providers/openai-codex-responses.ts:3570`; `packages/ai/src/providers/openai-configuration-update.ts:176`|
+|`"summary"`|130|1|118|`packages/agent/src/telemetry.ts:463`; `packages/agent/src/telemetry.ts:475`; `packages/agent/test/anthropic-native-compaction.test.ts:460`|
+|`"response"`|119|1|35|`packages/agent/test/compaction-telemetry.test.ts:255`; `packages/ai/src/providers/openai-responses-server.ts:1471`; `packages/ai/src/providers/openai-responses-server.ts:1496`|
+|`"data"`|108|1|169|`packages/ai/src/providers/cursor/interaction-query.ts:41`; `packages/ai/src/providers/gitlab-duo-workflow.ts:1578`; `packages/ai/src/providers/openrouter-generation.ts:34`|
+|`"body"`|107|1|128|`packages/ai/src/dialect/glm.ts:120`; `packages/ai/test/deepseek-reasoning-content.test.ts:654`; `packages/ai/test/factory-droid-completions-reasoning.test.ts:28`|
+|`"fixture"`|83|1|22|`packages/ai/test/cursor-exec-modern.test.ts:1013`; `packages/ai/test/cursor-exec-modern.test.ts:1022`; `packages/ai/test/cursor-exec-modern.test.ts:1031`|
+|`"output"`|83|2|362|`packages/agent/src/tokenizer.ts:419`; `packages/ai/src/providers/google-gemini-cli.ts:1063`; `packages/ai/src/providers/openai-codex/request-transformer.ts:322`|
+|`"dir"`|65|1|47|`packages/coding-agent/src/cli/completion-gen.ts:200`; `packages/coding-agent/src/cli/completion-gen.ts:341`; `packages/coding-agent/src/cli/completion-gen.ts:483`|
+
+#### unresolved-name-match
+
+|Name|Matching sites|Sampled targets|Declarations sharing name|Example sites|
+|---|---:|---:|---:|---|
+|`"type"`|849|4|1108|`packages/agent/src/agent-loop.ts:296`; `packages/agent/src/agent-loop.ts:362`; `packages/agent/src/agent-loop.ts:388`|
+|`"id"`|442|1|984|`packages/agent/src/agent-loop.ts:269`; `packages/agent/src/agent-loop.ts:273`; `packages/agent/src/append-only-context.ts:460`|
+|`"name"`|246|5|996|`packages/agent/src/append-only-context.ts:458`; `packages/agent/src/compaction/compaction.ts:1653`; `packages/agent/test/agent-loop.test.ts:8064`|
+|`"path"`|207|1|432|`packages/agent/src/agent-loop.ts:316`; `packages/agent/src/agent-loop.ts:317`; `packages/agent/src/compaction/pruning.ts:681`|
+|`"input"`|203|1|393|`packages/agent/src/compaction/openai.ts:776`; `packages/agent/test/remote-compaction.test.ts:1890`; `packages/agent/test/remote-compaction.test.ts:1957`|
+|`"role"`|129|1|230|`packages/agent/src/append-only-context.ts:453`; `packages/agent/src/compaction/compaction-v2-streaming.ts:738`; `packages/agent/src/compaction/compaction-v2-streaming.ts:739`|
+|`"data"`|120|1|169|`packages/ai/src/images/shared.ts:244`; `packages/ai/src/providers/cursor.ts:1092`; `packages/ai/src/usage/alibaba-token-plan.ts:166`|
+|`"model"`|116|1|503|`packages/agent/src/compaction/anthropic.ts:112`; `packages/ai/src/judgment/openai-decisions.ts:147`; `packages/ai/src/judgment/systemone.ts:40`|
+|`"error"`|104|1|293|`packages/agent/src/compaction/compaction-v2-streaming.ts:675`; `packages/agent/src/compaction/compaction-v2-streaming.ts:676`; `packages/agent/src/compaction/compaction-v2-streaming.ts:677`|
+|`"status"`|100|1|387|`packages/ai/src/error/body-error.ts:216`; `packages/ai/src/error/body-error.ts:233`; `packages/ai/src/error/flags.ts:531`|
+|`"key"`|91|2|226|`packages/ai/src/auth/sqlite-credential-store.ts:172`; `packages/ai/src/auth/sqlite-credential-store.ts:174`; `packages/ai/src/utils/schema/wire.ts:37`|
+|`"summary"`|53|1|118|`packages/ai/src/providers/openai-responses-server.ts:723`; `packages/ai/src/utils.ts:646`; `packages/ai/test/factory-droid-gemini.test.ts:1076`|
+|`"output"`|52|2|362|`packages/agent/test/remote-compaction.test.ts:253`; `packages/agent/test/remote-compaction.test.ts:3039`; `packages/agent/test/remote-compaction.test.ts:415`|
+|`"default"`|50|1|123|`packages/ai/src/utils/schema/normalize.ts:2313`; `packages/ai/src/utils/schema/normalize.ts:2317`; `packages/ai/src/utils/validation.ts:858`|
+|`"body"`|48|1|128|`packages/ai/src/utils/request-debug.ts:68`; `packages/ai/test/gitlab-duo-workflow-oauth.test.ts:30`; `packages/ai/test/issue-2424-repro.test.ts:70`|
+|`"response"`|46|1|35|`packages/agent/src/compaction/compaction-v2-streaming.ts:651`; `packages/agent/src/compaction/compaction-v2-streaming.ts:674`; `packages/ai/src/error/body-error.ts:191`|
+|`"headers"`|36|1|102|`packages/agent/src/telemetry.ts:1278`; `packages/agent/src/telemetry.ts:268`; `packages/ai/src/providers/openai-codex-responses.ts:1655`|
+|`"cwd"`|27|1|295|`packages/coding-agent/examples/extensions/api-demo.ts:56`; `packages/coding-agent/src/dap/session.ts:1201`; `packages/coding-agent/src/discovery/agent-plugin-format.ts:375`|
+|`"detail"`|25|1|50|`packages/agent/src/compaction/openai.ts:136`; `packages/ai/src/images/shared.ts:247`; `packages/ai/src/providers/openai-codex/live-steering.ts:241`|
+|`"dir"`|23|1|47|`packages/natives/native/loader-state.js:62`; `packages/natives/native/loader-state.js:63`; `packages/natives/native/loader-state.js:64`|
+
+### 6. Twenty reference audits and value flow
+
+Rechecked the original first ten lows in order, plus ten additional final lows: **20 targets**, 17 still low. The audit used compiler-program-specific `findReferences`; target groups, related declarations, definitions, mapped members, documentation and import bindings were separated. Emitted use sites and enclosing symbols were inspected.
+
+|Cohort|Target|Final level|Direct / total|Target-use sites|Uncovered|
+|---|---|---|---:|---:|---:|
+|original|`packages/ai/test/issue-6913-harmony-marker-escaping.test.ts#ESCAPED`|low|1 / 1|7|0|
+|original|`packages/ai/test/kimi-usage.test.ts#makeCredential`|low|1 / 1|8|0|
+|original|`packages/coding-agent/src/cli/images-cli.ts#DEFAULT_DEPENDENCIES.loadProviderFileCache`|medium|1 / 4|0|0|
+|original|`packages/coding-agent/src/mnemopi/backend.ts#clampLimit`|medium|1 / 3118|1|0|
+|original|`packages/coding-agent/test/btw-session-lifecycle.test.ts#SideTurn`|low|1 / 1|1|0|
+|original|`packages/coding-agent/test/mcp-lost-remote-retry.test.ts#FAST.retryBaseMs`|low|2 / 2|0|0|
+|original|`packages/coding-agent/test/mcp/config-request-id-format.test.ts#fallbackAgentDir`|low|1 / 1|1|0|
+|original|`packages/coding-agent/test/memories/stage1-input.test.ts#referenceItems`|low|1 / 1|1|0|
+|original|`packages/metaharness/adapters/edit/runner.ts#TaskRunItem`|low|3 / 5|3|0|
+|original|`packages/tui/src/theme/symbols.ts#UNICODE_SYMBOLS.boxRound.topRight`|medium|1 / 10740|0|0|
+|additional|`packages/collab-web/scripts/fixture.ts#makeScriptedTurn`|low|1 / 5|2|0|
+|additional|`packages/mnemopi/src/core/plugins.ts#PluginManager.unloadPlugin`|low|2 / 3|2|0|
+|additional|`packages/stats/src/client/spotlight/ResultsFeed.tsx#ResultsFeed`|low|1 / 4|2|0|
+|additional|`packages/tui/test/status-line-native.test.ts#NO_USAGE.orchestrationInput`|low|1 / 2|0|0|
+|additional|`packages/tui/test/status-line-path.test.ts#CHECKOUT_IS_SCRATCH`|low|1 / 1|4|0|
+|additional|`packages/tui/test/table-chart.test.ts#DIFF`|low|1 / 1|2|0|
+|additional|`packages/tui/test/tools-native-github.test.ts#resultFor`|low|1 / 1|5|0|
+|additional|`packages/tui/test/write-figure.test.ts#MERMAID`|low|1 / 1|5|0|
+|additional|`packages/tui/test/write-streaming-incremental-render.test.ts#hasLine`|low|1 / 1|11|0|
+|additional|`packages/typescript-edit-benchmark/src/mutations.ts#randomSample`|low|3 / 3|3|0|
+
+**VERIFIED: 0 wrong lows; 0 uncovered target references.** Import-binding sites are counted as target-use sites, not caller declarations.
+
+The mapped read at `packages/tui/src/theme/theme-class.ts:589`, `topRight: this.#symbols["boxRound.topRight"]`, is value flow through a declaration-less mapped member, not a direct reference to the preset property. For `UNICODE_SYMBOLS.boxRound.topRight`, the result now includes `SYMBOL_PRESETS.unicode` at depth 1 and storing indexed class `Theme` at depth 2. It does not claim `Theme.boxRound` directly references that preset member. No mapped-read gap was added. The original preset low becomes medium; `clampLimit` and `DEFAULT_DEPENDENCIES.loadProviderFileCache` also become medium through existing factors.
+
+### 7. Index rows, status and deep doctor
+
+|Table|Before|After|Why|
+|---|---:|---:|---|
+|files|10,502|10,502|Same census.|
+|file_index|6,761|6,782|21 lexical orphan rows.|
+|declarations|163,182|163,182|No lexical declarations.|
+|edges|633,567|633,567|Container expansion is query-time.|
+|unresolved|14,116|31,378|Lexical orphan identifiers.|
+|gap_sites|21,780|21,780|No new gap rule.|
+|name_tokens|108,531|73,006|Contextual filtering plus orphan strings.|
+|markers|0|38,869|Resolved static import sites.|
+
+Actual status output:
+
+```text
+Limits      15 unbounded dynamic imports · 88 excluded files · 0 failed to index
+```
+
+**VERIFIED:** final `doctor --deep --differential 300`: no drift; no VERIFY problems; 0 graph differences; 0 counter differences; 300 declarations; 7,640 references, all edge-covered; 0 misses. Wall 254.72 s, maximum RSS 7,602,360 KiB, exit 0. The refreshed 20-target audit also passed (wall 20.54 s, maximum RSS 4,156,392 KiB): all 17 final lows covered, no wrong low and no uncovered target reference.
+
+### 8. Commands, limits and stop gate
+
+Commands executed; `$EVIDENCE_DIR` denotes the temporary evidence directory. Measurement/mutation/audit scripts are throwaway verification code, not library code.
+
+```sh
+git fetch origin
+git checkout m2b-impact-r2
+git rebase --onto origin/main 40c90a9 m2b-impact-r2
+npm run build
+./node_modules/.bin/tsc -p tests/tsconfig.json
+node scripts/copy-policy-to-dist.mjs --test-tree
+node --import ./tests/policy/helpers/isolated-home.js --test "$EVIDENCE_DIR/red/tests/core/impact-r2b.test.js"
+node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/impact-r2b-extractor.test.js
+npm test
+npm run typecheck
+npm run lint
+npm run format:check
+bash /var/tmp/m2a2/tools/mutate6.sh "$PWD"
+node "$EVIDENCE_DIR/mutation-extra.mjs"
+MUTANT_FILTER=K05 node "$EVIDENCE_DIR/mutation-extra.mjs"
+MUTANT_FILTER=D55-5 node "$EVIDENCE_DIR/mutation-extra.mjs"
+node dist/adapters/cli/main.js index --root /var/tmp/m2a2/omp-src --full --json
+node "$EVIDENCE_DIR/measure.mjs" "$EVIDENCE_DIR/baseline/dist" "$EVIDENCE_DIR/before.sqlite" "$EVIDENCE_DIR/before.json"
+node "$EVIDENCE_DIR/measure.mjs" dist "$HOME/.cache/ksd-intelligence/6245da6948cefc28/index.sqlite" "$EVIDENCE_DIR/after.json" "$EVIDENCE_DIR/before.json.targets.json"
+node --max-old-space-size=8192 --expose-gc "$EVIDENCE_DIR/check-lows.mjs" dist "$HOME/.cache/ksd-intelligence/6245da6948cefc28/index.sqlite" "$EVIDENCE_DIR/before.json" "$EVIDENCE_DIR/after.json" "$EVIDENCE_DIR/lows.json"
+node dist/adapters/cli/main.js doctor --deep --root /var/tmp/m2a2/omp-src --differential 300 --json
+node dist/adapters/cli/main.js status --root /var/tmp/m2a2/omp-src
+```
+
+**Gate: VERIFIED — unknown 44.5% (at most 60%), with no wrong low in the prescribed audits.** Round 3 may start only when requested; it was not started here.
+
+**NOT VERIFIED:** macOS, pushed CI, live OMP, Round 3 tool/CLI/rendering/snapshots, isolated whole-call latency and later independent cross-vendor review. No push, merge, deployment, dependency addition or OMP installation/configuration mutation.
+

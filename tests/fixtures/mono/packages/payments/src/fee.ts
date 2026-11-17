@@ -17,4 +17,3 @@ export function unusedHelper(): number {
 }
 
 function localOnly(): void {}
-void localOnly;
