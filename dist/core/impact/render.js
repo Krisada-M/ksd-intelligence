@@ -80,7 +80,7 @@ function formatGapReason(reason, targetFile, targetLine) {
     if (withoutLoc !== null) {
         const [, code = '', detail = ''] = withoutLoc;
         if (code === 'stale-index') {
-            return scrubLevelWords(`stale-index ${loc} — ${detail}; check drifted files or re-run after index update`);
+            return scrubLevelWords(`stale-index — drifted: ${detail}; re-run after the index update`);
         }
         return scrubLevelWords(`${code} ${loc} — ${detail}`);
     }

@@ -77,9 +77,9 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
     if (repo) await rm(dirname(repo), { recursive: true, force: true });
   });
 
-  it('matches PROPOSED snapshots for C01, C06, C11, C13, C14, C15 and batch-3', async () => {
+  it('matches PROPOSED snapshots at default depth 2 for C01, C06, C11, C13, C14, C15 and batch-3', async () => {
     const cases: Array<[string, string]> = [
-      ['C01.txt', renderAnswer(query.query('packages/payments/src/fee.ts#calculateFee', 1))],
+      ['C01.txt', renderAnswer(query.query('packages/payments/src/fee.ts#calculateFee'))],
       [
         'C06.txt',
         renderAnswer(query.query('packages/payments/src/stripe.ts#StripeProcessor.charge')),
@@ -110,7 +110,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
     }
   });
 
-  it('matches PROPOSED snapshots for C26, d51-parent, over-budget and stale-index', async () => {
+  it('matches PROPOSED snapshots for C26 (depth 2), d51-parent (depth 2), over-budget (depth 3) and stale-index (depth 2)', async () => {
     // C26
     const c26Repo = await fixtureRepo('snap-c26');
     try {

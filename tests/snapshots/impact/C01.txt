@@ -8,6 +8,9 @@ Callers, depth 1 (5)
   packages/payments/src/checkout-flow.ts:12  lazyFee  CALLS
   packages/payments/src/fee.test.ts:1  <module>  CALLS
   packages/payments/src/service.ts:4  PaymentService.charge  CALLS
+Depth 2 (2)
+  packages/api/src/handlers.ts:7  registry.charge  REFERENCES  gap
+  packages/api/src/routes.ts:3  routes.POST /charge  REFERENCES  route
 Tests (1)
   packages/payments/src/fee.test.ts
 Gaps: none

@@ -723,5 +723,77 @@ npm run check:dist     exit 0
 
 Mutation smoke over 35 mutants (Round 1 K01–K08, B01–B02, G01–G06; D55 items 4–6; query-core controls Q01–Q06; Round 5 controls R1-M, R2-M, R3-M, R4-M, R6-M, R7-M; Round 3 rendering/tool controls R3-RenderStale, R3-Budget, R3-OneVerdict, R3-GuidanceError): **VERIFIED 35/35 killed, 0 survived**.
 
+## Round 5b — D57 fix round (W1, W3, W4)
+
+**VERIFIED:** macOS Darwin 27.0.0 arm64, Node `24.22.0`, TypeScript `5.9.3`, OMP `18.22.0`. Implementing model: Gemini 4 Argon (High).
+
+### 1. Findings W1–W4 disposition
+
+| Finding | Disposition | Evidence |
+|---|---|---|
+| W1 | Fixed both layers per D57: (1) `detectProjectLayout` (`src/core/workspace/init.ts`) includes `packages/**`, `apps/**`, `src/**`, `test/**`, `tests/**`, `__tests__/**`, `spec/**` when present plus every directory owned by a repository tsconfig (`tsconfigOwnedDirs`), and `initProject` / `ei init` reports `omittedTsconfigDirs`; (2) `scan` (`src/core/workspace/scan.ts`), `Indexer` (`src/core/indexing/indexer.ts`) and `verifyIndex` (`src/core/indexing/verify.ts`) extend the lexical name scan (`isLexicalRecord`) to every visible code file outside the compiler index scope (`no-tsconfig`, `outside-index-scope`, and owner `excluded`), while secrets, symlinks and default excludes (`node_modules`, `dist`, `.git`) remain unread (`hash: null`). | `tests/core/impact-r2b.test.ts` (`D57 / W1 — default scope and out-of-scope lexical name scan`: 2 tests observed failing before fix, passing after). |
+| W2 | **NOT VERIFIED** on this machine: `/var/tmp/m2a2/omp-src` (`oh-my-pi`) only exists on the Linux WSL2 machine. Must be run on WSL after pushing `m2b-impact`. | — |
+| W3 | Regenerated `tests/snapshots/impact/C01.txt` (**PROPOSED**) at default depth 2 (`TOOLS.md` §4 default), and updated snapshot test descriptions in `tests/core/impact-render.test.ts` to state the depth of each snapshot explicitly. | `tests/core/impact-render.test.ts`, `tests/snapshots/impact/C01.txt` (**PROPOSED**). |
+| W4 | Changed `stale-index` gap rendering in `src/core/impact/render.ts` to `stale-index — drifted: <files>; re-run after the index update` (without target `path:line`). Regenerated `tests/snapshots/impact/stale-index.txt` (**PROPOSED**). | `tests/core/impact-render.test.ts`, `tests/snapshots/impact/stale-index.txt` (**PROPOSED**). |
+
+### 2. Live verification on `ksd-intelligence` after W1 fix
+
+Commands executed:
+
+```sh
+rm -rf ~/.cache/ksd-intelligence/d5468fea296e508d
+node dist/adapters/cli/main.js init --dry-run
+node dist/adapters/cli/main.js init
+node dist/adapters/cli/main.js index
+omp -p --no-session --no-extensions --model claude-haiku-4-5 -e dist/adapters/omp/extension.js \
+  "Call ei_impact with targets: ['Graph.incoming'] and output ONLY the rendered text block starting with IMPACT Graph.incoming and ending with the footer line."
+```
+
+`ei init --dry-run` output:
+
+```text
+Project initialized:
+  Repo ID:    d5468fea296e508d
+  Root:       /Users/mezn/workspaces/private/ksd-intelligence
+  Cache dir:  /Users/mezn/.cache/ksd-intelligence/d5468fea296e508d
+  Config:     /Users/mezn/workspaces/private/ksd-intelligence/ei.config.json (created)
+  Git:        yes (/Users/mezn/workspaces/private/ksd-intelligence)
+  Include:    src/**, tests/**
+  TS configs: src/policy/tsconfig.json, tests/tsconfig.json, tsconfig.json
+  Omitted tsconfig dirs: none
+```
+
+Live `omp -p` output for `Graph.incoming`:
+
+```text
+IMPACT Graph.incoming — src/core/graph/graph.ts:44
+ACTION proceed · level low · picture complete
+REACH 3 direct · 3 total · 2 files · 1 package · 0 routes · factors: none
+
+Callers, depth 1 (3)
+  tests/core/differential.test.ts:1  <module>  CALLS
+  tests/core/indexing.test.ts:1  <module>  CALLS
+  tests/core/indexing.test.ts:23  users  CALLS
+Tests (2)
+  tests/core/differential.test.ts
+  tests/core/indexing.test.ts
+Gaps: none
+Next: after your change, run the tests above; call ei_changes before you report done.
+— index fresh · 374 files · limits: 1 unbounded dynamic import, 90 excluded files · ts 5.9.3 · engine 0.1.0
+```
+
+### 3. Local checks and mutation smoke
+
+```text
+npm test               tests 565 · suites 45 · pass 565 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 36 mutants (retaining all 35 prior mutants and adding `D57-Lexical`: dropping out-of-scope and owner-excluded code files from `isLexicalRecord` in `indexer.ts`): **VERIFIED 36/36 killed, 0 survived**.
+
+
 
 

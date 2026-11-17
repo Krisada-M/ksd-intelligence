@@ -79,6 +79,10 @@ export function kindOf(path: string): FileKind {
   return KINDS[extname(path)] ?? 'other';
 }
 
+export function isCodeKind(kind: FileKind): boolean {
+  return IS_CODE[kind];
+}
+
 /** Secret and excluded paths are decided by path and kind alone; their content is never read. */
 export function exclusionOf(path: string, impact: ImpactConfig): 'secret' | 'excluded' | null {
   if (SECRET_PATTERNS.some((pattern) => matchGlob(pattern, path))) return 'secret';
@@ -86,6 +90,25 @@ export function exclusionOf(path: string, impact: ImpactConfig): 'secret' | 'exc
     return 'secret';
   }
   if (matchAny([...DEFAULT_EXCLUDES, ...impact.exclude], path)) return 'excluded';
+  return null;
+}
+
+/**
+ * Files whose content must never be read (RISK §6, D57): secrets, default excludes (`node_modules`,
+ * `dist`, `.git`), and non-code files in `impact.exclude`. Owner-excluded code files are hashed
+ * and scanned lexically for the name cross-check while keeping `reason: 'excluded'`.
+ */
+function neverReadOf(
+  path: string,
+  kind: FileKind,
+  impact: ImpactConfig,
+): 'secret' | 'excluded' | null {
+  if (SECRET_PATTERNS.some((pattern) => matchGlob(pattern, path))) return 'secret';
+  if (!IS_CODE[kind] && SECRET_NAME_PATTERNS.some((pattern) => matchGlob(pattern, path))) {
+    return 'secret';
+  }
+  if (matchAny(DEFAULT_EXCLUDES, path)) return 'excluded';
+  if (!IS_CODE[kind] && matchAny(impact.exclude, path)) return 'excluded';
   return null;
 }
 
@@ -418,15 +441,15 @@ export async function scan(
     const kind = kindOf(entry.path);
     const base = { path: entry.path, size: entry.size, mtimeMs: entry.mtimeMs, kind };
     const pkg = packageOf(entry.path, packageDirs);
-    const excluded = entry.symlink ? 'symlink' : exclusionOf(entry.path, impact);
-    if (excluded !== null) {
+    const neverRead = entry.symlink ? 'symlink' : neverReadOf(entry.path, kind, impact);
+    if (neverRead !== null) {
       const row: CensusRecord = {
         ...base,
         package: pkg,
         hash: null,
         tsconfig: null,
         status: 'unindexed',
-        reason: excluded,
+        reason: neverRead,
       };
       return row;
     }
@@ -435,6 +458,17 @@ export async function scan(
       known?.hash != null && known.size === entry.size && known.mtimeMs === entry.mtimeMs
         ? known.hash
         : await hashFile(join(root, entry.path), entry.size);
+    if (matchAny(impact.exclude, entry.path)) {
+      const row: CensusRecord = {
+        ...base,
+        package: pkg,
+        hash,
+        tsconfig: null,
+        status: 'unindexed',
+        reason: 'excluded',
+      };
+      return row;
+    }
     const tsconfig = ownerOf(entry.path, configs);
     const row: CensusRecord = {
       ...base,

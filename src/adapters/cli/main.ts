@@ -248,8 +248,12 @@ async function run(argv: string[]): Promise<number> {
     console.log(
       `  Git:        ${result.git.isRepo ? `yes (${result.git.gitRoot ?? 'root'})` : 'not a git repository'}`,
     );
+    console.log(`  Include:    ${result.config.impact.include.join(', ')}`);
     console.log(
       `  TS configs: ${result.tsconfigs.length > 0 ? result.tsconfigs.join(', ') : 'none found'}`,
+    );
+    console.log(
+      `  Omitted tsconfig dirs: ${result.omittedTsconfigDirs.length > 0 ? result.omittedTsconfigDirs.join(', ') : 'none'}`,
     );
     if (result.warnings.length > 0) {
       console.log('\nWarnings:');

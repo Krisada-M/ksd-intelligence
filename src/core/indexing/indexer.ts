@@ -5,7 +5,13 @@ import type { DatabaseSync } from 'node:sqlite';
 import type * as TS from 'typescript';
 import type { ImpactConfig } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
-import { scan, type CensusRecord, type ScanSummary } from '../workspace/scan.js';
+import {
+  isCodeKind,
+  scan,
+  type CensusRecord,
+  type FileKind,
+  type ScanSummary,
+} from '../workspace/scan.js';
 import {
   FAILURE_FILE,
   SCHEMA_VERSION,
@@ -132,6 +138,17 @@ const LOCKFILES = new Set([
 ]);
 const CONFIG_NAME = /^(?:tsconfig(?:\..+)?|jsconfig)\.json$/;
 const CODE_OR_JSON = /\.(?:[cm]?[jt]sx?|json)$/;
+
+/**
+ * D55 / D57: every visible code file outside the compiler index scope (orphan, outside `include`,
+ * or in an owner `exclude`) whose content was hashed (not secret, symlink, or default-excluded)
+ * is scanned lexically for the name cross-check.
+ */
+function isLexicalRecord(record: Pick<FileRecord, 'status' | 'kind' | 'hash'>): boolean {
+  return (
+    record.status !== 'indexable' && isCodeKind(record.kind as FileKind) && record.hash !== null
+  );
+}
 
 /** A change to one of these can change how any file resolves: always a cold build. */
 function isConfigLevel(path: string): boolean {
@@ -551,7 +568,7 @@ export class Indexer {
     }
   }
 
-  /** Lexical rows for every census orphan: names in files no program covers still cross-check. */
+  /** Lexical rows for every visible out-of-scope code file (D55, D57): names still cross-check. */
   private writeOrphans(
     writer: { write: (rows: FileRows) => void },
     census: Census,
@@ -559,7 +576,7 @@ export class Indexer {
     only?: ReadonlySet<string>,
   ): void {
     for (const record of census.records) {
-      if (record.status !== 'orphan' || (only !== undefined && !only.has(record.path))) continue;
+      if (!isLexicalRecord(record) || (only !== undefined && !only.has(record.path))) continue;
       writer.write(
         scanLexically(
           this.ts,
@@ -732,14 +749,10 @@ export class Indexer {
         db.exec('DELETE FROM files');
         writeFiles(db, census.records);
         const orphanNow = new Set(
-          census.records
-            .filter((record) => record.status === 'orphan')
-            .map((record) => record.path),
+          census.records.filter(isLexicalRecord).map((record) => record.path),
         );
         const orphanBefore = new Set(
-          published.files
-            .filter((record) => record.status === 'orphan')
-            .map((record) => record.path),
+          published.files.filter(isLexicalRecord).map((record) => record.path),
         );
         const orphans = new Set(
           orphanNamesChanged
