@@ -109,6 +109,7 @@ export type FactorCode =
   | 'route'
   | 'cross-package'
   | 'many-callers'
+  | 'common-name'
   | 'boundary:sql'
   | 'boundary:native';
 

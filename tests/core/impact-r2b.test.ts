@@ -358,3 +358,66 @@ describe('D55 items 6 and 7 — value flow into containers and arrays', () => {
     assert.equal(a.reach.total, 2);
   });
 });
+
+describe('D56 / G15 — common-name factor', () => {
+  const USE = 'packages/api/src/use-common.ts';
+  let db: DatabaseSync;
+  let config: ImpactConfig;
+  let close: () => Promise<void>;
+
+  before(async () => {
+    const files: Record<string, string> = {
+      [USE]: [
+        'export function runLoose(obj: any): string {',
+        '  obj.common();',
+        '  obj.common();',
+        '  const s1: string = "common";',
+        '  const s2: string = "rare";',
+        '  return s1 + s2;',
+        '}',
+      ].join('\n'),
+      [`${SHARED}/rare.ts`]: 'export function rare(): number { return 1; }\n',
+    };
+    for (let i = 0; i < 11; i++) {
+      files[`${SHARED}/common-${i}.ts`] = `export function common(): number { return ${i}; }\n`;
+    }
+    ({ db, config, close } = await copyIndex('r5-common-name', files));
+  });
+  after(async () => await close());
+
+  it('a name shared by more than commonName declarations gets the common-name factor and stays complete', () => {
+    const c0 = result(new ImpactQuery(db, config).query(`${SHARED}/common-0.ts#common`, 10));
+    assert.equal(c0.completeness.status, 'complete');
+    assert.ok(!reason(c0, 'unresolved-name-match'));
+    assert.ok(!reason(c0, 'string-name-match'));
+    assert.ok(c0.factors.includes('common-name'));
+    assert.equal(c0.verdict.level, 'medium');
+    assert.equal(c0.verdict.action, 'run-tests');
+    assert.ok(
+      c0.verdict.basis.includes(
+        'common-name: 11 declarations named "common"; 2 untyped uses, 1 equal strings not attributed',
+      ),
+      JSON.stringify(c0.verdict.basis),
+    );
+  });
+
+  it('at the threshold (commonName = 11) the name keeps its completeness reasons and site lists', () => {
+    const c0 = result(
+      new ImpactQuery(db, { ...config, commonName: 11 }).query(`${SHARED}/common-0.ts#common`, 10),
+    );
+    assert.equal(c0.completeness.status, 'partial');
+    assert.ok(reason(c0, 'unresolved-name-match'));
+    assert.ok(reason(c0, 'string-name-match'));
+    assert.ok(!c0.factors.includes('common-name'));
+    assert.equal(c0.verdict.level, 'unknown');
+    assert.equal(c0.verdict.action, 'check-gaps');
+  });
+
+  it('a rare name stays partial with its site list', () => {
+    const rare = result(new ImpactQuery(db, config).query(`${SHARED}/rare.ts#rare`, 10));
+    assert.equal(rare.completeness.status, 'partial');
+    assert.ok(reason(rare, 'string-name-match'));
+    assert.ok(!rare.factors.includes('common-name'));
+    assert.equal(rare.verdict.level, 'unknown');
+  });
+});

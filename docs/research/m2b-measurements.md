@@ -586,3 +586,44 @@ node dist/adapters/cli/main.js status --root /var/tmp/m2a2/omp-src
 
 **NOT VERIFIED:** macOS, pushed CI, live OMP, Round 3 tool/CLI/rendering/snapshots, isolated whole-call latency and later independent cross-vendor review. No push, merge, deployment, dependency addition or OMP installation/configuration mutation.
 
+## Round 5 — fix round (R1–R8, D56, G15)
+
+**VERIFIED:** macOS Darwin arm64, Node `24.22.0`, TypeScript `5.9.3`. Implementing model: Gemini 4 Argon (Medium).
+
+### 1. Findings R1–R8 disposition
+
+| Finding | Disposition | Evidence |
+|---|---|---|
+| R1 | Implemented `common-name` factor (`src/core/kernel/types.ts`, `src/core/kernel/config.ts`, `src/core/indexing/stamp.ts`, `src/core/impact/query.ts`). When `decl.simple` is shared by more than `impact.commonName` (default 10) non-module declarations and has at least one `unresolved-name-match` or `string-name-match` site, those sites are not completeness reasons; the target gets factor `common-name` and `verdict.basis` states `common-name: <N> declarations named "<name>"; <U> untyped uses, <S> equal strings not attributed` (G15). `commonName` is a query-time threshold and is excluded from `impactConfigHash`. | `tests/core/impact-r2b.test.ts` (`D56 / G15 — common-name factor`), `tests/core/init.test.ts`. Observed failing before the fix; passes after. |
+| R2 | Implemented `userHidingGaps(decl)` in `src/core/impact/query.ts`. `gapScoped` is set only from gaps that hide users of that row (`computed-member-access`, `interface-dispatch`, `dynamic-import`/`cjs-require` in scope), never from name matches (`unresolved-name-match`, `string-name-match`, `unresolved-import`) or repository-wide gaps (`parse-error`, `unsupported-syntax`). This also avoids running the `name_tokens` query per listed symbol. | `tests/core/impact-risk.test.ts` (`R2: gapScoped marks only gaps that hide users of that row, not name matches or parse-error`). Observed failing before the fix; passes after. |
+| R3 | Implemented drift-fingerprint failure memoization in `src/core/impact/session.ts`. When a build fails with drift, `lastFailed` records the fingerprint (`configHash` + sorted `path:size:mtimeMs` of `driftedFiles`) and failure message; while the fingerprint is unchanged, `query` answers stale immediately with the stored failure without starting a build. A changed fingerprint retries. | `tests/core/impact-freshness.test.ts` (`failed update retains the old index, marks it stale and includes the failure` — 3 calls, 1 build; edit retries for build 2). Observed failing before the fix; passes after. |
+| R4 | Added `waitAfterExpiry?: boolean` to `ImpactSessionOptions` in `src/core/impact/session.ts` for the Round 3 CLI to use so a CLI invocation waits for an in-flight build or lock holder instead of exiting at `waitMs` and killing its child in a stale loop (D56). The CLI `impact` subcommand itself is Round 3 scope and is not registered here. | `tests/core/impact-freshness.test.ts` (`waitAfterExpiry mode waits for a build slower than waitMs instead of exiting stale`). Observed failing before the fix; passes after. |
+| R5 | Added regression test for a method of an exported class (`Service.run`) and a property of an exported object (`Box.value`) in a file with no static importer under a prefix-less `import(p)`. `src/core/indexing/declarations.ts` already propagates `exported` to class and object-literal members (`classMembers`, `objectMembers`), so no product code change was needed. | `tests/core/impact-risk.test.ts` (`R5: a method of an exported class and a member of an exported object in an unimported file are partial under a prefix-less dynamic import`). |
+| R6 | Widened D51 parent fallback in `src/core/impact/query.ts` to accept a nearest indexed parent of kind `property` or `variable`, and added regression test for `Config.a.b.c.d` (deeper than ADR 0003's 3-level object-literal limit) and `Flat.x` (parent kind `variable`). Line 1 rendering of both names belongs to Round 3 (`render.ts`); `ImpactAnswer` carries both `input` and `parentTarget`. | `tests/core/impact-risk.test.ts` (`R6: a member deeper than ADR 0003 object-literal depth 3 resolves to its nearest indexed parent`). Observed failing before the fix; passes after. |
+| R7 | Changed `reach.routes` in `src/core/impact/query.ts` to count distinct reached route files (`[...reachedFiles].filter((file) => matchAny(this.impact.routes, file)).length`) with the required comment until M4a provides route records. | `tests/core/impact-risk.test.ts` (`R7: reach.routes counts distinct route files, not reached symbols in route files`). Observed failing before the fix; passes after. |
+| R8 | No code change required before Round 3 whole-call latency measurement (`No change before the measurement`). | — |
+
+### 2. Local checks and mutation smoke
+
+```text
+npm test
+ℹ tests 546
+ℹ suites 42
+ℹ pass 546
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 31 targeted mutants (Round 1 `keyof`/metadata/generics K01–K08, B01–B02, G01–G06; D55 items 4–6; query-core controls Q01–Q06; Round 5 controls R1-M, R2-M, R3-M, R4-M, R6-M, R7-M): **VERIFIED 31/31 killed, 0 survived**.
+
+### 3. oh-my-pi 200-target distribution and 10 hand-checked lows
+
+**NOT VERIFIED** on this machine: the `/var/tmp/m2a2/omp-src` checkout and its cached index (`~/.cache/ksd-intelligence/6245da6948cefc28/index.sqlite`) from the Linux WSL2 sessions do not exist on this macOS machine, and cloning or fetching external repositories is prohibited by `AGENTS.md`.
+
+

@@ -1,7 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { buildIndex } from '../engine/build.js';
+import { isHolderAlive, readLockHolder } from '../engine/lock.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { isRecord } from '../kernel/guards.js';
 import { probe } from '../workspace/probe.js';
@@ -80,18 +81,39 @@ function lastFailure(cacheDir, builtAt) {
         return null;
     }
 }
+function driftFingerprint(root, driftedFiles, configHash) {
+    const parts = [`config:${configHash}`];
+    for (const path of driftedFiles) {
+        try {
+            const stat = statSync(join(root, path));
+            parts.push(`${path}:${stat.size}:${stat.mtimeMs}`);
+        }
+        catch {
+            parts.push(`${path}:missing`);
+        }
+    }
+    return parts.join('\n');
+}
+function staleReasonText(driftedFiles, staleReason, failureMessage) {
+    const paths = driftedFiles.slice(0, 10).join(', ');
+    const omitted = driftedFiles.length > 10 ? ` (+${driftedFiles.length - 10} more)` : '';
+    return `stale-index: ${paths}${omitted}${staleReason ? `; ${staleReason}` : ''}${failureMessage}`;
+}
 const TIMED_OUT = Symbol('build wait expired');
 /** One repository's query coordinator. No database is held open between calls. */
 export class ImpactSession {
     workspace;
     building = null;
+    lastFailed = null;
     build;
     waitMs;
+    waitAfterExpiry;
     onProgress;
     constructor(workspace, options = {}) {
         this.workspace = workspace;
         this.build = options.build ?? buildIndex;
         this.waitMs = options.waitMs ?? 60_000;
+        this.waitAfterExpiry = options.waitAfterExpiry ?? false;
         this.onProgress = options.onProgress;
     }
     startBuild() {
@@ -121,6 +143,18 @@ export class ImpactSession {
             }
             finally {
                 db?.close();
+            }
+            if (!Number.isFinite(deadline)) {
+                const holder = readLockHolder(this.workspace.cacheDir);
+                if (holder === null || !isHolderAlive(holder)) {
+                    const check = openPublished(this.workspace.cacheDir);
+                    try {
+                        return check !== null && readMeta(check).build_id !== previousId;
+                    }
+                    finally {
+                        check?.close();
+                    }
+                }
             }
             await delay(Math.min(50, Math.max(1, deadline - Date.now())));
         }
@@ -156,9 +190,11 @@ export class ImpactSession {
         }
         let db = null;
         let driftedFiles = [];
+        let fingerprint = '';
         let previousId = null;
         let staleReason = '';
         try {
+            const configHash = impactConfigHash(this.workspace.config.impact);
             db = openPublished(this.workspace.cacheDir);
             if (db !== null) {
                 if (readSchemaVersion(db) !== SCHEMA_VERSION) {
@@ -174,11 +210,12 @@ export class ImpactSession {
                         staleReason = `update failed: ${persistedFailure}`;
                     const drift = await probe(this.workspace.root, this.workspace.config.impact, readFiles(db), this.workspace.config.impact.freshness);
                     driftedFiles = [...new Set([...drift.added, ...drift.changed, ...drift.deleted])].sort();
-                    if (meta.config_hash !== impactConfigHash(this.workspace.config.impact)) {
+                    if (meta.config_hash !== configHash) {
                         staleReason = 'index configuration changed';
                         driftedFiles = [...new Set([...driftedFiles, 'ei.config.json'])].sort();
                     }
                     if (driftedFiles.length === 0 && persistedFailure !== null) {
+                        this.lastFailed = null;
                         const reason = `stale-index: ${staleReason}`;
                         return {
                             answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
@@ -186,8 +223,17 @@ export class ImpactSession {
                         };
                     }
                     if (driftedFiles.length === 0) {
+                        this.lastFailed = null;
                         const answers = this.answer(targets, depth, db);
                         return { answers, index: { state: 'fresh', updatedFiles: 0, driftedFiles: [] } };
+                    }
+                    fingerprint = driftFingerprint(this.workspace.root, driftedFiles, configHash);
+                    if (this.lastFailed !== null && this.lastFailed.fingerprint === fingerprint) {
+                        const reason = staleReasonText(driftedFiles, staleReason, `; update failed: ${this.lastFailed.message}`);
+                        return {
+                            answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
+                            index: { state: 'stale', updatedFiles: 0, driftedFiles },
+                        };
                     }
                 }
             }
@@ -204,9 +250,21 @@ export class ImpactSession {
             finally {
                 clearTimeout(timer);
             }
+            if (outcome === TIMED_OUT && this.waitAfterExpiry) {
+                outcome = await task;
+            }
             if (outcome !== TIMED_OUT && !outcome.ok && outcome.code === 'busy') {
-                const published = await this.untilPublished(previousId, deadline);
-                outcome = published ? { ok: true, value: { action: 'update' } } : TIMED_OUT;
+                const published = await this.untilPublished(previousId, this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline);
+                outcome = published
+                    ? { ok: true, value: { action: 'update' } }
+                    : this.waitAfterExpiry
+                        ? {
+                            ok: false,
+                            code: 'index-failed',
+                            message: 'another session released the lock without publishing',
+                            fix: 'run: ei index',
+                        }
+                        : TIMED_OUT;
             }
             if (outcome !== TIMED_OUT && outcome.ok && outcome.value.action === 'failed') {
                 const problems = outcome.value.problems;
@@ -230,6 +288,7 @@ export class ImpactSession {
                     };
                 }
                 else {
+                    this.lastFailed = null;
                     const answers = this.answer(targets, depth, db);
                     return {
                         answers,
@@ -240,6 +299,9 @@ export class ImpactSession {
                         },
                     };
                 }
+            }
+            if (outcome !== TIMED_OUT && !outcome.ok && fingerprint !== '') {
+                this.lastFailed = { fingerprint, message: outcome.message };
             }
             if (db === null) {
                 return {
@@ -252,9 +314,7 @@ export class ImpactSession {
                 };
             }
             const failureMessage = outcome === TIMED_OUT ? '' : `; update failed: ${outcome.message}`;
-            const paths = driftedFiles.slice(0, 10).join(', ');
-            const omitted = driftedFiles.length > 10 ? ` (+${driftedFiles.length - 10} more)` : '';
-            const reason = `stale-index: ${paths}${omitted}${staleReason ? `; ${staleReason}` : ''}${failureMessage}`;
+            const reason = staleReasonText(driftedFiles, staleReason, failureMessage);
             return {
                 answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
                 index: { state: 'stale', updatedFiles: 0, driftedFiles },

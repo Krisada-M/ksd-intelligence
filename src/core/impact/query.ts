@@ -164,6 +164,7 @@ export class ImpactQuery {
     | 'incoming'
     | 'implements'
     | 'tokens'
+    | 'nameCount'
     | 'imports'
     | 'census'
     | 'lines'
@@ -201,6 +202,9 @@ export class ImpactQuery {
       ),
       tokens: db.prepare(
         "SELECT file, lines FROM name_tokens WHERE name = ? AND kind = 'str' ORDER BY file",
+      ),
+      nameCount: db.prepare(
+        "SELECT COUNT(*) AS n FROM declarations WHERE simple = ? AND name != '<module>'",
       ),
       imports: db.prepare('SELECT specifier FROM external_imports WHERE file = ?'),
       census: db.prepare('SELECT status, reason FROM files WHERE path = ?'),
@@ -392,9 +396,12 @@ export class ImpactQuery {
     return edges;
   }
 
-  /** Gap sites and unresolved records whose scope covers `decl` (golden P4). */
-  private gapsOf(decl: Declaration): Gap[] {
-    const found: Gap[] = [...this.everywhere];
+  /**
+   * Gaps that hide users of `decl` itself: `computed-member-access`, `interface-dispatch` and
+   * `dynamic-import`/`cjs-require` in scope. Not name matches and not repository-wide gaps (R2, D56).
+   */
+  private userHidingGaps(decl: Declaration): Gap[] {
+    const found: Gap[] = [];
     if (decl.exported) {
       found.push(...this.unmatchedPrefix);
       for (const gap of this.byPrefix) if (decl.file.startsWith(gap.detail)) found.push(gap);
@@ -420,12 +427,27 @@ export class ImpactQuery {
       for (const key of ancestors(edge.source)) owners.add(key);
     }
     for (const owner of owners) found.push(...(this.byOwner.get(owner) ?? []));
-    for (const record of this.unresolvedByName.get(decl.simple) ?? []) found.push(record);
+    return found;
+  }
+
+  /**
+   * Gap sites and unresolved records whose scope covers `decl` (golden P4).
+   * When `decl.simple` is shared by more than `impact.commonName` declarations and has name-match
+   * sites, those sites become the `common-name` factor instead of completeness reasons (D56, G15).
+   */
+  private gapsOf(decl: Declaration): { gaps: Gap[]; commonNameBasis: string | null } {
+    const found: Gap[] = [...this.everywhere, ...this.userHidingGaps(decl)];
+    const unresolved = this.unresolvedByName.get(decl.simple) ?? [];
+    const unresolvedImports = unresolved.filter((gap) => gap.code === 'unresolved-import');
+    const untypedUses = unresolved.filter((gap) => gap.code === 'unresolved-name-match');
+    found.push(...unresolvedImports);
+
+    const stringMatches: Gap[] = [];
     for (const row of this.statements.tokens.all(decl.simple)) {
       const lines: unknown = JSON.parse(String(row.lines));
       if (!Array.isArray(lines)) continue;
       for (const line of lines) {
-        found.push({
+        stringMatches.push({
           file: String(row.file),
           line: Number(line),
           code: 'string-name-match',
@@ -433,7 +455,18 @@ export class ImpactQuery {
         });
       }
     }
-    return found;
+
+    if (untypedUses.length + stringMatches.length > 0) {
+      const shared = Number(this.statements.nameCount.get(decl.simple)?.n ?? 0);
+      if (shared > (this.impact.commonName ?? 10)) {
+        return {
+          gaps: found,
+          commonNameBasis: `common-name: ${shared.toLocaleString('en-US')} declarations named "${decl.simple}"; ${untypedUses.length.toLocaleString('en-US')} untyped uses, ${stringMatches.length.toLocaleString('en-US')} equal strings not attributed`,
+        };
+      }
+      found.push(...untypedUses, ...stringMatches);
+    }
+    return { gaps: found, commonNameBasis: null };
   }
 
   private boundaries(file: string): string[] {
@@ -496,7 +529,8 @@ export class ImpactQuery {
     }
     let match = this.graph.symbol(asked);
     let parentTarget: string | undefined;
-    // D51: a member of an anonymous object type answers for its nearest indexed parent property.
+    // D51: a member of an anonymous object type or an object literal deeper than ADR 0003's
+    // 3-level limit answers for its nearest indexed parent (property or variable).
     if (
       match.kind === 'not-found' &&
       atLine === null &&
@@ -505,7 +539,8 @@ export class ImpactQuery {
       for (let parent = asked; parent.includes('.') && parentTarget === undefined;) {
         parent = parent.slice(0, parent.lastIndexOf('.'));
         const found = this.graph.symbol(parent);
-        if (found.kind === 'found' && this.get(found.key)?.kind === 'property') {
+        const kind = found.kind === 'found' ? this.get(found.key)?.kind : undefined;
+        if (found.kind === 'found' && (kind === 'property' || kind === 'variable')) {
           match = found;
           parentTarget = found.key;
         }
@@ -625,8 +660,9 @@ export class ImpactQuery {
     // DESIGN §7.2: reach is over compiler-grade edges only, so a path through a heuristic hop is out.
     const compiler = this.traverse(key, false);
 
+    const { gaps: targetGaps, commonNameBasis } = this.gapsOf(target);
     const reasons = new Set<string>();
-    for (const gap of this.gapsOf(target))
+    for (const gap of targetGaps)
       reasons.add(`${gap.code}: ${gap.file}:${gap.line} — ${gap.detail}`);
     if (anonymous) reasons.add(ANONYMOUS_REASON);
     if (listing.capped || compiler.capped)
@@ -645,7 +681,7 @@ export class ImpactQuery {
           via: edge.kind,
           strength: edge.strength,
           span: { file: decl.file, startLine: decl.start, endLine: decl.end },
-          ...(this.gapsOf(decl).length > 0 ? { gapScoped: true } : {}),
+          ...(this.userHidingGaps(decl).length > 0 ? { gapScoped: true } : {}),
         });
       }
       byDepth.push(nodes);
@@ -661,9 +697,8 @@ export class ImpactQuery {
       files: reachedFiles.size,
       packages: packages.size,
       crossPackage: [...packages].some((pkg) => pkg !== targetPackage),
-      routes: reached.filter((source) =>
-        matchAny(this.impact.routes, source.slice(0, source.indexOf('#'))),
-      ).length,
+      // Count distinct route files until M4a provides route records (R7).
+      routes: [...reachedFiles].filter((file) => matchAny(this.impact.routes, file)).length,
     };
 
     // golden P2 over the target and every listed symbol: factors may only raise the level.
@@ -674,6 +709,7 @@ export class ImpactQuery {
     if (involved.some((decl) => (this.packageOf.get(decl.file) ?? null) !== targetPackage))
       factors.push('cross-package');
     if (reach.total >= this.impact.manyCallers) factors.push('many-callers');
+    if (commonNameBasis !== null) factors.push('common-name');
     const boundaries = new Set(involved.flatMap((decl) => this.boundaries(decl.file)));
     for (const kind of ['boundary:sql', 'boundary:native'])
       if (boundaries.has(kind)) factors.push(kind);
@@ -684,6 +720,9 @@ export class ImpactQuery {
 
     const sortedReasons = [...reasons].sort();
     const incomplete = sortedReasons.length > 0;
+    const factorBasis = factors.map((factor) =>
+      factor === 'common-name' && commonNameBasis !== null ? commonNameBasis : factor,
+    );
     return {
       target: key,
       byDepth: byDepth.slice(0, depth),
@@ -698,7 +737,7 @@ export class ImpactQuery {
         action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',
         zones: [],
         requiredActions: [],
-        basis: [...sortedReasons, ...factors],
+        basis: [...sortedReasons, ...factorBasis],
       },
       freshness: { ...this.freshness },
       engine: { ...this.engine },

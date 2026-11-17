@@ -15,6 +15,7 @@ export interface ImpactConfig {
   freshness: 'stat' | 'hash';
   watch: boolean;
   manyCallers: number;
+  commonName: number;
   useWorkspaceTypescript: boolean;
   /** Engine child memory limit in MB; null = min(8192, half of physical RAM) (D45). */
   maxMemoryMb: number | null;
@@ -83,6 +84,7 @@ export function defaultConfig(inferred?: { include?: string[]; routes?: string[]
       freshness: 'stat',
       watch: true,
       manyCallers: 10,
+      commonName: 10,
       useWorkspaceTypescript: false,
       maxMemoryMb: null,
     },
@@ -154,6 +156,10 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
     typeof section.manyCallers === 'number' && section.manyCallers > 0
       ? section.manyCallers
       : fallback.manyCallers;
+  const commonName =
+    typeof section.commonName === 'number' && section.commonName > 0
+      ? section.commonName
+      : fallback.commonName;
   const useWorkspaceTypescript =
     typeof section.useWorkspaceTypescript === 'boolean'
       ? section.useWorkspaceTypescript
@@ -198,6 +204,12 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
     errors.push('impact.manyCallers must be positive number');
   }
   if (
+    section.commonName !== undefined &&
+    (typeof section.commonName !== 'number' || section.commonName <= 0)
+  ) {
+    errors.push('impact.commonName must be positive number');
+  }
+  if (
     section.useWorkspaceTypescript !== undefined &&
     typeof section.useWorkspaceTypescript !== 'boolean'
   ) {
@@ -220,6 +232,7 @@ function parseImpact(section: unknown, fallback: ImpactConfig, errors: string[])
     freshness,
     watch,
     manyCallers,
+    commonName,
     useWorkspaceTypescript,
     maxMemoryMb,
   };

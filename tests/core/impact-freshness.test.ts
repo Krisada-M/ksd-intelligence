@@ -334,23 +334,59 @@ describe('query freshness safety', () => {
 
   it('failed update retains the old index, marks it stale and includes the failure', async () => {
     await writeFile(join(repo, 'packages/api/src/failed.ts'), 'export const failed = 1;\n');
+    let builds = 0;
     const session = new ImpactSession(workspace, {
-      build: async (): Promise<EngineOutcome> => ({
-        ok: false,
-        code: 'index-failed',
-        message: 'verification failed',
-        fix: 'retry once',
-      }),
+      build: async (): Promise<EngineOutcome> => {
+        builds++;
+        return {
+          ok: false,
+          code: 'index-failed',
+          message: 'verification failed',
+          fix: 'retry once',
+        };
+      },
     });
-    const batch = await session.query([TARGET]);
-    assert.equal(batch.index.state, 'stale');
-    const impact = result(first(batch));
-    assert.equal(impact.completeness.status, 'partial');
-    assert.equal(impact.verdict.level, 'unknown');
-    assert.ok(impact.completeness.reasons.some((reason) => reason.includes('verification failed')));
+    for (let i = 0; i < 3; i++) {
+      const batch = await session.query([TARGET]);
+      assert.equal(batch.index.state, 'stale');
+      const impact = result(first(batch));
+      assert.equal(impact.completeness.status, 'partial');
+      assert.equal(impact.verdict.level, 'unknown');
+      assert.ok(
+        impact.completeness.reasons.some((reason) => reason.includes('verification failed')),
+      );
+    }
+    assert.equal(builds, 1, 'three calls with unchanged drift fingerprint run one build');
+    await writeFile(join(repo, 'packages/api/src/failed.ts'), 'export const failed = 222;\n');
+    await session.query([TARGET]);
+    assert.equal(builds, 2, 'a changed drift fingerprint retries the build');
+  });
+
+  it('waitAfterExpiry mode waits for a build slower than waitMs instead of exiting stale', async () => {
+    await writeFile(join(repo, 'packages/api/src/cli-slow.ts'), 'export const cliSlow = 1;\n');
+    const gated = gatedBuild();
+    const timer = setTimeout(() => gated.release(), 50);
+    try {
+      const session = new ImpactSession(workspace, {
+        waitMs: 10,
+        waitAfterExpiry: true,
+        build: gated.build,
+      });
+      const batch = await session.query([TARGET]);
+      assert.equal(batch.index.state, 'updated');
+      assert.equal(gated.calls(), 1);
+    } finally {
+      clearTimeout(timer);
+      gated.release();
+      await gated.settled();
+    }
   });
 
   it('all golden declaration targets stay unknown and partial when index is stale', async () => {
+    await writeFile(
+      join(repo, 'packages/api/src/stale-golden.ts'),
+      'export const staleGolden = 1;\n',
+    );
     const goldenTargets = [
       TARGET,
       'packages/shared/src/money.ts#roundMoney',
