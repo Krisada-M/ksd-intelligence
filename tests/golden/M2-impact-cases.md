@@ -68,6 +68,7 @@ An ambiguous or unknown target is a **guidance** outcome (`ambiguous-target`, `t
 | `route` | an impacted symbol is in a file matched by `impact.routes` (or, from M4a, detected as a route) |
 | `cross-package` | an impacted symbol is in a different workspace package than the target |
 | `many-callers` | `reach.total` ≥ `impact.manyCallers` (default 10) |
+| `common-name` | the target's simple name is shared by more than `impact.commonName` (default 10) indexed declarations **and** at least one `unresolved-name-match` or `string-name-match` site exists for it (G15) |
 | `boundary:sql`, `boundary:native` | target's file or an impacted symbol's file talks to a database or native module (detection defaults in `docs/RISK.md` §3.2) |
 
 Public surface and boundaries are factors, not completeness gaps.
@@ -87,6 +88,7 @@ Adding a code needs an ADR and the owner.
 - `computed-member-access`: affects values stored in the accessed object. A member of an object literal additionally has the whole-value users of its enclosing objects (spread, passed, returned, assigned, read by a computed or declaration-less key) as dependents; that is reach, not a gap (G14).
 - `interface-dispatch`: affects implementations of that interface member.
 - `unresolved-name-match`, `string-name-match`: affect the declaration whose name matched. A string literal whose contextual type is a literal type or union not built from `keyof` (a discriminant, an enum-like value) is accounted for and is not a match; a literal typed `string`, `any` or `unknown` is (G14). Code files without a tsconfig are scanned for names lexically, so the check covers them.
+- A name shared by more than `impact.commonName` (default 10) indexed declarations cannot be attributed: its name-match sites are not completeness reasons. The target gets the factor `common-name` instead (so at least `medium` / `run-tests`), and `basis` states the counts, for example `common-name: 1,108 declarations named "type"; 849 untyped uses, 209 equal strings not attributed`. Names shared by 10 declarations or fewer keep the reasons and their site lists (C22 and C23 are unchanged) (G15).
 - `outside-index-scope`: not a per-target reason in `ei_impact`. Files the owner excluded are a repository limit (footer, `ei_status`). It stays a reason in `ei_changes` for changed files that are not indexed.
 
 ---
@@ -428,6 +430,7 @@ Run with `riskZones: "default"` (payments, auth, migrations, prod-config; `docs/
 | G10 | Name cross-check cases C22–C23 and boundary case C24 are engine cases (M2b) | 2026-11-11 |
 | G11 | Freshness cases run with full hashing; F06 documents the stat probe's blind spot | 2026-11-11 |
 | G12 | Policy and changes cases P01–P05, X01–X03 confirmed for M2c | 2026-11-11 |
+| G15 | New factor `common-name` (threshold `impact.commonName`, default 10). After G14 the 200-target run still gave 44.5% `unknown`, almost all from name matches on names like `type`, `id`, `name`. A list of hundreds of sites cannot be checked; `run-tests` is an action the agent can take | 2026-11-16 |
 | G14 | After the 200-target run on oh-my-pi gave 84% `unknown`: traversal runs to closure (a depth-10 cap made 51% of targets partial); a prefix-less dynamic import is scoped to files without a static importer and is otherwise a repository limit; excluded files are a repository limit; typed string literals are not name matches; object-literal members inherit the whole-value users of their enclosing objects. A reason present on almost every target carries no information and trains the agent to ignore `unknown` | 2026-11-15 |
 | G13 | C15 has five candidates: ADR 0003 indexes members of module-level object literals, so `handlers.ts#registry.charge` is a declaration named `charge`; a candidate is never hidden. C14: the base fixture must hold no use of `localOnly` (a stray `void localOnly;` is removed from the fixture, the expectation stands). P4 stands as written: a gap makes a result partial only when its scope covers the **target**; a gap on an impacted symbol does not (C01, C02, C04, C05 stay complete) and is shown as a row marker instead (DESIGN D54) | 2026-11-15 |
 
