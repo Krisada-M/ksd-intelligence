@@ -116,11 +116,20 @@ export class ImpactSession {
         this.waitAfterExpiry = options.waitAfterExpiry ?? false;
         this.onProgress = options.onProgress;
     }
-    startBuild() {
+    startBuild(callOptions) {
         if (this.building !== null)
             return this.building;
+        const onProgress = this.onProgress || callOptions.onProgress
+            ? (message, data) => {
+                this.onProgress?.(message, data);
+                callOptions.onProgress?.(message, data);
+            }
+            : undefined;
         const task = Promise.resolve()
-            .then(() => this.build(this.workspace, { onProgress: this.onProgress }))
+            .then(() => this.build(this.workspace, {
+            onProgress,
+            signal: callOptions.signal,
+        }))
             .catch((error) => ({
             ok: false,
             code: 'index-failed',
@@ -134,8 +143,8 @@ export class ImpactSession {
         });
         return task;
     }
-    async untilPublished(previousId, deadline) {
-        while (Date.now() < deadline) {
+    async untilPublished(previousId, deadline, signal) {
+        while (Date.now() < deadline && !signal?.aborted) {
             const db = openPublished(this.workspace.cacheDir);
             try {
                 if (db !== null && readMeta(db).build_id !== previousId)
@@ -163,7 +172,13 @@ export class ImpactSession {
     answer(targets, depth, db) {
         return new ImpactQuery(db, this.workspace.config.impact).batch(targets, depth);
     }
-    async query(targets, depth) {
+    async query(targets, depth, callOptions = {}) {
+        if (callOptions.signal?.aborted) {
+            return {
+                answers: failure(targets, 'Cancelled'),
+                index: { state: 'stale', updatedFiles: 0, driftedFiles: [] },
+            };
+        }
         const invalid = targets.length < 1 ||
             targets.length > 5 ||
             targets.some((target) => typeof target !== 'string' || target.length === 0) ||
@@ -238,7 +253,7 @@ export class ImpactSession {
                 }
             }
             const deadline = Date.now() + this.waitMs;
-            const task = this.startBuild();
+            const task = this.startBuild(callOptions);
             let timer;
             const timeout = new Promise((resolve) => {
                 timer = setTimeout(() => resolve(TIMED_OUT), Math.max(0, this.waitMs));
@@ -250,11 +265,23 @@ export class ImpactSession {
             finally {
                 clearTimeout(timer);
             }
-            if (outcome === TIMED_OUT && this.waitAfterExpiry) {
+            if (outcome === TIMED_OUT && this.waitAfterExpiry && !callOptions.signal?.aborted) {
                 outcome = await task;
             }
+            if (callOptions.signal?.aborted) {
+                return {
+                    answers: failure(targets, 'Cancelled'),
+                    index: { state: 'stale', updatedFiles: 0, driftedFiles },
+                };
+            }
             if (outcome !== TIMED_OUT && !outcome.ok && outcome.code === 'busy') {
-                const published = await this.untilPublished(previousId, this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline);
+                const published = await this.untilPublished(previousId, this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline, callOptions.signal);
+                if (callOptions.signal?.aborted) {
+                    return {
+                        answers: failure(targets, 'Cancelled'),
+                        index: { state: 'stale', updatedFiles: 0, driftedFiles },
+                    };
+                }
                 outcome = published
                     ? { ok: true, value: { action: 'update' } }
                     : this.waitAfterExpiry

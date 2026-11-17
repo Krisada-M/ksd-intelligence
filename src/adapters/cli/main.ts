@@ -8,6 +8,8 @@ import {
   setupTypescriptRuntime,
 } from '../../core/engine/typescript.js';
 import { loadWorkspace } from '../../core/engine/workspace.js';
+import { impactDetails, renderImpact } from '../../core/impact/render.js';
+import { ImpactSession } from '../../core/impact/session.js';
 import { initProject } from '../../core/workspace/init.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
@@ -70,6 +72,7 @@ const USAGE = `usage:
   main.js init  [--root <path>] [--force] [--dry-run] [--json]
   main.js setup [--check]                         (installs the pinned TypeScript runtime; --check only verifies)
   main.js index [--root <path>] [--full] [--json] (update the index from the working tree; --full rebuilds cold)
+  main.js impact <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
   main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status [--root <path>] [--json]         (index, coverage, runtime, TypeScript, store, lock)
   main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui]
@@ -94,6 +97,7 @@ async function run(argv: string[]): Promise<number> {
       full: { type: 'boolean' },
       deep: { type: 'boolean' },
       differential: { type: 'string' },
+      depth: { type: 'string' },
     },
   });
   const [command, sub] = positionals;
@@ -146,6 +150,51 @@ async function run(argv: string[]): Promise<number> {
     console.log(`INDEX ${String(action)} in ${seconds} s (${String(reason)})`);
     console.log(renderStatus(await workspaceStatus(workspace.root)));
     return action === 'failed' ? 1 : 0;
+  }
+
+  if (command === 'impact') {
+    const targets = positionals.slice(1);
+    const rawDepth = values.depth;
+    const depth = rawDepth === undefined ? undefined : Number.parseInt(rawDepth, 10);
+    if (
+      targets.length < 1 ||
+      targets.length > 5 ||
+      (rawDepth !== undefined &&
+        (depth === undefined ||
+          !Number.isInteger(depth) ||
+          String(depth) !== rawDepth.trim() ||
+          depth < 1 ||
+          depth > 10))
+    ) {
+      const batch = {
+        answers: [
+          {
+            input: targets[0] ?? '',
+            kind: 'failure' as const,
+            code: 'INVALID_INPUT' as const,
+            message: 'provide 1–5 targets and depth 1–10',
+          },
+        ],
+        index: { state: 'fresh' as const, updatedFiles: 0, driftedFiles: [] },
+      };
+      console.log(
+        values.json === true ? JSON.stringify(batch.answers[0], null, 2) : renderImpact(batch),
+      );
+      return 2;
+    }
+    const workspace = await loadWorkspace(values.root ?? process.cwd());
+    const session = new ImpactSession(workspace, {
+      waitAfterExpiry: true,
+      onProgress: (message) => console.error(`ei impact: ${message}`),
+    });
+    const batch = await session.query(targets, depth);
+    const details = impactDetails(batch);
+    if (values.json === true) {
+      console.log(JSON.stringify(details.length === 1 ? details[0] : details, null, 2));
+    } else {
+      console.log(renderImpact(batch));
+    }
+    return batch.answers.some((answer) => answer.kind === 'failure') ? 1 : 0;
   }
 
   if (command === 'doctor') {

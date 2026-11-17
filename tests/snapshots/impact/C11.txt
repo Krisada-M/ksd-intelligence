@@ -1,0 +1,10 @@
+IMPACT refund — packages/api/src/handlers/refund.ts:1
+ACTION check-gaps · level unknown · picture partial (1 gap)
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Callers: none
+Tests: none
+Gaps (1)
+  dynamic-import packages/api/src/handlers.ts:4 — computed path (packages/api/src/handlers/); check whether it can load this file
+Next: check the listed gap sites before relying on the caller list, and call ei_changes before you report done.
+— index fresh · 26 files · ts 5.9.3 · engine 0.1.0

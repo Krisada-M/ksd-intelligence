@@ -1,0 +1,19 @@
+IMPACT tiny — packages/shared/src/many.ts:1
+ACTION run-tests · level medium · picture complete
+REACH 10 direct · 10 total · 1 file · 1 package · 0 routes · factors: many-callers
+
+Callers, depth 1 (10)
+  packages/shared/src/many.ts:2  f0  CALLS
+  packages/shared/src/many.ts:3  f1  CALLS
+  packages/shared/src/many.ts:4  f2  CALLS
+  packages/shared/src/many.ts:5  f3  CALLS
+  packages/shared/src/many.ts:6  f4  CALLS
+  packages/shared/src/many.ts:7  f5  CALLS
+  packages/shared/src/many.ts:8  f6  CALLS
+  packages/shared/src/many.ts:9  f7  CALLS
+  packages/shared/src/many.ts:10  f8  CALLS
+  packages/shared/src/many.ts:11  f9  CALLS
+Tests: none
+Gaps: none
+Next: after your change, run the package tests; call ei_changes before you report done.
+— index fresh · 27 files · ts 5.9.3 · engine 0.1.0

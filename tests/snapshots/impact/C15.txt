@@ -1,0 +1,6 @@
+AMBIGUOUS charge — 5 declarations. Call again with one of:
+  packages/api/src/handlers.ts#registry.charge
+  packages/payments/src/manual.ts#ManualProcessor.charge
+  packages/payments/src/processor.ts#PaymentProcessor.charge
+  packages/payments/src/service.ts#PaymentService.charge
+  packages/payments/src/stripe.ts#StripeProcessor.charge

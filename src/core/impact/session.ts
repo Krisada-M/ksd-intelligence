@@ -168,10 +168,25 @@ export class ImpactSession {
     this.onProgress = options.onProgress;
   }
 
-  private startBuild(): Promise<EngineOutcome> {
+  private startBuild(callOptions: {
+    signal?: AbortSignal;
+    onProgress?: BuildOptions['onProgress'];
+  }): Promise<EngineOutcome> {
     if (this.building !== null) return this.building;
+    const onProgress: BuildOptions['onProgress'] =
+      this.onProgress || callOptions.onProgress
+        ? (message, data) => {
+            this.onProgress?.(message, data);
+            callOptions.onProgress?.(message, data);
+          }
+        : undefined;
     const task = Promise.resolve()
-      .then(() => this.build(this.workspace, { onProgress: this.onProgress }))
+      .then(() =>
+        this.build(this.workspace, {
+          onProgress,
+          signal: callOptions.signal,
+        }),
+      )
       .catch((error: unknown): EngineOutcome => ({
         ok: false,
         code: 'index-failed',
@@ -185,8 +200,12 @@ export class ImpactSession {
     return task;
   }
 
-  private async untilPublished(previousId: string | null, deadline: number): Promise<boolean> {
-    while (Date.now() < deadline) {
+  private async untilPublished(
+    previousId: string | null,
+    deadline: number,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    while (Date.now() < deadline && !signal?.aborted) {
       const db = openPublished(this.workspace.cacheDir);
       try {
         if (db !== null && readMeta(db).build_id !== previousId) return true;
@@ -217,7 +236,17 @@ export class ImpactSession {
     return new ImpactQuery(db, this.workspace.config.impact).batch(targets, depth);
   }
 
-  async query(targets: readonly string[], depth?: number): Promise<ImpactBatch> {
+  async query(
+    targets: readonly string[],
+    depth?: number,
+    callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] } = {},
+  ): Promise<ImpactBatch> {
+    if (callOptions.signal?.aborted) {
+      return {
+        answers: failure(targets, 'Cancelled'),
+        index: { state: 'stale', updatedFiles: 0, driftedFiles: [] },
+      };
+    }
     const invalid =
       targets.length < 1 ||
       targets.length > 5 ||
@@ -303,7 +332,7 @@ export class ImpactSession {
       }
 
       const deadline = Date.now() + this.waitMs;
-      const task = this.startBuild();
+      const task = this.startBuild(callOptions);
       let timer: NodeJS.Timeout | undefined;
       const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
         timer = setTimeout(() => resolve(TIMED_OUT), Math.max(0, this.waitMs));
@@ -314,14 +343,27 @@ export class ImpactSession {
       } finally {
         clearTimeout(timer);
       }
-      if (outcome === TIMED_OUT && this.waitAfterExpiry) {
+      if (outcome === TIMED_OUT && this.waitAfterExpiry && !callOptions.signal?.aborted) {
         outcome = await task;
+      }
+      if (callOptions.signal?.aborted) {
+        return {
+          answers: failure(targets, 'Cancelled'),
+          index: { state: 'stale', updatedFiles: 0, driftedFiles },
+        };
       }
       if (outcome !== TIMED_OUT && !outcome.ok && outcome.code === 'busy') {
         const published = await this.untilPublished(
           previousId,
           this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline,
+          callOptions.signal,
         );
+        if (callOptions.signal?.aborted) {
+          return {
+            answers: failure(targets, 'Cancelled'),
+            index: { state: 'stale', updatedFiles: 0, driftedFiles },
+          };
+        }
         outcome = published
           ? { ok: true, value: { action: 'update' } }
           : this.waitAfterExpiry

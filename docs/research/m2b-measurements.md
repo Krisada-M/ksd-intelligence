@@ -626,4 +626,102 @@ Mutation smoke over 31 targeted mutants (Round 1 `keyof`/metadata/generics K01�
 
 **NOT VERIFIED** on this machine: the `/var/tmp/m2a2/omp-src` checkout and its cached index (`~/.cache/ksd-intelligence/6245da6948cefc28/index.sqlite`) from the Linux WSL2 sessions do not exist on this macOS machine, and cloning or fetching external repositories is prohibited by `AGENTS.md`.
 
+## Round 3 — Step 3: tool, CLI, rendering, live, latency
+
+**VERIFIED:** macOS Darwin 27.0.0 arm64, Node `24.22.0`, TypeScript `5.9.3`, OMP `18.22.0` (`/Users/mezn/Library/Application Support/Tern/omp/bin/omp`). Implementing model: Gemini 4 Argon (High).
+
+### 1. OMP extension types inspected before changing `src/adapters/omp/extension.ts`
+
+- `omp --version` → `omp/18.22.0`
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-coding-agent@18.16.0@@@1/dist/types/extensibility/extensions/types.d.ts` (`ExtensionAPI`, `ToolDefinition`, `AgentToolUpdateCallback`, `ExtensionContext`)
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-coding-agent@18.16.0@@@1/src/extensibility/extensions/wrapper.ts`
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/omptype@18.16.0@@@1/src/zod.ts` (`pi.zod`: `string`, `number`, `array`, `enum`, `object`, `.int()`, `.min()`, `.max()`, `.optional()`, `.describe()`)
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-agent-core@18.16.0@@@1/dist/types/types.d.ts` (`AgentToolResult`)
+
+### 2. Pre-Step-3 oh-my-pi 200-target re-run and 20 lows after D56
+
+**NOT VERIFIED** on this machine: `/var/tmp/m2a2/omp-src` and its cached SQLite index from the Linux WSL2 environment do not exist on this macOS machine, and cloning external repositories from the network is forbidden by `AGENTS.md`. (From the Round 2b tables in §5 above, every top-20 `string-name-match` and `unresolved-name-match` name with >10 declarations sharing the name — e.g. `type` 1,108, `name` 996, `id` 984, `model` 503, `path` 432, `input` 393, `status` 387, `output` 362, `cwd` 295, `error` 293, `role` 230, `key` 226, `session` 220, `close` 219, `data` 169, `body` 128, `default` 123, `summary` 118, `run` 114, `headers` 102, `detail` 50, `dir` 47, `response` 35, `fixture` 22 — exceeds `impact.commonName = 10` and converts from a completeness reason into the `common-name` factor (`medium`), so D56 cannot introduce any new `low`; live execution on `/var/tmp/m2a2/omp-src` remains **NOT VERIFIED** here.)
+
+### 3. Snapshots (`PROPOSED` for owner review)
+
+All 11 snapshots are written under `tests/snapshots/impact/` and verified by `tests/core/impact-render.test.ts`:
+
+- `tests/snapshots/impact/C01.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C06.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C11.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C13.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C14.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C15.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C26.txt` (**PROPOSED**)
+- `tests/snapshots/impact/batch-3.txt` (**PROPOSED**)
+- `tests/snapshots/impact/over-budget.txt` (**PROPOSED**)
+- `tests/snapshots/impact/d51-parent.txt` (**PROPOSED**)
+- `tests/snapshots/impact/stale-index.txt` (**PROPOSED**)
+
+### 4. Live OMP smoke on `ksd-intelligence` (macOS Darwin 27.0.0 arm64, `omp/18.22.0`)
+
+Commands executed:
+
+```sh
+node dist/adapters/cli/main.js index --full
+omp -p --no-session --no-extensions --model claude-haiku-4-5 -e dist/adapters/omp/extension.js \
+  "Call the ei_impact tool three separate times (or once per target): 1) targets: ['Graph.incoming'], 2) targets: ['status'], 3) targets: ['calcFee']. Print each tool output verbatim."
+```
+
+Verbatim tool outputs from the live OMP run:
+
+```text
+IMPACT Graph.incoming — src/core/graph/graph.ts:44
+ACTION proceed · level low · picture complete
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Callers: none
+Tests: none
+Gaps: none
+Next: make your change and call ei_changes before you report done.
+— index fresh · 372 files · limits: 1 unbounded dynamic import, 175 excluded files · ts 5.9.3 · engine 0.1.0
+```
+
+```text
+AMBIGUOUS status — 4 declarations. Call again with one of:
+  src/core/engine/host.ts#EngineHost.status
+  src/core/kernel/types.ts#Completeness.status
+  src/core/workspace/scan.ts#CensusRecord.status
+  src/storage/sqlite.ts#FileRecord.status
+```
+
+```text
+NOT FOUND calcFee.
+If the symbol is new and unsaved, save the file and call again.
+```
+
+### 5. Whole-call latency and 1-file body-edit drift
+
+- **On `/var/tmp/m2a2/omp-src` (`oh-my-pi`):** **NOT VERIFIED** on this macOS machine (`/var/tmp/m2a2/omp-src` is absent).
+- **On `ksd-intelligence` (372 scanned files, 48 indexable files, 1,317 declarations, 2,852 edges) — VERIFIED on macOS arm64:**
+
+| Stage | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|
+| `probe` (`readFiles` + stat probe) | 20.20 | 24.10 | 30.46 |
+| `open` (`openPublished` + `new ImpactQuery`) | 2.23 | 2.62 | 3.53 |
+| `traverse` (`query.query`) | 0.26 | 0.79 | 1.10 |
+| `render` (`renderAnswer`) | 0.05 | 0.16 | 8.11 |
+| **Whole call (`total`)** | **22.79** | **27.44** | **42.90** |
+
+- **5,000-caller synthetic target (`tests/core/impact-render.test.ts`):** rendered within the 4,000-char budget in **3.52 ms** (< 300 ms).
+- **One-file body edit (`src/core/graph/graph.ts`) on `ksd-intelligence`:** took freshness row 3 ("Drift, this session can take the lock" → `index.state === 'updated'`, `updatedFiles === 1`, footer `— index updated (1 file) · 372 files · limits: 1 unbounded dynamic import, 175 excluded files · ts 5.9.3 · engine 0.1.0`), wall time **671.80 ms**.
+
+### 6. Local checks and mutation smoke
+
+```text
+npm test               tests 563 · suites 44 · pass 563 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 35 mutants (Round 1 K01–K08, B01–B02, G01–G06; D55 items 4–6; query-core controls Q01–Q06; Round 5 controls R1-M, R2-M, R3-M, R4-M, R6-M, R7-M; Round 3 rendering/tool controls R3-RenderStale, R3-Budget, R3-OneVerdict, R3-GuidanceError): **VERIFIED 35/35 killed, 0 survived**.
+
+
 

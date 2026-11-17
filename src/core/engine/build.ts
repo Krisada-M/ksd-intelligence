@@ -19,6 +19,7 @@ export interface BuildOptions {
   onProgress?: (message: string, data: unknown) => void;
   /** Time limit of the engine request; default 1 h. */
   timeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 /**
@@ -31,6 +32,9 @@ async function runLocked(
   args: Record<string, unknown>,
   options: BuildOptions,
 ): Promise<EngineOutcome> {
+  if (options.signal?.aborted) {
+    return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+  }
   const typescript = await resolveTypescript({
     version: pinnedTypescriptVersion(),
     cacheHome: options.cacheHome,
@@ -39,6 +43,9 @@ async function runLocked(
   });
   if (!typescript.ok) {
     return { ok: false, code: 'degraded', message: typescript.reason, fix: typescript.fix };
+  }
+  if (options.signal?.aborted) {
+    return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
   }
 
   await mkdir(workspace.cacheDir, { recursive: true, mode: 0o700 });
@@ -56,11 +63,21 @@ async function runLocked(
     };
   }
 
+  const runtime = await chooseRuntime(options.env);
+  if (options.signal?.aborted) {
+    lock.release();
+    return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+  }
   const host = createEngineHost({
-    runtime: await chooseRuntime(options.env),
+    runtime,
     memoryLimitMb: memoryLimitMb(workspace.config.impact.maxMemoryMb),
     env: options.env,
   });
+  const onAbort = (): void => {
+    void host.stop();
+  };
+  options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
   try {
     const reply = await host.request(
       op,
@@ -72,6 +89,9 @@ async function runLocked(
       },
       { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS },
     );
+    if (options.signal?.aborted) {
+      return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+    }
     if (reply.ok && isRecord(reply.value)) return { ok: true, value: reply.value };
     if (reply.ok) {
       return { ok: false, code: 'index-failed', message: 'engine reply is not an object', fix: '' };
@@ -84,6 +104,7 @@ async function runLocked(
           : `retry once: ei ${op}`;
     return { ok: false, code: 'index-failed', message: reply.message, fix };
   } finally {
+    options.signal?.removeEventListener('abort', onAbort);
     await host.stop();
     lock.release();
   }

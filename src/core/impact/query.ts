@@ -25,6 +25,9 @@ export interface FileImpactResult {
   results: ImpactResult[];
   /** Other non-module indexed declarations, including exports with no users outside the file. */
   remainder: number;
+  limits?: ImpactLimits;
+  engine?: ImpactResult['engine'];
+  scannedFiles?: number;
 }
 
 export type ImpactAnswer = Outcome<ImpactResult | FileImpactResult> & {
@@ -155,6 +158,7 @@ export class ImpactQuery {
   /** Entry files of workspace packages: loaded directly, never "unimported" (D55). */
   private readonly entryFiles = new Set<string>();
   private readonly limits: ImpactLimits;
+  private readonly scannedFiles: number;
   private readonly nodeBudget: number;
   private readonly markers = new Map<string, Set<string>>();
   private readonly boundaryCache = new Map<string, string[]>();
@@ -278,6 +282,7 @@ export class ImpactQuery {
     this.publicSurface(packages, indexable);
     this.readContainers();
     this.limits = repositoryLimits(db);
+    this.scannedFiles = this.packageOf.size;
   }
 
   private classify(gap: Gap, indexable: readonly string[]): void {
@@ -416,17 +421,21 @@ export class ImpactQuery {
       }
     }
     found.push(...(this.byFile.get(decl.file) ?? []));
-    for (const row of this.statements.implements.all(decl.key)) {
-      found.push(...(this.byInterface.get(String(row.key)) ?? []));
+    if (this.byInterface.size > 0) {
+      for (const row of this.statements.implements.all(decl.key)) {
+        found.push(...(this.byInterface.get(String(row.key)) ?? []));
+      }
     }
-    // A computed access on an object reads its members and the values stored in them.
-    const owners = new Set([decl.key, ...ancestors(decl.key)]);
-    for (const edge of this.incoming(decl.key)) {
-      if (edge.kind !== 'REFERENCES') continue;
-      owners.add(edge.source);
-      for (const key of ancestors(edge.source)) owners.add(key);
+    if (this.byOwner.size > 0) {
+      // A computed access on an object reads its members and the values stored in them.
+      const owners = new Set([decl.key, ...ancestors(decl.key)]);
+      for (const edge of this.incoming(decl.key)) {
+        if (edge.kind !== 'REFERENCES') continue;
+        owners.add(edge.source);
+        for (const key of ancestors(edge.source)) owners.add(key);
+      }
+      for (const owner of owners) found.push(...(this.byOwner.get(owner) ?? []));
     }
-    for (const owner of owners) found.push(...(this.byOwner.get(owner) ?? []));
     return found;
   }
 
@@ -593,6 +602,9 @@ export class ImpactQuery {
         file,
         results: used.map((decl) => this.impactOf(decl.key, depth, false)),
         remainder: declarations.length - used.length,
+        limits: { ...this.limits },
+        engine: { ...this.engine },
+        scannedFiles: this.scannedFiles,
       },
     };
   }
@@ -671,20 +683,27 @@ export class ImpactQuery {
     const byDepth: ImpactNode[][] = [];
     const listed: Declaration[] = [];
     for (const level of listing.levels) {
+      const includeNodes = byDepth.length < depth;
       const nodes: ImpactNode[] = [];
       for (const { key: source, edge } of level) {
         const decl = this.get(source);
         if (decl === undefined) throw new Error(`indexed declaration missing: ${source}`);
         listed.push(decl);
-        nodes.push({
-          symbol: source,
-          via: edge.kind,
-          strength: edge.strength,
-          span: { file: decl.file, startLine: decl.start, endLine: decl.end },
-          ...(this.userHidingGaps(decl).length > 0 ? { gapScoped: true } : {}),
-        });
+        if (includeNodes) {
+          const isRoute = matchAny(this.impact.routes, decl.file);
+          const nodeBoundaries = this.boundaries(decl.file);
+          nodes.push({
+            symbol: source,
+            via: edge.kind,
+            strength: edge.strength,
+            span: { file: decl.file, startLine: decl.start, endLine: decl.end },
+            ...(this.userHidingGaps(decl).length > 0 ? { gapScoped: true } : {}),
+            ...(isRoute ? { route: true } : {}),
+            ...(nodeBoundaries.length > 0 ? { boundaries: nodeBoundaries } : {}),
+          });
+        }
       }
-      byDepth.push(nodes);
+      if (includeNodes) byDepth.push(nodes);
     }
 
     const reached = compiler.levels.flat().map((item) => item.key);
@@ -725,13 +744,15 @@ export class ImpactQuery {
     );
     return {
       target: key,
-      byDepth: byDepth.slice(0, depth),
+      span: { file: target.file, startLine: target.start, endLine: target.end },
+      byDepth,
       bridged: [],
       tests: [...tests].sort(),
       completeness: { status: incomplete ? 'partial' : 'complete', reasons: sortedReasons },
       reach,
       factors,
       limits: { ...this.limits },
+      scannedFiles: this.scannedFiles,
       verdict: {
         level: incomplete ? 'unknown' : factors.length > 0 ? 'medium' : 'low',
         action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',
