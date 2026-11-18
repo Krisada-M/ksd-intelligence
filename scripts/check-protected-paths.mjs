@@ -6,7 +6,10 @@ export const PROTECTED = [
   { prefix: 'tests/golden/', why: 'owner-confirmed oracle (golden cases and policies)' },
   { prefix: 'src/policy/', why: 'KSD policy module, frozen contract' },
   { prefix: 'tests/policy/', why: 'KSD policy tests and snapshots, frozen contract' },
-  { prefix: 'tests/snapshots/', why: 'tool output snapshots; a change needs the owner to look at it' },
+  {
+    prefix: 'tests/snapshots/',
+    why: 'tool output snapshots; a change needs the owner to look at it',
+  },
 ];
 
 export function protectedChanges(paths) {
