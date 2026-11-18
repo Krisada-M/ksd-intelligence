@@ -76,7 +76,10 @@ export function createEngineHost(options) {
         if (!pending || message.type === 'request')
             return;
         if (message.type === 'progress') {
-            pending.onProgress?.(message.message, message.data);
+            const data = typeof message.data === 'object' && message.data !== null
+                ? { ...message.data, pid: child.proc.pid }
+                : { value: message.data, pid: child.proc.pid };
+            pending.onProgress?.(message.message, data);
             return;
         }
         clearTimeout(pending.timer);

@@ -70,6 +70,10 @@ export interface ImpactNode {
   span: Span;
   /** This caller has scoped gaps of its own; it does not change the target's picture (D54). */
   gapScoped?: boolean;
+  /** This caller is in a file matched by `impact.routes`. */
+  route?: boolean;
+  /** Boundary markers (`boundary:sql`, `boundary:native`) on this caller's file. */
+  boundaries?: string[];
   /** Set on bridged edges. */
   synthesizedBy?: string;
   /** Set on bridged edges. */
@@ -89,6 +93,8 @@ export interface ImpactLimits {
 export interface ImpactResult {
   /** "<repo-relative path>#<qualified name>" (ADR 0002). */
   target: string;
+  /** Declaration span of `target` in the index. */
+  span?: Span;
   /** Display limited by depth; analysis is always full. */
   byDepth: ImpactNode[][];
   /** Heuristic bridge edges (M4); never mixed into byDepth. */
@@ -99,6 +105,8 @@ export interface ImpactResult {
   factors: string[];
   /** Repository limits carried in `details` and the footer; they never change the verdict. */
   limits: ImpactLimits;
+  /** Total scanned files in the repository census (for the footer). */
+  scannedFiles?: number;
   verdict: Verdict;
   freshness: { workingTreeHash: string; includesUntracked: boolean };
   engine: EngineStamp;
@@ -109,6 +117,7 @@ export type FactorCode =
   | 'route'
   | 'cross-package'
   | 'many-callers'
+  | 'common-name'
   | 'boundary:sql'
   | 'boundary:native';
 

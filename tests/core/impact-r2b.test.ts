@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmodSync } from 'node:fs';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import type { DatabaseSync } from 'node:sqlite';
@@ -8,6 +11,7 @@ import { Indexer } from '../../src/core/indexing/indexer.js';
 import { ImpactQuery, type ImpactAnswer } from '../../src/core/impact/query.js';
 import type { ImpactConfig } from '../../src/core/kernel/config.js';
 import type { ImpactResult } from '../../src/core/kernel/types.js';
+import { initProject } from '../../src/core/workspace/init.js';
 import { fixtureRepo, impactOf } from './index-helpers.js';
 import { openPublished } from '../../src/storage/sqlite.js';
 
@@ -356,5 +360,220 @@ describe('D55 items 6 and 7 — value flow into containers and arrays', () => {
     assert.ok(!reason(a, 'computed-member-access'));
     assert.equal(a.completeness.status, 'complete');
     assert.equal(a.reach.total, 2);
+  });
+});
+
+describe('D56 / G15 — common-name factor', () => {
+  const USE = 'packages/api/src/use-common.ts';
+  let db: DatabaseSync;
+  let config: ImpactConfig;
+  let close: () => Promise<void>;
+
+  before(async () => {
+    const files: Record<string, string> = {
+      [USE]: [
+        'export function runLoose(obj: any): string {',
+        '  obj.common();',
+        '  obj.common();',
+        '  const s1: string = "common";',
+        '  const s2: string = "rare";',
+        '  return s1 + s2;',
+        '}',
+      ].join('\n'),
+      [`${SHARED}/rare.ts`]: 'export function rare(): number { return 1; }\n',
+    };
+    for (let i = 0; i < 11; i++) {
+      files[`${SHARED}/common-${i}.ts`] = `export function common(): number { return ${i}; }\n`;
+    }
+    ({ db, config, close } = await copyIndex('r5-common-name', files));
+  });
+  after(async () => await close());
+
+  it('a name shared by more than commonName declarations gets the common-name factor and stays complete', () => {
+    const c0 = result(new ImpactQuery(db, config).query(`${SHARED}/common-0.ts#common`, 10));
+    assert.equal(c0.completeness.status, 'complete');
+    assert.ok(!reason(c0, 'unresolved-name-match'));
+    assert.ok(!reason(c0, 'string-name-match'));
+    assert.ok(c0.factors.includes('common-name'));
+    assert.equal(c0.verdict.level, 'medium');
+    assert.equal(c0.verdict.action, 'run-tests');
+    assert.ok(
+      c0.verdict.basis.includes(
+        'common-name: 11 declarations named "common"; 2 untyped uses, 1 equal strings not attributed',
+      ),
+      JSON.stringify(c0.verdict.basis),
+    );
+  });
+
+  it('at the threshold (commonName = 11) the name keeps its completeness reasons and site lists', () => {
+    const c0 = result(
+      new ImpactQuery(db, { ...config, commonName: 11 }).query(`${SHARED}/common-0.ts#common`, 10),
+    );
+    assert.equal(c0.completeness.status, 'partial');
+    assert.ok(reason(c0, 'unresolved-name-match'));
+    assert.ok(reason(c0, 'string-name-match'));
+    assert.ok(!c0.factors.includes('common-name'));
+    assert.equal(c0.verdict.level, 'unknown');
+    assert.equal(c0.verdict.action, 'check-gaps');
+  });
+
+  it('a rare name stays partial with its site list', () => {
+    const rare = result(new ImpactQuery(db, config).query(`${SHARED}/rare.ts#rare`, 10));
+    assert.equal(rare.completeness.status, 'partial');
+    assert.ok(reason(rare, 'string-name-match'));
+    assert.ok(!rare.factors.includes('common-name'));
+    assert.equal(rare.verdict.level, 'unknown');
+  });
+});
+
+describe('D57 / W1 — default scope and out-of-scope lexical name scan', () => {
+  it('reproduces W1: src/ function called only from tests/ is never low/complete under ei init defaults', async () => {
+    const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-w1-repro-')));
+    const repo = join(work, 'repo');
+    const cache = join(work, 'cache');
+    try {
+      await mkdir(join(repo, 'src'), { recursive: true });
+      await mkdir(join(repo, 'tests'), { recursive: true });
+      await writeFile(
+        join(repo, 'tsconfig.json'),
+        JSON.stringify({
+          compilerOptions: {
+            target: 'ES2022',
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            strict: true,
+          },
+          include: ['src'],
+        }),
+      );
+      await writeFile(
+        join(repo, 'tests/tsconfig.json'),
+        JSON.stringify({
+          extends: '../tsconfig.json',
+          include: ['../src', './**/*.ts'],
+        }),
+      );
+      await writeFile(
+        join(repo, 'src/graph.ts'),
+        'export class Graph {\n  incoming(): number { return 1; }\n}\n',
+      );
+      await writeFile(
+        join(repo, 'tests/graph.test.ts'),
+        "import { Graph } from '../src/graph.js';\nexport function verifyIncoming(): number { return new Graph().incoming(); }\n",
+      );
+      execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'init', '-q']);
+      execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '-A']);
+      execFileSync('git', [
+        '-C',
+        repo,
+        '-c',
+        'user.email=t@t',
+        '-c',
+        'user.name=t',
+        'commit',
+        '-qm',
+        'init',
+      ]);
+
+      const initialized = await initProject({ root: repo, cacheHome: work, dryRun: true });
+      const report = await new Indexer(ts, repo, cache).index({
+        impact: initialized.config.impact,
+        full: true,
+        freshness: 'hash',
+      });
+      assert.deepEqual(report.problems, []);
+      const db = openPublished(cache);
+      assert.ok(db);
+      try {
+        const impact = result(
+          new ImpactQuery(db, initialized.config.impact).query('Graph.incoming'),
+        );
+        const hasTestCaller =
+          impact.byDepth[0]?.some((n) => n.symbol === 'tests/graph.test.ts#verifyIncoming') &&
+          impact.tests.includes('tests/graph.test.ts');
+        const isPartialWithMatch =
+          impact.completeness.status === 'partial' &&
+          linesOf(impact, 'unresolved-name-match', 'tests/graph.test.ts').includes(2);
+        assert.ok(
+          hasTestCaller || isPartialWithMatch,
+          `expected test caller or partial match, got: ${JSON.stringify(impact)}`,
+        );
+        assert.ok(
+          !(impact.verdict.level === 'low' && impact.reach.total === 0),
+          'must never be low with zero callers when called from tests/',
+        );
+        assert.ok(hasTestCaller, 'ei init default include must include tests/**');
+      } finally {
+        db.close();
+      }
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('lexically scans out-of-scope and owner-excluded code files, never reads node_modules or secret .json, and applies common-name', async () => {
+    const files: Record<string, string> = {
+      'ei.config.json': JSON.stringify({
+        impact: {
+          include: ['packages/**', 'apps/**'],
+          exclude: ['**/dist/**', 'packages/api/src/generated/**'],
+          freshness: 'hash',
+        },
+      }),
+      'tests/outside-caller.ts':
+        'export function callOutside(x: any) { x.localOnly(); x.sharedCommon(); }\n',
+      'packages/api/src/generated/client.ts': 'export function gen(x: any) { x.unusedHelper(); }\n',
+      'packages/api/src/secrets/credentials.json': '{"secret":"cycle-a","a":"a"}\n',
+    };
+    for (let i = 0; i < 11; i++) {
+      files[`${SHARED}/shared-common-${i}.ts`] =
+        `export function sharedCommon(): number { return ${i}; }\n`;
+    }
+    const { repo, db, config, close } = await copyIndex('d57-lexical-scope', files, async (r) => {
+      // Unreadable node_modules and secret-named .json: reading either would throw EACCES.
+      await mkdir(join(r, 'node_modules/pkg'), { recursive: true });
+      await writeFile(
+        join(r, 'node_modules/pkg/index.ts'),
+        'export function nm(x: any) { x.a(); }\n',
+      );
+      if (process.getuid?.() !== 0) {
+        chmodSync(join(r, 'node_modules/pkg/index.ts'), 0o000);
+        chmodSync(join(r, 'packages/api/src/secrets/credentials.json'), 0o000);
+      }
+    });
+    try {
+      const q = new ImpactQuery(db, config);
+
+      // 1. Target matched only in out-of-scope tests/outside-caller.ts is partial, never complete/low.
+      const local = result(q.query(`${PAY}/fee.ts#localOnly`, 10));
+      assert.equal(local.completeness.status, 'partial');
+      assert.equal(local.verdict.level, 'unknown');
+      assert.ok(linesOf(local, 'unresolved-name-match', 'tests/outside-caller.ts').includes(1));
+
+      // 2. Target matched in owner-excluded generated/ file is partial.
+      const helper = result(q.query(`${PAY}/fee.ts#unusedHelper`, 10));
+      assert.equal(helper.completeness.status, 'partial');
+      assert.equal(helper.verdict.level, 'unknown');
+      assert.ok(
+        linesOf(helper, 'unresolved-name-match', 'packages/api/src/generated/client.ts').includes(
+          1,
+        ),
+      );
+
+      // 3. node_modules and secret-named .json were never read; cycle-a#a stays complete/low.
+      const a = result(q.query(`${PAY}/cycle-a.ts#a`, 10));
+      assert.equal(a.completeness.status, 'complete');
+      assert.equal(a.verdict.level, 'low');
+
+      // 4. Name shared by > commonName declarations matched in out-of-scope file gives common-name, not reason.
+      const common = result(q.query(`${SHARED}/shared-common-0.ts#sharedCommon`, 10));
+      assert.equal(common.completeness.status, 'complete');
+      assert.ok(!reason(common, 'unresolved-name-match'));
+      assert.ok(common.factors.includes('common-name'));
+      assert.equal(common.verdict.level, 'medium');
+      assert.ok(repo);
+    } finally {
+      await close();
+    }
   });
 });

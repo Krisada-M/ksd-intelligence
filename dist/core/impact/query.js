@@ -98,6 +98,7 @@ export class ImpactQuery {
     /** Entry files of workspace packages: loaded directly, never "unimported" (D55). */
     entryFiles = new Set();
     limits;
+    scannedFiles;
     nodeBudget;
     markers = new Map();
     boundaryCache = new Map();
@@ -122,6 +123,7 @@ export class ImpactQuery {
             implements: db.prepare(`SELECT t.key FROM edges e JOIN symbols s ON s.id = e.source JOIN symbols t ON t.id = e.target
          WHERE s.key = ? AND e.kind = 'IMPLEMENTS'`),
             tokens: db.prepare("SELECT file, lines FROM name_tokens WHERE name = ? AND kind = 'str' ORDER BY file"),
+            nameCount: db.prepare("SELECT COUNT(*) AS n FROM declarations WHERE simple = ? AND name != '<module>'"),
             imports: db.prepare('SELECT specifier FROM external_imports WHERE file = ?'),
             census: db.prepare('SELECT status, reason FROM files WHERE path = ?'),
             lines: db.prepare('SELECT lines FROM file_index WHERE file = ?'),
@@ -189,6 +191,7 @@ export class ImpactQuery {
         this.publicSurface(packages, indexable);
         this.readContainers();
         this.limits = repositoryLimits(db);
+        this.scannedFiles = this.packageOf.size;
     }
     classify(gap, indexable) {
         const push = (map, key) => {
@@ -304,9 +307,12 @@ export class ImpactQuery {
         }
         return edges;
     }
-    /** Gap sites and unresolved records whose scope covers `decl` (golden P4). */
-    gapsOf(decl) {
-        const found = [...this.everywhere];
+    /**
+     * Gaps that hide users of `decl` itself: `computed-member-access`, `interface-dispatch` and
+     * `dynamic-import`/`cjs-require` in scope. Not name matches and not repository-wide gaps (R2, D56).
+     */
+    userHidingGaps(decl) {
+        const found = [];
         if (decl.exported) {
             found.push(...this.unmatchedPrefix);
             for (const gap of this.byPrefix)
@@ -321,28 +327,44 @@ export class ImpactQuery {
             }
         }
         found.push(...(this.byFile.get(decl.file) ?? []));
-        for (const row of this.statements.implements.all(decl.key)) {
-            found.push(...(this.byInterface.get(String(row.key)) ?? []));
+        if (this.byInterface.size > 0) {
+            for (const row of this.statements.implements.all(decl.key)) {
+                found.push(...(this.byInterface.get(String(row.key)) ?? []));
+            }
         }
-        // A computed access on an object reads its members and the values stored in them.
-        const owners = new Set([decl.key, ...ancestors(decl.key)]);
-        for (const edge of this.incoming(decl.key)) {
-            if (edge.kind !== 'REFERENCES')
-                continue;
-            owners.add(edge.source);
-            for (const key of ancestors(edge.source))
-                owners.add(key);
+        if (this.byOwner.size > 0) {
+            // A computed access on an object reads its members and the values stored in them.
+            const owners = new Set([decl.key, ...ancestors(decl.key)]);
+            for (const edge of this.incoming(decl.key)) {
+                if (edge.kind !== 'REFERENCES')
+                    continue;
+                owners.add(edge.source);
+                for (const key of ancestors(edge.source))
+                    owners.add(key);
+            }
+            for (const owner of owners)
+                found.push(...(this.byOwner.get(owner) ?? []));
         }
-        for (const owner of owners)
-            found.push(...(this.byOwner.get(owner) ?? []));
-        for (const record of this.unresolvedByName.get(decl.simple) ?? [])
-            found.push(record);
+        return found;
+    }
+    /**
+     * Gap sites and unresolved records whose scope covers `decl` (golden P4).
+     * When `decl.simple` is shared by more than `impact.commonName` declarations and has name-match
+     * sites, those sites become the `common-name` factor instead of completeness reasons (D56, G15).
+     */
+    gapsOf(decl) {
+        const found = [...this.everywhere, ...this.userHidingGaps(decl)];
+        const unresolved = this.unresolvedByName.get(decl.simple) ?? [];
+        const unresolvedImports = unresolved.filter((gap) => gap.code === 'unresolved-import');
+        const untypedUses = unresolved.filter((gap) => gap.code === 'unresolved-name-match');
+        found.push(...unresolvedImports);
+        const stringMatches = [];
         for (const row of this.statements.tokens.all(decl.simple)) {
             const lines = JSON.parse(String(row.lines));
             if (!Array.isArray(lines))
                 continue;
             for (const line of lines) {
-                found.push({
+                stringMatches.push({
                     file: String(row.file),
                     line: Number(line),
                     code: 'string-name-match',
@@ -350,7 +372,17 @@ export class ImpactQuery {
                 });
             }
         }
-        return found;
+        if (untypedUses.length + stringMatches.length > 0) {
+            const shared = Number(this.statements.nameCount.get(decl.simple)?.n ?? 0);
+            if (shared > (this.impact.commonName ?? 10)) {
+                return {
+                    gaps: found,
+                    commonNameBasis: `common-name: ${shared.toLocaleString('en-US')} declarations named "${decl.simple}"; ${untypedUses.length.toLocaleString('en-US')} untyped uses, ${stringMatches.length.toLocaleString('en-US')} equal strings not attributed`,
+                };
+            }
+            found.push(...untypedUses, ...stringMatches);
+        }
+        return { gaps: found, commonNameBasis: null };
     }
     boundaries(file) {
         let found = this.boundaryCache.get(file);
@@ -410,14 +442,16 @@ export class ImpactQuery {
         }
         let match = this.graph.symbol(asked);
         let parentTarget;
-        // D51: a member of an anonymous object type answers for its nearest indexed parent property.
+        // D51: a member of an anonymous object type or an object literal deeper than ADR 0003's
+        // 3-level limit answers for its nearest indexed parent (property or variable).
         if (match.kind === 'not-found' &&
             atLine === null &&
             (asked.includes('#') || !asked.includes('/'))) {
             for (let parent = asked; parent.includes('.') && parentTarget === undefined;) {
                 parent = parent.slice(0, parent.lastIndexOf('.'));
                 const found = this.graph.symbol(parent);
-                if (found.kind === 'found' && this.get(found.key)?.kind === 'property') {
+                const kind = found.kind === 'found' ? this.get(found.key)?.kind : undefined;
+                if (found.kind === 'found' && (kind === 'property' || kind === 'variable')) {
                     match = found;
                     parentTarget = found.key;
                 }
@@ -466,6 +500,9 @@ export class ImpactQuery {
                 file,
                 results: used.map((decl) => this.impactOf(decl.key, depth, false)),
                 remainder: declarations.length - used.length,
+                limits: { ...this.limits },
+                engine: { ...this.engine },
+                scannedFiles: this.scannedFiles,
             },
         };
     }
@@ -532,8 +569,9 @@ export class ImpactQuery {
         const listing = this.traverse(key, true);
         // DESIGN §7.2: reach is over compiler-grade edges only, so a path through a heuristic hop is out.
         const compiler = this.traverse(key, false);
+        const { gaps: targetGaps, commonNameBasis } = this.gapsOf(target);
         const reasons = new Set();
-        for (const gap of this.gapsOf(target))
+        for (const gap of targetGaps)
             reasons.add(`${gap.code}: ${gap.file}:${gap.line} — ${gap.detail}`);
         if (anonymous)
             reasons.add(ANONYMOUS_REASON);
@@ -542,21 +580,29 @@ export class ImpactQuery {
         const byDepth = [];
         const listed = [];
         for (const level of listing.levels) {
+            const includeNodes = byDepth.length < depth;
             const nodes = [];
             for (const { key: source, edge } of level) {
                 const decl = this.get(source);
                 if (decl === undefined)
                     throw new Error(`indexed declaration missing: ${source}`);
                 listed.push(decl);
-                nodes.push({
-                    symbol: source,
-                    via: edge.kind,
-                    strength: edge.strength,
-                    span: { file: decl.file, startLine: decl.start, endLine: decl.end },
-                    ...(this.gapsOf(decl).length > 0 ? { gapScoped: true } : {}),
-                });
+                if (includeNodes) {
+                    const isRoute = matchAny(this.impact.routes, decl.file);
+                    const nodeBoundaries = this.boundaries(decl.file);
+                    nodes.push({
+                        symbol: source,
+                        via: edge.kind,
+                        strength: edge.strength,
+                        span: { file: decl.file, startLine: decl.start, endLine: decl.end },
+                        ...(this.userHidingGaps(decl).length > 0 ? { gapScoped: true } : {}),
+                        ...(isRoute ? { route: true } : {}),
+                        ...(nodeBoundaries.length > 0 ? { boundaries: nodeBoundaries } : {}),
+                    });
+                }
             }
-            byDepth.push(nodes);
+            if (includeNodes)
+                byDepth.push(nodes);
         }
         const reached = compiler.levels.flat().map((item) => item.key);
         const reachedFiles = new Set(reached.map((source) => source.slice(0, source.indexOf('#'))));
@@ -568,7 +614,8 @@ export class ImpactQuery {
             files: reachedFiles.size,
             packages: packages.size,
             crossPackage: [...packages].some((pkg) => pkg !== targetPackage),
-            routes: reached.filter((source) => matchAny(this.impact.routes, source.slice(0, source.indexOf('#')))).length,
+            // Count distinct route files until M4a provides route records (R7).
+            routes: [...reachedFiles].filter((file) => matchAny(this.impact.routes, file)).length,
         };
         // golden P2 over the target and every listed symbol: factors may only raise the level.
         const involved = [target, ...listed];
@@ -581,6 +628,8 @@ export class ImpactQuery {
             factors.push('cross-package');
         if (reach.total >= this.impact.manyCallers)
             factors.push('many-callers');
+        if (commonNameBasis !== null)
+            factors.push('common-name');
         const boundaries = new Set(involved.flatMap((decl) => this.boundaries(decl.file)));
         for (const kind of ['boundary:sql', 'boundary:native'])
             if (boundaries.has(kind))
@@ -590,21 +639,24 @@ export class ImpactQuery {
             tests.add(String(row.file));
         const sortedReasons = [...reasons].sort();
         const incomplete = sortedReasons.length > 0;
+        const factorBasis = factors.map((factor) => factor === 'common-name' && commonNameBasis !== null ? commonNameBasis : factor);
         return {
             target: key,
-            byDepth: byDepth.slice(0, depth),
+            span: { file: target.file, startLine: target.start, endLine: target.end },
+            byDepth,
             bridged: [],
             tests: [...tests].sort(),
             completeness: { status: incomplete ? 'partial' : 'complete', reasons: sortedReasons },
             reach,
             factors,
             limits: { ...this.limits },
+            scannedFiles: this.scannedFiles,
             verdict: {
                 level: incomplete ? 'unknown' : factors.length > 0 ? 'medium' : 'low',
                 action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',
                 zones: [],
                 requiredActions: [],
-                basis: [...sortedReasons, ...factors],
+                basis: [...sortedReasons, ...factorBasis],
             },
             freshness: { ...this.freshness },
             engine: { ...this.engine },

@@ -11,6 +11,9 @@ const OWNER_COMMAND_MS = 60 * 60_000;
  * held. Only the lock holder starts a child (D35); the child is stopped afterwards.
  */
 async function runLocked(workspace, op, args, options) {
+    if (options.signal?.aborted) {
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+    }
     const typescript = await resolveTypescript({
         version: pinnedTypescriptVersion(),
         cacheHome: options.cacheHome,
@@ -19,6 +22,9 @@ async function runLocked(workspace, op, args, options) {
     });
     if (!typescript.ok) {
         return { ok: false, code: 'degraded', message: typescript.reason, fix: typescript.fix };
+    }
+    if (options.signal?.aborted) {
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
     }
     await mkdir(workspace.cacheDir, { recursive: true, mode: 0o700 });
     await chmod(workspace.cacheDir, 0o700);
@@ -34,11 +40,22 @@ async function runLocked(workspace, op, args, options) {
             fix: 'wait for it to publish, then run: ei status',
         };
     }
+    const runtime = await chooseRuntime(options.env);
+    if (options.signal?.aborted) {
+        lock.release();
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+    }
     const host = createEngineHost({
-        runtime: await chooseRuntime(options.env),
+        runtime,
         memoryLimitMb: memoryLimitMb(workspace.config.impact.maxMemoryMb),
         env: options.env,
     });
+    const onAbort = () => {
+        void host.stop();
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted)
+        onAbort();
     try {
         const reply = await host.request(op, {
             ...args,
@@ -46,6 +63,9 @@ async function runLocked(workspace, op, args, options) {
             cacheDir: workspace.cacheDir,
             typescriptPath: typescript.runtime.path,
         }, { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS });
+        if (options.signal?.aborted) {
+            return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+        }
         if (reply.ok && isRecord(reply.value))
             return { ok: true, value: reply.value };
         if (reply.ok) {
@@ -59,6 +79,7 @@ async function runLocked(workspace, op, args, options) {
         return { ok: false, code: 'index-failed', message: reply.message, fix };
     }
     finally {
+        options.signal?.removeEventListener('abort', onAbort);
         await host.stop();
         lock.release();
     }

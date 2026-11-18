@@ -1,0 +1,11 @@
+IMPACT Usage.cost.input (nearest indexed parent packages/shared/src/anonymous.ts#Usage.cost) — packages/shared/src/anonymous.ts:1
+ACTION check-gaps · level unknown · picture partial (1 gap)
+REACH 1 direct · 1 total · 1 file · 1 package · 0 routes · factors: none
+
+Callers, depth 1 (1)
+  packages/shared/src/anonymous.ts:2  costOf  REFERENCES
+Tests: none
+Gaps (1)
+  outside-index-scope packages/shared/src/anonymous.ts:1 — member of an anonymous object type is not indexed; reads through an alias of the parent type or a generic key may be missing
+Next: check the listed gap sites before relying on the caller list, and call ei_changes before you report done.
+— index fresh · 27 files · ts 5.9.3 · engine 0.1.0

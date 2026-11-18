@@ -33,6 +33,7 @@ export function defaultConfig(inferred) {
             freshness: 'stat',
             watch: true,
             manyCallers: 10,
+            commonName: 10,
             useWorkspaceTypescript: false,
             maxMemoryMb: null,
         },
@@ -93,6 +94,9 @@ function parseImpact(section, fallback, errors) {
     const manyCallers = typeof section.manyCallers === 'number' && section.manyCallers > 0
         ? section.manyCallers
         : fallback.manyCallers;
+    const commonName = typeof section.commonName === 'number' && section.commonName > 0
+        ? section.commonName
+        : fallback.commonName;
     const useWorkspaceTypescript = typeof section.useWorkspaceTypescript === 'boolean'
         ? section.useWorkspaceTypescript
         : fallback.useWorkspaceTypescript;
@@ -127,6 +131,10 @@ function parseImpact(section, fallback, errors) {
         (typeof section.manyCallers !== 'number' || section.manyCallers <= 0)) {
         errors.push('impact.manyCallers must be positive number');
     }
+    if (section.commonName !== undefined &&
+        (typeof section.commonName !== 'number' || section.commonName <= 0)) {
+        errors.push('impact.commonName must be positive number');
+    }
     if (section.useWorkspaceTypescript !== undefined &&
         typeof section.useWorkspaceTypescript !== 'boolean') {
         errors.push('impact.useWorkspaceTypescript must be boolean');
@@ -145,6 +153,7 @@ function parseImpact(section, fallback, errors) {
         freshness,
         watch,
         manyCallers,
+        commonName,
         useWorkspaceTypescript,
         maxMemoryMb,
     };

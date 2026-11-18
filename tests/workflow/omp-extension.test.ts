@@ -14,6 +14,9 @@ interface MockSchema {
   keys?: string[];
   optional(): MockSchema;
   describe(text: string): MockSchema;
+  int(): MockSchema;
+  min(value: number): MockSchema;
+  max(value: number): MockSchema;
 }
 
 function schema(kind: string, values?: readonly string[], keys?: string[]): MockSchema {
@@ -23,6 +26,9 @@ function schema(kind: string, values?: readonly string[], keys?: string[]): Mock
     ...(keys ? { keys } : {}),
     optional: () => self,
     describe: () => self,
+    int: () => self,
+    min: () => self,
+    max: () => self,
   };
   return self;
 }
@@ -37,6 +43,8 @@ function mockPi(): {
   const pi: OmpExtensionApi = {
     zod: {
       string: () => schema('string'),
+      number: () => schema('number'),
+      array: () => schema('array'),
       enum: (values) => schema('enum', values),
       object: (shape) => schema('object', undefined, Object.keys(shape)),
     },
@@ -47,7 +55,7 @@ function mockPi(): {
   return { pi, registered };
 }
 
-it('registers read-only ei_workflow and ei_status tools', () => {
+it('registers read-only ei_workflow, ei_status and ei_impact tools', () => {
   const { pi, registered } = mockPi();
   extension(pi, { env: {}, createPolicyExtension: noPolicy });
   assert.deepEqual(
@@ -55,11 +63,15 @@ it('registers read-only ei_workflow and ei_status tools', () => {
     [
       ['ei_workflow', 'read'],
       ['ei_status', 'read'],
+      ['ei_impact', 'read'],
     ],
   );
   const params = registered[1]?.parameters;
   assert.ok(params && 'keys' in params);
   assert.deepEqual(params.keys, [], 'ei_status takes no input');
+  const impactParams = registered[2]?.parameters;
+  assert.ok(impactParams && 'keys' in impactParams);
+  assert.deepEqual(impactParams.keys, ['targets', 'depth']);
 });
 
 it('EI_DISABLED=1 skips the ei_* tools only', () => {
@@ -85,7 +97,7 @@ it('a failing policy module does not prevent the ei_* tools from registering', (
   });
   assert.deepEqual(
     registered.map((tool) => tool.name),
-    ['ei_workflow', 'ei_status'],
+    ['ei_workflow', 'ei_status', 'ei_impact'],
   );
 });
 

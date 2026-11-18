@@ -1,0 +1,53 @@
+{
+  "skills": {
+    "enabled": true
+  },
+  "impact": {
+    "enabled": true,
+    "include": [
+      "src/**",
+      "tests/**"
+    ],
+    "exclude": [
+      "**/dist/**"
+    ],
+    "routes": [],
+    "maxDepth": 10,
+    "freshness": "stat",
+    "watch": true,
+    "manyCallers": 10,
+    "commonName": 10,
+    "useWorkspaceTypescript": false,
+    "maxMemoryMb": null
+  },
+  "bridges": {
+    "B1": true,
+    "B2": true,
+    "B3": true,
+    "B4": true,
+    "B5": true,
+    "B6": true
+  },
+  "search": {
+    "enabled": true,
+    "semantic": false
+  },
+  "riskZones": "default",
+  "context": {
+    "enabled": false
+  },
+  "compression": {
+    "enabled": false
+  },
+  "knowledge": {
+    "enabled": false
+  },
+  "verification": {
+    "enabled": false
+  },
+  "gitlab": {
+    "enabled": false,
+    "host": "https://gitlab.example.com",
+    "project": "group/repo"
+  }
+}

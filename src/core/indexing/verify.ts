@@ -56,9 +56,13 @@ export function verifyIndex(db: DatabaseSync, expected: TableCounts): string[] {
     'index records for files that are not indexable',
     `SELECT COUNT(*) AS n FROM file_index i LEFT JOIN files f ON f.path = i.file
     WHERE f.path IS NULL
-      OR (f.status = 'orphan' AND i.extraction != 'lexical')
       OR (f.status = 'indexable' AND i.extraction = 'lexical')
-      OR f.status NOT IN ('orphan', 'indexable')`,
+      OR (f.status != 'indexable' AND (
+        i.extraction != 'lexical'
+        OR f.hash IS NULL
+        OR f.kind IN ('json', 'other')
+        OR f.reason NOT IN ('no-tsconfig', 'outside-index-scope', 'excluded')
+      ))`,
   );
   check(
     'indexed files without their module declaration',

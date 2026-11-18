@@ -436,4 +436,113 @@ describe('scopes and surfaces the base fixture does not exercise (no wrong low)'
       await close();
     }
   });
+
+  it('R2: gapScoped marks only gaps that hide users of that row, not name matches or parse-error', async () => {
+    const { query, close } = await copyQuery('impact-r2-gapscoped', {
+      'packages/api/src/loader.ts': 'export function loadAny(p: string) { return import(p); }\n',
+      'packages/api/src/isolated.ts':
+        'import { leaf } from "@fx/shared/r2-flow";\nexport function isoCaller(): number { return leaf(); }\n',
+      'packages/api/src/broken.ts': 'export function broken( {\n',
+      'packages/api/src/names.ts': [
+        'export function loose(obj: any): string {',
+        '  obj.namedCaller();',
+        '  const s: string = "strCaller";',
+        '  return s;',
+        '}',
+      ].join('\n'),
+      [`${SHARED}/r2-flow.ts`]: [
+        'export interface Worker { run(): number; }',
+        'export class RealWorker implements Worker {',
+        '  run(): number { return leaf(); }',
+        '}',
+        'export function callWorker(w: Worker): number { return w.run(); }',
+        'export function leaf(): number { return 1; }',
+        'export function namedCaller(): number { return leaf(); }',
+        'export function strCaller(): number { return leaf(); }',
+      ].join('\n'),
+    });
+    try {
+      const value = result(query.query(`${SHARED}/r2-flow.ts#leaf`, 10));
+      const nodes = new Map(value.byDepth.flat().map((node) => [node.symbol, node]));
+      assert.equal(nodes.get('packages/api/src/isolated.ts#isoCaller')?.gapScoped, true);
+      assert.equal(nodes.get(`${SHARED}/r2-flow.ts#RealWorker.run`)?.gapScoped, true);
+      assert.equal(nodes.get(`${SHARED}/r2-flow.ts#namedCaller`)?.gapScoped, undefined);
+      assert.equal(nodes.get(`${SHARED}/r2-flow.ts#strCaller`)?.gapScoped, undefined);
+    } finally {
+      await close();
+    }
+  });
+
+  it('R5: a method of an exported class and a member of an exported object in an unimported file are partial under a prefix-less dynamic import', async () => {
+    const { query, close } = await copyQuery('impact-r5-exported-members', {
+      'packages/api/src/loader.ts': 'export function loadAny(p: string) { return import(p); }\n',
+      'packages/api/src/isolated.ts': [
+        'export class Service {',
+        '  run(): number { return 1; }',
+        '}',
+        'export const Box = { value: 2 };',
+        'class LocalService {',
+        '  run(): number { return 3; }',
+        '}',
+        'void LocalService;',
+      ].join('\n'),
+    });
+    try {
+      const method = result(query.query('packages/api/src/isolated.ts#Service.run'));
+      assert.equal(method.completeness.status, 'partial');
+      assert.ok(reason(method, 'dynamic-import'));
+      const prop = result(query.query('packages/api/src/isolated.ts#Box.value'));
+      assert.equal(prop.completeness.status, 'partial');
+      assert.ok(reason(prop, 'dynamic-import'));
+      const localMethod = result(query.query('packages/api/src/isolated.ts#LocalService.run'));
+      assert.equal(localMethod.completeness.status, 'complete');
+    } finally {
+      await close();
+    }
+  });
+
+  it('R6: a member deeper than ADR 0003 object-literal depth 3 resolves to its nearest indexed parent', async () => {
+    const { query, close } = await copyQuery('impact-r6-deep-object', {
+      [`${SHARED}/deep-config.ts`]: [
+        'export const Config = { a: { b: { c: { d: 1 } } } };',
+        'export const Flat = { a: () => ({ b: 1 }) };',
+      ].join('\n'),
+    });
+    try {
+      const deep = query.query('Config.a.b.c.d');
+      const deepValue = result(deep);
+      assert.equal(deep.input, 'Config.a.b.c.d');
+      assert.equal(deep.parentTarget, `${SHARED}/deep-config.ts#Config.a.b.c`);
+      assert.equal(deepValue.target, `${SHARED}/deep-config.ts#Config.a.b.c`);
+      assert.equal(deepValue.completeness.status, 'partial');
+      assert.ok(reason(deepValue, 'outside-index-scope'));
+      assert.equal(deepValue.verdict.level, 'unknown');
+
+      const varParent = query.query('Flat.x');
+      assert.equal(result(varParent).target, `${SHARED}/deep-config.ts#Flat`);
+      assert.equal(varParent.parentTarget, `${SHARED}/deep-config.ts#Flat`);
+    } finally {
+      await close();
+    }
+  });
+
+  it('R7: reach.routes counts distinct route files, not reached symbols in route files', async () => {
+    const { query, close } = await copyQuery('impact-r7-route-files', {
+      'packages/api/src/routes.ts': [
+        "import { chargeHandler } from './charge';",
+        'export const routes = { "POST /charge": chargeHandler, "GET /charge": chargeHandler };',
+        'export function directRouteCall() { return chargeHandler(); }',
+      ].join('\n'),
+    });
+    try {
+      const fee = result(query.query(FEE, 10));
+      const inRouteFile = fee.byDepth
+        .flat()
+        .filter((node) => node.span.file === 'packages/api/src/routes.ts');
+      assert.ok(inRouteFile.length >= 2, JSON.stringify(inRouteFile));
+      assert.equal(fee.reach.routes, 1);
+    } finally {
+      await close();
+    }
+  });
 });
