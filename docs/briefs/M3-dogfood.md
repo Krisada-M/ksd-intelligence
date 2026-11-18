@@ -47,6 +47,8 @@ Verdict given: <level, action> — was it the right call?
 Missing: <what you wished the tool had told you>
 ```
 
+**Measures (D58).** Leading: share of edited symbols with an `ei_impact` call before the edit; share of `ei_changes` calls that showed something the agent did not plan (`Not in plan` non-empty) or did not expect. Lagging: wrong `low` count (target 0); rework, meaning tasks where a second change was needed for something `ei_impact` or `ei_changes` had listed. From M2c on, `ei audit --since 7d` reports the first two.
+
 Until M2c ships the audit log, the entry is written by hand; afterwards `ei audit --since 7d` fills in calls, verdicts and timings.
 
 Things to try on purpose at least once: a change to an exported function used across packages; a change inside a payment or auth path; a rename; a deleted export; a type-only change; a change in a file the index marks orphan; a call right after editing three files; two OMP sessions on the same repository; a git worktree.

@@ -24,7 +24,8 @@ One plugin, installed once from the marketplace, that the owner trusts for daily
 5. **Tool discovery text** (TOOLS §9): the short section the owner pastes into project instructions matches the registered descriptions.
 6. **Packaging:** `.omp-plugin/marketplace.json` `source` starts with `./`; `package.json#omp.extensions` points at a built file that exists; `dist/` is complete and committed; no file in the package refers to a path outside it; `engines` is right; `bin` entries run with `--help`.
 7. **Safety sweep:** no network call outside `ei setup` (and `ei embeddings install` if M6b exists) — grep for `fetch`, `http`, `https`, `net`, `dns`, `child_process` uses and justify each; no secret, token or personal path in the repository or in any snapshot; cache and audit modes `0700`/`0600`; `EI_DISABLED=1` and `ENGINEERING_PROXY_DISABLED=1` each tested alone and together.
-8. Full gates: tests, typecheck, lint, format, `check:dist`, mutation smoke for every engine area, `ei doctor --deep --differential 300` on the reference repositories.
+8. **Agent-behaviour evals (D58).** `evals/` with 10–20 tasks taken from the dogfood log, each a prompt plus checks on the transcript of `omp -p --model claude-haiku-4-5 -e dist/adapters/omp/extension.js`: `ei_impact` called before the edit, verdict action followed (`run-tests` → tests run; `ask-owner` → no edit), `ei_changes` called before reporting done. A script runs the suite and prints a pass rate; run it by hand before a release and after any change to tool descriptions, `src/workflow/**` or skills. Not in CI (it spends model calls).
+9. Full gates: tests, typecheck, lint, format, `check:dist`, mutation smoke for every engine area, `ei doctor --deep --differential 300` on the reference repositories.
 
 Report the table and the list of owner decisions. Stop.
 

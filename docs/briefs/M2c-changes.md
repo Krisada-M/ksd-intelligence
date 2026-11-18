@@ -41,6 +41,7 @@ Risky cases, one test each:
 - **Removed or signature-changed symbols that still have users** come first, with those users. For a removed symbol the users are the unresolved imports and name matches that now point at nothing; say so in the text.
 - **Impact:** the union of `ei_impact` results over the changed symbols (`byDepth`, `tests`, `completeness`, `reach`, `factors`), then one verdict with zones applied to target files, impacted files **and every changed path**.
 - **Nothing hidden (X03):** every changed path is either in `changedFiles` with `indexed: true` or in `unindexedChanges`. Any unindexed change adds `outside-index-scope` and makes the picture partial.
+- **Planned targets (D58):** optional input `planned: string[]` (same target forms as `ei_impact`). When given, a section `Not in plan` lists changed symbols that match none of them, each with its users, placed after the signature-changed section. Planned targets that were not changed are listed as `Planned, unchanged`. It is information, not a verdict input; the audit log records the counts.
 - No changes: the success-shaped line of TOOLS §5.
 - Register `ei_changes` in the extension entry; `EI_DISABLED=1` removes it.
 
@@ -60,6 +61,7 @@ Risky cases, one test each (temp git repositories; set `user.name`, `user.email`
 - Over budget: signature-changed section is kept in full before anything else is cut.
 - Called twice with no edits in between → identical bytes.
 - An empty diff against the base while the index is stale → "nothing changed", not a stale warning.
+- `planned` naming a symbol in a file that was renamed; a planned bare name that is ambiguous (guidance in that section, the rest of the answer intact); `planned` with 0 and with 50 targets.
 
 ## Round 3 — audit log and stage protocol
 

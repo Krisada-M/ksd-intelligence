@@ -43,7 +43,7 @@ Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a base
 3. A test against a mock of OMP is `MOCK-ONLY`, never "OMP compatible".
 4. Impact/graph answers must say `unknown` or `partial`, with reasons, when evidence is incomplete. Zero callers never proves "safe" or "low risk" on its own.
 5. Do not describe a macOS/Linux CI result as live OMP compatibility or as verification of an engine that does not yet exist. Record OS and architecture; require separate live OMP smoke on both OS families before claiming full support.
-6. Do not edit expected values in `tests/golden/**` to make a test pass. If you think an expected value is wrong, report it and leave it.
+6. Do not edit expected values in `tests/golden/**` to make a test pass. If you think an expected value is wrong, report it and leave it. CI enforces this: a pull request touching `tests/golden/**`, `src/policy/**`, `tests/policy/**` or `tests/snapshots/**` fails until the owner adds the `owner-approved` label.
 7. Do not weaken, skip or delete an existing test to get green. If a test is wrong, say so in the report.
 
 ## OMP integration rules
