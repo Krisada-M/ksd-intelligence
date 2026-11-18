@@ -1,0 +1,18 @@
+IMPACT calculateFee — packages/payments/src/fee.ts:9
+ACTION run-tests · level medium · picture complete
+REACH 5 direct · 8 total · 7 files · 3 packages · 1 route · factors: public-export-surface, route, cross-package
+
+Callers, depth 1 (5)
+  apps/web/src/checkout.ts:4  submit  CALLS
+  packages/api/src/charge.ts:3  chargeHandler  CALLS  gap
+  packages/payments/src/checkout-flow.ts:12  lazyFee  CALLS
+  packages/payments/src/fee.test.ts:1  <module>  CALLS
+  packages/payments/src/service.ts:4  PaymentService.charge  CALLS
+Depth 2 (2)
+  packages/api/src/handlers.ts:7  registry.charge  REFERENCES  gap
+  packages/api/src/routes.ts:3  routes.POST /charge  REFERENCES  route
+Tests (1)
+  packages/payments/src/fee.test.ts
+Gaps: none
+Next: after your change, run the test above; call ei_changes before you report done. Rows marked gap may have users the index cannot see; call ei_impact on them if you change what they receive.
+— index fresh · 26 files · ts 5.9.3 · engine 0.1.0

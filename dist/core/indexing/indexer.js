@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { isRecord } from '../kernel/guards.js';
-import { scan } from '../workspace/scan.js';
+import { isCodeKind, scan, } from '../workspace/scan.js';
 import { FAILURE_FILE, SCHEMA_VERSION, beginBuild, beginUpdate, discardBuild, openPublished, publishBuild, readFiles, readMeta, readSchemaVersion, transaction, writeFiles, writeMeta, } from '../../storage/sqlite.js';
 import { RECORD_TABLES, declarationNamesOf, deleteFileRecords, deleteOrphanSymbols, emptyCounts, filesImportingPrefix, filesReferencingNames, filesWithEdgesInto, filesWithUnresolvedImports, readFileIndex, recordWriter, simpleNameCounts, tableCounts, } from '../../storage/records.js';
 import { fileDeclarations } from './declarations.js';
@@ -22,6 +22,14 @@ const LOCKFILES = new Set([
 ]);
 const CONFIG_NAME = /^(?:tsconfig(?:\..+)?|jsconfig)\.json$/;
 const CODE_OR_JSON = /\.(?:[cm]?[jt]sx?|json)$/;
+/**
+ * D55 / D57: every visible code file outside the compiler index scope (orphan, outside `include`,
+ * or in an owner `exclude`) whose content was hashed (not secret, symlink, or default-excluded)
+ * is scanned lexically for the name cross-check.
+ */
+function isLexicalRecord(record) {
+    return (record.status !== 'indexable' && isCodeKind(record.kind) && record.hash !== null);
+}
 /** A change to one of these can change how any file resolves: always a cold build. */
 function isConfigLevel(path) {
     const name = basename(path);
@@ -413,10 +421,10 @@ export class Indexer {
             throw error;
         }
     }
-    /** Lexical rows for every census orphan: names in files no program covers still cross-check. */
+    /** Lexical rows for every visible out-of-scope code file (D55, D57): names still cross-check. */
     writeOrphans(writer, census, names, only) {
         for (const record of census.records) {
-            if (record.status !== 'orphan' || (only !== undefined && !only.has(record.path)))
+            if (!isLexicalRecord(record) || (only !== undefined && !only.has(record.path)))
                 continue;
             writer.write(scanLexically(this.ts, record.path, readFileSync(join(this.root, record.path), 'utf8'), names));
         }
@@ -577,12 +585,8 @@ export class Indexer {
             transaction(db, () => {
                 db.exec('DELETE FROM files');
                 writeFiles(db, census.records);
-                const orphanNow = new Set(census.records
-                    .filter((record) => record.status === 'orphan')
-                    .map((record) => record.path));
-                const orphanBefore = new Set(published.files
-                    .filter((record) => record.status === 'orphan')
-                    .map((record) => record.path));
+                const orphanNow = new Set(census.records.filter(isLexicalRecord).map((record) => record.path));
+                const orphanBefore = new Set(published.files.filter(isLexicalRecord).map((record) => record.path));
                 const orphans = new Set(orphanNamesChanged
                     ? [...orphanNow, ...orphanBefore]
                     : [...drift.changed, ...drift.added, ...drift.deleted].filter((path) => orphanNow.has(path) || orphanBefore.has(path)));

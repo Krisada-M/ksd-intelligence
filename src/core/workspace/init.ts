@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { defaultConfig, parseProjectConfig, type ProjectConfig } from '../kernel/config.js';
+import { matchAny } from '../kernel/glob.js';
+import { isRecord } from '../kernel/guards.js';
 
 export interface InitProjectOptions {
   root?: string;
@@ -22,6 +24,7 @@ export interface InitProjectResult {
   configSkipped: boolean;
   config: ProjectConfig;
   tsconfigs: string[];
+  omittedTsconfigDirs: string[];
   git: {
     isRepo: boolean;
     gitRoot?: string;
@@ -53,20 +56,105 @@ export function findGitRoot(startDir: string): string | null {
   }
 }
 
+const SKIP_DIRS = new Set(['node_modules', 'dist', 'dist-test', '.git']);
+const TSCONFIG_FILE = /^(?:tsconfig(?:\..+)?|jsconfig)\.json$/;
+
+function stripJsonComments(raw: string): string {
+  return raw.replace(/\\"|"(?:\\"|[^"])*"|(\/\/.*|\/\*[\s\S]*?\*\/)/g, (match, comment) =>
+    comment ? '' : match,
+  );
+}
+
+/** Top-level directories owned by any tsconfig in `rootPath` (D57). */
+export function tsconfigOwnedDirs(rootPath: string): string[] {
+  const configs: string[] = [];
+  const walk = (relDir: string, depth: number): void => {
+    if (depth > 3) return;
+    let entries;
+    try {
+      entries = readdirSync(join(rootPath, relDir), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      const relPath = relDir === '' ? entry.name : `${relDir}/${entry.name}`;
+      if (entry.isDirectory()) {
+        walk(relPath, depth + 1);
+      } else if (entry.isFile() && TSCONFIG_FILE.test(entry.name)) {
+        configs.push(relPath);
+      }
+    }
+  };
+  walk('', 0);
+
+  const owned = new Set<string>();
+  const isDirectory = (dir: string): boolean => {
+    try {
+      return statSync(join(rootPath, dir)).isDirectory();
+    } catch {
+      return false;
+    }
+  };
+
+  for (const relConfig of configs) {
+    if (relConfig === 'tsconfig.base.json' && configs.length > 1) continue;
+    const configDir = dirname(relConfig);
+    if (configDir !== '.') {
+      const top = configDir.split('/')[0];
+      if (top && !SKIP_DIRS.has(top) && isDirectory(top)) owned.add(top);
+    }
+    try {
+      const raw = readFileSync(join(rootPath, relConfig), 'utf8');
+      const parsed: unknown = JSON.parse(stripJsonComments(raw));
+      if (!isRecord(parsed)) continue;
+      const inputs: string[] = [];
+      if (Array.isArray(parsed.include)) {
+        for (const item of parsed.include) if (typeof item === 'string') inputs.push(item);
+      }
+      if (Array.isArray(parsed.files)) {
+        for (const item of parsed.files) if (typeof item === 'string') inputs.push(item);
+      }
+      for (const pattern of inputs) {
+        const norm = posix.normalize(configDir === '.' ? pattern : `${configDir}/${pattern}`);
+        if (norm.startsWith('..')) continue;
+        const first = norm.split('/')[0];
+        if (
+          first &&
+          first !== '.' &&
+          !first.includes('*') &&
+          !SKIP_DIRS.has(first) &&
+          isDirectory(first)
+        ) {
+          owned.add(first);
+        }
+      }
+    } catch {
+      // Unparseable tsconfig is reported by scan; directory ownership still holds if nested.
+    }
+  }
+  return [...owned];
+}
+
 export function detectProjectLayout(rootPath: string): {
   include: string[];
   routes: string[];
 } {
-  const hasPackages = existsSync(join(rootPath, 'packages'));
-  const hasApps = existsSync(join(rootPath, 'apps'));
-  const hasSrc = existsSync(join(rootPath, 'src'));
-
+  const standardDirs = ['packages', 'apps', 'src', 'test', 'tests', '__tests__', 'spec'];
   const include: string[] = [];
-  if (hasPackages) include.push('packages/**');
-  if (hasApps) include.push('apps/**');
+  for (const dir of standardDirs) {
+    if (existsSync(join(rootPath, dir))) {
+      include.push(`${dir}/**`);
+    }
+  }
+  for (const dir of tsconfigOwnedDirs(rootPath)) {
+    if (!matchAny(include, `${dir}/index.ts`)) {
+      include.push(`${dir}/**`);
+    }
+  }
   if (include.length === 0) {
-    // Without packages/, apps/ or src/ there is no layout to infer; index the whole root.
-    include.push(hasSrc ? 'src/**' : '**');
+    // Without standard or tsconfig-owned directories there is no layout to infer; index the whole root.
+    include.push('**');
   }
 
   // `impact.routes` holds file globs (DESIGN §9), so a detected directory becomes the glob
@@ -195,6 +283,14 @@ export async function initProject(options: InitProjectOptions = {}): Promise<Ini
   if (tsconfigs.length === 0) {
     warnings.push('No tsconfig files found in repository');
   }
+  const omittedTsconfigDirs = tsconfigOwnedDirs(realRoot).filter(
+    (dir) => !matchAny(config.impact.include, `${dir}/index.ts`),
+  );
+  if (omittedTsconfigDirs.length > 0) {
+    warnings.push(
+      `impact.include leaves out tsconfig-owned directories: ${omittedTsconfigDirs.join(', ')}`,
+    );
+  }
 
   return {
     root: realRoot,
@@ -206,6 +302,7 @@ export async function initProject(options: InitProjectOptions = {}): Promise<Ini
     configSkipped,
     config,
     tsconfigs,
+    omittedTsconfigDirs,
     git: {
       isRepo,
       gitRoot: gitRoot ?? undefined,

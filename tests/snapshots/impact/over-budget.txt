@@ -1,0 +1,17 @@
+IMPACT hub — packages/shared/src/budget.ts:1
+ACTION run-tests · level medium · picture complete
+REACH 6 direct · 166 total · 1 file · 1 package · 0 routes · factors: many-callers
+
+Callers, depth 1 (6)
+  packages/shared/src/budget.ts:2  d1_0  CALLS
+  packages/shared/src/budget.ts:3  d1_1  CALLS
+  packages/shared/src/budget.ts:4  d1_2  CALLS
+  packages/shared/src/budget.ts:5  d1_3  CALLS
+  packages/shared/src/budget.ts:6  d1_4  CALLS
+  packages/shared/src/budget.ts:7  d1_5  CALLS
+Depth 2: 80 more in 1 file. Call again with depth 2 and a single target to list them.
+Depth 3: 80 more in 1 file. Call again with depth 3 and a single target to list them.
+Tests: none
+Gaps: none
+Next: after your change, run the package tests; call ei_changes before you report done.
+— index fresh · 27 files · ts 5.9.3 · engine 0.1.0

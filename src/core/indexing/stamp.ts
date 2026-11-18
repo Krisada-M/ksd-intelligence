@@ -36,5 +36,32 @@ export function extractorStamp(typescriptVersion: string, configHash: string): s
 
 /** Recorded at build time; a different hash later means the index no longer matches the config. */
 export function impactConfigHash(impact: ImpactConfig): string {
-  return createHash('sha256').update(JSON.stringify(impact)).digest('hex');
+  const {
+    enabled,
+    include,
+    exclude,
+    routes,
+    maxDepth,
+    freshness,
+    watch,
+    manyCallers,
+    useWorkspaceTypescript,
+    maxMemoryMb,
+  } = impact;
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        enabled,
+        include,
+        exclude,
+        routes,
+        maxDepth,
+        freshness,
+        watch,
+        manyCallers,
+        useWorkspaceTypescript,
+        maxMemoryMb,
+      }),
+    )
+    .digest('hex');
 }

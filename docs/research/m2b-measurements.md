@@ -586,3 +586,214 @@ node dist/adapters/cli/main.js status --root /var/tmp/m2a2/omp-src
 
 **NOT VERIFIED:** macOS, pushed CI, live OMP, Round 3 tool/CLI/rendering/snapshots, isolated whole-call latency and later independent cross-vendor review. No push, merge, deployment, dependency addition or OMP installation/configuration mutation.
 
+## Round 5 — fix round (R1–R8, D56, G15)
+
+**VERIFIED:** macOS Darwin arm64, Node `24.22.0`, TypeScript `5.9.3`. Implementing model: Gemini 4 Argon (Medium).
+
+### 1. Findings R1–R8 disposition
+
+| Finding | Disposition | Evidence |
+|---|---|---|
+| R1 | Implemented `common-name` factor (`src/core/kernel/types.ts`, `src/core/kernel/config.ts`, `src/core/indexing/stamp.ts`, `src/core/impact/query.ts`). When `decl.simple` is shared by more than `impact.commonName` (default 10) non-module declarations and has at least one `unresolved-name-match` or `string-name-match` site, those sites are not completeness reasons; the target gets factor `common-name` and `verdict.basis` states `common-name: <N> declarations named "<name>"; <U> untyped uses, <S> equal strings not attributed` (G15). `commonName` is a query-time threshold and is excluded from `impactConfigHash`. | `tests/core/impact-r2b.test.ts` (`D56 / G15 — common-name factor`), `tests/core/init.test.ts`. Observed failing before the fix; passes after. |
+| R2 | Implemented `userHidingGaps(decl)` in `src/core/impact/query.ts`. `gapScoped` is set only from gaps that hide users of that row (`computed-member-access`, `interface-dispatch`, `dynamic-import`/`cjs-require` in scope), never from name matches (`unresolved-name-match`, `string-name-match`, `unresolved-import`) or repository-wide gaps (`parse-error`, `unsupported-syntax`). This also avoids running the `name_tokens` query per listed symbol. | `tests/core/impact-risk.test.ts` (`R2: gapScoped marks only gaps that hide users of that row, not name matches or parse-error`). Observed failing before the fix; passes after. |
+| R3 | Implemented drift-fingerprint failure memoization in `src/core/impact/session.ts`. When a build fails with drift, `lastFailed` records the fingerprint (`configHash` + sorted `path:size:mtimeMs` of `driftedFiles`) and failure message; while the fingerprint is unchanged, `query` answers stale immediately with the stored failure without starting a build. A changed fingerprint retries. | `tests/core/impact-freshness.test.ts` (`failed update retains the old index, marks it stale and includes the failure` — 3 calls, 1 build; edit retries for build 2). Observed failing before the fix; passes after. |
+| R4 | Added `waitAfterExpiry?: boolean` to `ImpactSessionOptions` in `src/core/impact/session.ts` for the Round 3 CLI to use so a CLI invocation waits for an in-flight build or lock holder instead of exiting at `waitMs` and killing its child in a stale loop (D56). The CLI `impact` subcommand itself is Round 3 scope and is not registered here. | `tests/core/impact-freshness.test.ts` (`waitAfterExpiry mode waits for a build slower than waitMs instead of exiting stale`). Observed failing before the fix; passes after. |
+| R5 | Added regression test for a method of an exported class (`Service.run`) and a property of an exported object (`Box.value`) in a file with no static importer under a prefix-less `import(p)`. `src/core/indexing/declarations.ts` already propagates `exported` to class and object-literal members (`classMembers`, `objectMembers`), so no product code change was needed. | `tests/core/impact-risk.test.ts` (`R5: a method of an exported class and a member of an exported object in an unimported file are partial under a prefix-less dynamic import`). |
+| R6 | Widened D51 parent fallback in `src/core/impact/query.ts` to accept a nearest indexed parent of kind `property` or `variable`, and added regression test for `Config.a.b.c.d` (deeper than ADR 0003's 3-level object-literal limit) and `Flat.x` (parent kind `variable`). Line 1 rendering of both names belongs to Round 3 (`render.ts`); `ImpactAnswer` carries both `input` and `parentTarget`. | `tests/core/impact-risk.test.ts` (`R6: a member deeper than ADR 0003 object-literal depth 3 resolves to its nearest indexed parent`). Observed failing before the fix; passes after. |
+| R7 | Changed `reach.routes` in `src/core/impact/query.ts` to count distinct reached route files (`[...reachedFiles].filter((file) => matchAny(this.impact.routes, file)).length`) with the required comment until M4a provides route records. | `tests/core/impact-risk.test.ts` (`R7: reach.routes counts distinct route files, not reached symbols in route files`). Observed failing before the fix; passes after. |
+| R8 | No code change required before Round 3 whole-call latency measurement (`No change before the measurement`). | — |
+
+### 2. Local checks and mutation smoke
+
+```text
+npm test
+ℹ tests 546
+ℹ suites 42
+ℹ pass 546
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 31 targeted mutants (Round 1 `keyof`/metadata/generics K01–K08, B01–B02, G01–G06; D55 items 4–6; query-core controls Q01–Q06; Round 5 controls R1-M, R2-M, R3-M, R4-M, R6-M, R7-M): **VERIFIED 31/31 killed, 0 survived**.
+
+### 3. oh-my-pi 200-target distribution and 10 hand-checked lows
+
+**NOT VERIFIED** on this machine: the `/var/tmp/m2a2/omp-src` checkout and its cached index (`~/.cache/ksd-intelligence/6245da6948cefc28/index.sqlite`) from the Linux WSL2 sessions do not exist on this macOS machine, and cloning or fetching external repositories is prohibited by `AGENTS.md`.
+
+## Round 3 — Step 3: tool, CLI, rendering, live, latency
+
+**VERIFIED:** macOS Darwin 27.0.0 arm64, Node `24.22.0`, TypeScript `5.9.3`, OMP `18.22.0` (`/Users/mezn/Library/Application Support/Tern/omp/bin/omp`). Implementing model: Gemini 4 Argon (High).
+
+### 1. OMP extension types inspected before changing `src/adapters/omp/extension.ts`
+
+- `omp --version` → `omp/18.22.0`
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-coding-agent@18.16.0@@@1/dist/types/extensibility/extensions/types.d.ts` (`ExtensionAPI`, `ToolDefinition`, `AgentToolUpdateCallback`, `ExtensionContext`)
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-coding-agent@18.16.0@@@1/src/extensibility/extensions/wrapper.ts`
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/omptype@18.16.0@@@1/src/zod.ts` (`pi.zod`: `string`, `number`, `array`, `enum`, `object`, `.int()`, `.min()`, `.max()`, `.optional()`, `.describe()`)
+- `/Users/mezn/.bun/install/cache/@oh-my-pi/pi-agent-core@18.16.0@@@1/dist/types/types.d.ts` (`AgentToolResult`)
+
+### 2. Pre-Step-3 oh-my-pi 200-target re-run and 20 lows after D56
+
+**NOT VERIFIED** on this machine: `/var/tmp/m2a2/omp-src` and its cached SQLite index from the Linux WSL2 environment do not exist on this macOS machine, and cloning external repositories from the network is forbidden by `AGENTS.md`. (From the Round 2b tables in §5 above, every top-20 `string-name-match` and `unresolved-name-match` name with >10 declarations sharing the name — e.g. `type` 1,108, `name` 996, `id` 984, `model` 503, `path` 432, `input` 393, `status` 387, `output` 362, `cwd` 295, `error` 293, `role` 230, `key` 226, `session` 220, `close` 219, `data` 169, `body` 128, `default` 123, `summary` 118, `run` 114, `headers` 102, `detail` 50, `dir` 47, `response` 35, `fixture` 22 — exceeds `impact.commonName = 10` and converts from a completeness reason into the `common-name` factor (`medium`), so D56 cannot introduce any new `low`; live execution on `/var/tmp/m2a2/omp-src` remains **NOT VERIFIED** here.)
+
+### 3. Snapshots (`PROPOSED` for owner review)
+
+All 11 snapshots are written under `tests/snapshots/impact/` and verified by `tests/core/impact-render.test.ts`:
+
+- `tests/snapshots/impact/C01.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C06.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C11.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C13.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C14.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C15.txt` (**PROPOSED**)
+- `tests/snapshots/impact/C26.txt` (**PROPOSED**)
+- `tests/snapshots/impact/batch-3.txt` (**PROPOSED**)
+- `tests/snapshots/impact/over-budget.txt` (**PROPOSED**)
+- `tests/snapshots/impact/d51-parent.txt` (**PROPOSED**)
+- `tests/snapshots/impact/stale-index.txt` (**PROPOSED**)
+
+### 4. Live OMP smoke on `ksd-intelligence` (macOS Darwin 27.0.0 arm64, `omp/18.22.0`)
+
+Commands executed:
+
+```sh
+node dist/adapters/cli/main.js index --full
+omp -p --no-session --no-extensions --model claude-haiku-4-5 -e dist/adapters/omp/extension.js \
+  "Call the ei_impact tool three separate times (or once per target): 1) targets: ['Graph.incoming'], 2) targets: ['status'], 3) targets: ['calcFee']. Print each tool output verbatim."
+```
+
+Verbatim tool outputs from the live OMP run:
+
+```text
+IMPACT Graph.incoming — src/core/graph/graph.ts:44
+ACTION proceed · level low · picture complete
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Callers: none
+Tests: none
+Gaps: none
+Next: make your change and call ei_changes before you report done.
+— index fresh · 372 files · limits: 1 unbounded dynamic import, 175 excluded files · ts 5.9.3 · engine 0.1.0
+```
+
+```text
+AMBIGUOUS status — 4 declarations. Call again with one of:
+  src/core/engine/host.ts#EngineHost.status
+  src/core/kernel/types.ts#Completeness.status
+  src/core/workspace/scan.ts#CensusRecord.status
+  src/storage/sqlite.ts#FileRecord.status
+```
+
+```text
+NOT FOUND calcFee.
+If the symbol is new and unsaved, save the file and call again.
+```
+
+### 5. Whole-call latency and 1-file body-edit drift
+
+- **On `/var/tmp/m2a2/omp-src` (`oh-my-pi`):** **NOT VERIFIED** on this macOS machine (`/var/tmp/m2a2/omp-src` is absent).
+- **On `ksd-intelligence` (372 scanned files, 48 indexable files, 1,317 declarations, 2,852 edges) — VERIFIED on macOS arm64:**
+
+| Stage | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|
+| `probe` (`readFiles` + stat probe) | 20.20 | 24.10 | 30.46 |
+| `open` (`openPublished` + `new ImpactQuery`) | 2.23 | 2.62 | 3.53 |
+| `traverse` (`query.query`) | 0.26 | 0.79 | 1.10 |
+| `render` (`renderAnswer`) | 0.05 | 0.16 | 8.11 |
+| **Whole call (`total`)** | **22.79** | **27.44** | **42.90** |
+
+- **5,000-caller synthetic target (`tests/core/impact-render.test.ts`):** rendered within the 4,000-char budget in **3.52 ms** (< 300 ms).
+- **One-file body edit (`src/core/graph/graph.ts`) on `ksd-intelligence`:** took freshness row 3 ("Drift, this session can take the lock" → `index.state === 'updated'`, `updatedFiles === 1`, footer `— index updated (1 file) · 372 files · limits: 1 unbounded dynamic import, 175 excluded files · ts 5.9.3 · engine 0.1.0`), wall time **671.80 ms**.
+
+### 6. Local checks and mutation smoke
+
+```text
+npm test               tests 563 · suites 44 · pass 563 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 35 mutants (Round 1 K01–K08, B01–B02, G01–G06; D55 items 4–6; query-core controls Q01–Q06; Round 5 controls R1-M, R2-M, R3-M, R4-M, R6-M, R7-M; Round 3 rendering/tool controls R3-RenderStale, R3-Budget, R3-OneVerdict, R3-GuidanceError): **VERIFIED 35/35 killed, 0 survived**.
+
+## Round 5b — D57 fix round (W1, W3, W4)
+
+**VERIFIED:** macOS Darwin 27.0.0 arm64, Node `24.22.0`, TypeScript `5.9.3`, OMP `18.22.0`. Implementing model: Gemini 4 Argon (High).
+
+### 1. Findings W1–W4 disposition
+
+| Finding | Disposition | Evidence |
+|---|---|---|
+| W1 | Fixed both layers per D57: (1) `detectProjectLayout` (`src/core/workspace/init.ts`) includes `packages/**`, `apps/**`, `src/**`, `test/**`, `tests/**`, `__tests__/**`, `spec/**` when present plus every directory owned by a repository tsconfig (`tsconfigOwnedDirs`), and `initProject` / `ei init` reports `omittedTsconfigDirs`; (2) `scan` (`src/core/workspace/scan.ts`), `Indexer` (`src/core/indexing/indexer.ts`) and `verifyIndex` (`src/core/indexing/verify.ts`) extend the lexical name scan (`isLexicalRecord`) to every visible code file outside the compiler index scope (`no-tsconfig`, `outside-index-scope`, and owner `excluded`), while secrets, symlinks and default excludes (`node_modules`, `dist`, `.git`) remain unread (`hash: null`). | `tests/core/impact-r2b.test.ts` (`D57 / W1 — default scope and out-of-scope lexical name scan`: 2 tests observed failing before fix, passing after). |
+| W2 | **NOT VERIFIED** on this machine: `/var/tmp/m2a2/omp-src` (`oh-my-pi`) only exists on the Linux WSL2 machine. Must be run on WSL after pushing `m2b-impact`. | — |
+| W3 | Regenerated `tests/snapshots/impact/C01.txt` (**PROPOSED**) at default depth 2 (`TOOLS.md` §4 default), and updated snapshot test descriptions in `tests/core/impact-render.test.ts` to state the depth of each snapshot explicitly. | `tests/core/impact-render.test.ts`, `tests/snapshots/impact/C01.txt` (**PROPOSED**). |
+| W4 | Changed `stale-index` gap rendering in `src/core/impact/render.ts` to `stale-index — drifted: <files>; re-run after the index update` (without target `path:line`). Regenerated `tests/snapshots/impact/stale-index.txt` (**PROPOSED**). | `tests/core/impact-render.test.ts`, `tests/snapshots/impact/stale-index.txt` (**PROPOSED**). |
+
+### 2. Live verification on `ksd-intelligence` after W1 fix
+
+Commands executed:
+
+```sh
+rm -rf ~/.cache/ksd-intelligence/d5468fea296e508d
+node dist/adapters/cli/main.js init --dry-run
+node dist/adapters/cli/main.js init
+node dist/adapters/cli/main.js index
+omp -p --no-session --no-extensions --model claude-haiku-4-5 -e dist/adapters/omp/extension.js \
+  "Call ei_impact with targets: ['Graph.incoming'] and output ONLY the rendered text block starting with IMPACT Graph.incoming and ending with the footer line."
+```
+
+`ei init --dry-run` output:
+
+```text
+Project initialized:
+  Repo ID:    d5468fea296e508d
+  Root:       /Users/mezn/workspaces/private/ksd-intelligence
+  Cache dir:  /Users/mezn/.cache/ksd-intelligence/d5468fea296e508d
+  Config:     /Users/mezn/workspaces/private/ksd-intelligence/ei.config.json (created)
+  Git:        yes (/Users/mezn/workspaces/private/ksd-intelligence)
+  Include:    src/**, tests/**
+  TS configs: src/policy/tsconfig.json, tests/tsconfig.json, tsconfig.json
+  Omitted tsconfig dirs: none
+```
+
+Live `omp -p` output for `Graph.incoming`:
+
+```text
+IMPACT Graph.incoming — src/core/graph/graph.ts:44
+ACTION proceed · level low · picture complete
+REACH 3 direct · 3 total · 2 files · 1 package · 0 routes · factors: none
+
+Callers, depth 1 (3)
+  tests/core/differential.test.ts:1  <module>  CALLS
+  tests/core/indexing.test.ts:1  <module>  CALLS
+  tests/core/indexing.test.ts:23  users  CALLS
+Tests (2)
+  tests/core/differential.test.ts
+  tests/core/indexing.test.ts
+Gaps: none
+Next: after your change, run the tests above; call ei_changes before you report done.
+— index fresh · 374 files · limits: 1 unbounded dynamic import, 90 excluded files · ts 5.9.3 · engine 0.1.0
+```
+
+### 3. Local checks and mutation smoke
+
+```text
+npm test               tests 565 · suites 45 · pass 565 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Mutation smoke over 36 mutants (retaining all 35 prior mutants and adding `D57-Lexical`: dropping out-of-scope and owner-excluded code files from `isLexicalRecord` in `indexer.ts`): **VERIFIED 36/36 killed, 0 survived**.
+
+
+
+

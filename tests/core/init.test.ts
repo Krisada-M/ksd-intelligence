@@ -38,6 +38,7 @@ describe('config core', () => {
     assert.equal(config.impact.freshness, 'stat');
     assert.equal(config.impact.watch, true);
     assert.equal(config.impact.manyCallers, 10);
+    assert.equal(config.impact.commonName, 10);
     assert.equal(config.impact.useWorkspaceTypescript, false);
     assert.equal(config.bridges.B1, true);
     assert.equal(config.search.enabled, true);
@@ -68,6 +69,7 @@ describe('config core', () => {
         freshness: 'hash',
         watch: false,
         manyCallers: 20,
+        commonName: 15,
         useWorkspaceTypescript: true,
       },
       riskZones: [{ zone: 'payments', floor: 'high', match: ['**/pay/**'] }],
@@ -81,6 +83,7 @@ describe('config core', () => {
     assert.equal(config.impact.freshness, 'hash');
     assert.equal(config.impact.watch, false);
     assert.equal(config.impact.manyCallers, 20);
+    assert.equal(config.impact.commonName, 15);
     assert.equal(config.impact.useWorkspaceTypescript, true);
     assert.ok(Array.isArray(config.riskZones));
     assert.equal(config.riskZones.length, 1);
