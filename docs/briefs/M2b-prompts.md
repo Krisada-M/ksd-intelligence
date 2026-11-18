@@ -343,6 +343,46 @@ Rerun all checks and the mutation smoke; add a mutation that drops
 out-of-scope files from the lexical scan. Stop and report.
 ```
 
+## Round 6 — final fix round after the independent review
+
+Run on the WSL machine (it needs /var/tmp/m2a2/omp-src). Use a model other
+than Gemini 4 Argon, which wrote rounds 3 and 5b and the review.
+
+```text
+Read docs/briefs/README.md, docs/briefs/M2b-impact.md,
+docs/reviews/2026-11-18-m2b-round-4-findings.md and
+docs/reviews/2026-11-18-m2b-round-4-decisions.md. Fix F1–F15, R8 and the
+two small items exactly as the decisions table says, nothing else.
+
+[Common rules]
+
+git fetch origin. Branch m2b-final from origin/m2b-impact. If
+m2b-impact-w2 exists locally with the W2 measurement commit, cherry-pick
+it first.
+
+Order: F1–F7 first (wrong-low paths), then F9, F12, F8, F14, F10, F11,
+F13, F15, then R8, then the small items.
+
+For each finding: a test that fails because of it (use the reviewer's
+concrete input on a fixture copy), then the fix, then the test passing.
+Paste the failing output for F1–F7. If a finding does not reproduce,
+change nothing for it and show the evidence.
+
+F1, F2, F3, F4, F14 change the extractor: randomised incremental == cold,
+update-soundness, the fixture differential (explain each changed count)
+and the mutation smoke stay green; add one mutation per finding.
+
+Snapshots that change are PROPOSED again with a one-line reason each.
+
+Then on oh-my-pi (/var/tmp/m2a2/omp-src): rebuild; the same 200 targets
+(low / medium / unknown, per-reason table, common-name count); 20 lows
+hand-checked against findReferences (one wrong low is a blocker); the
+whole-call latency split for 20 targets before and after R8;
+`ei doctor --deep --differential 300`.
+
+Report in the AGENTS.md template with the exact model, then stop.
+```
+
 ## Round 4 — independent review (read-only)
 
 ```text
