@@ -794,6 +794,203 @@ npm run check:dist     exit 0
 
 Mutation smoke over 36 mutants (retaining all 35 prior mutants and adding `D57-Lexical`: dropping out-of-scope and owner-excluded code files from `isLexicalRecord` in `indexer.ts`): **VERIFIED 36/36 killed, 0 survived**.
 
+## Round 5b — W2 only (WSL reference measurements, 2026-11-18)
 
+**VERIFIED:** Linux x86_64 (WSL2), Node `24.21.0`, TypeScript `5.9.3`.
+Model: `openai-codex/gpt-6.1-sol`. Fetched origin and checked out
+`origin/m2b-impact` at `c3b94db`; retained this report on local branch
+`m2b-impact-w2`. No library, test, fixture, snapshot, configuration or
+dependency changed. OMP was not invoked.
 
+### 1. Cold rebuild and fixed cohort
 
+Reference checkout: `/var/tmp/m2a2/omp-src`, commit
+`04cd1a7549a02d62ad1d24826198d52507595683`. Cold rebuild exited 0:
+150.29 s wall, 8,171,128 KiB maximum RSS, no VERIFY problems.
+The census contains 10,502 files, 6,829 compiler-indexable files and
+158,182 non-module declarations. Extractor stamp: `3bde002878d30696`.
+
+D57's detected include is now `packages/**`, `python/**`, `scripts/**`.
+It adds 68 compiler-indexable files and 1,761 non-module declarations
+relative to Round 2b. The measurement therefore reused the saved 200 keys
+and their order, rather than reshuffling the expanded population.
+Replaying seed 1's Fisher–Yates shuffle over the preserved original
+population reproduced that saved cohort exactly; all 200 keys still exist.
+The stat probe found no added, changed, deleted or touched files.
+Queries used one `ImpactQuery`, depth 10.
+
+| Level | Round 2b | W2 | W2 share |
+|---|---:|---:|---:|
+| low | 17 | 17 | 8.5% |
+| medium | 94 | 146 | 73.0% |
+| unknown | 89 | 37 | 18.5% |
+
+Each target counts once per reason code; “sole” means no other reason code.
+No other completeness reason occurred.
+
+| Completeness reason | Targets | Sole reason |
+|---|---:|---:|
+| `string-name-match` | 20 | 13 |
+| `computed-member-access` | 9 | 7 |
+| `unresolved-name-match` | 8 | 3 |
+| `interface-dispatch` | 4 | 4 |
+| `cjs-require` | 3 | 1 |
+| `dynamic-import` | 2 | 0 |
+
+`common-name` occurs on 58 targets: 53 medium and 5 unknown.
+Exactly 53 formerly unknown targets became medium; each has `common-name`.
+One formerly medium target became unknown:
+`packages/coding-agent/src/eval/js/context-manager.ts#VmRunState.onReply`.
+D57 now records its name in out-of-scope `.omp/tools/tui.ts` at lines
+255, 282, 795 and 1169. The remaining 17 lows, 93 mediums and 36 unknowns
+kept their levels. This is the intended D56 suppression of ambiguous name
+matches plus D57's broader compiler and lexical coverage, not threshold tuning.
+
+### 2. Twenty low-result reference audits
+
+The fixed cohort contains only 17 lows. Checked all of them, then the first
+three additional lows encountered by continuing the original seed-1 shuffle:
+`interactiveContext`, `hackerNewsModel`, `bareMathEnvBlockLength` below.
+All twenty results were complete/low.
+
+Used TypeScript language services with the engine's program grouping.
+Inspected each emitted use site's source text, reference group and enclosing
+indexed declaration against the actual `byDepth` listing. Separately ran the
+existing differential oracle restricted to these exact twenty keys:
+20 declarations, 65 references, 65 edge-covered, 0 record-only, 0 misses.
+It skipped 20 definitions and 3 declaration names of related symbols.
+
+The table counts references to the target itself, including import bindings;
+it excludes uses of a related interface declaration. Every counted site is
+covered. There are 63 such sites; the oracle also checks related reference
+groups, so its reference total differs.
+
+| Target | Direct / total | Target-use sites |
+|---|---:|---:|
+| `packages/ai/test/issue-6913-harmony-marker-escaping.test.ts#ESCAPED` | 1 / 1 | 7 |
+| `packages/ai/test/kimi-usage.test.ts#makeCredential` | 1 / 1 | 8 |
+| `packages/coding-agent/test/btw-session-lifecycle.test.ts#SideTurn` | 1 / 1 | 1 |
+| `packages/coding-agent/test/mcp-lost-remote-retry.test.ts#FAST.retryBaseMs` | 2 / 2 | 0 |
+| `packages/coding-agent/test/mcp/config-request-id-format.test.ts#fallbackAgentDir` | 1 / 1 | 1 |
+| `packages/coding-agent/test/memories/stage1-input.test.ts#referenceItems` | 1 / 1 | 1 |
+| `packages/metaharness/adapters/edit/runner.ts#TaskRunItem` | 3 / 5 | 3 |
+| `packages/mnemopi/src/core/plugins.ts#PluginManager.unloadPlugin` | 2 / 3 | 2 |
+| `packages/tui/test/status-line-native.test.ts#NO_USAGE.orchestrationInput` | 1 / 2 | 0 |
+| `packages/tui/test/status-line-path.test.ts#CHECKOUT_IS_SCRATCH` | 1 / 1 | 4 |
+| `packages/tui/test/table-chart.test.ts#DIFF` | 1 / 1 | 2 |
+| `packages/tui/test/tools-native-github.test.ts#resultFor` | 1 / 1 | 5 |
+| `packages/tui/test/write-figure.test.ts#MERMAID` | 1 / 1 | 5 |
+| `packages/tui/test/write-streaming-incremental-render.test.ts#hasLine` | 1 / 1 | 11 |
+| `packages/typescript-edit-benchmark/src/mutations.ts#randomSample` | 3 / 3 | 3 |
+| `packages/collab-web/scripts/fixture.ts#makeScriptedTurn` | 1 / 5 | 2 |
+| `packages/stats/src/client/spotlight/ResultsFeed.tsx#ResultsFeed` | 1 / 4 | 2 |
+| `packages/coding-agent/test/tools/bash-pty-selection.test.ts#interactiveContext` | 1 / 1 | 4 |
+| `packages/coding-agent/test/web/search/hackernews.test.ts#hackerNewsModel` | 1 / 2 | 1 |
+| `packages/tui/src/components/markdown.ts#bareMathEnvBlockLength` | 1 / 2 | 1 |
+
+**VERIFIED: zero wrong lows and zero uncovered target-use sites.**
+Contingency D was not triggered.
+
+Audit details:
+
+- `FAST.retryBaseMs`'s other reference group names
+  `MCPReconnectPolicy.retryBaseMs`, not the target's property. Its container
+  users (`<module>`, `QUIET_MS`) are listed. `NO_USAGE.orchestrationInput`
+  similarly lists `cacheStatusLine` and its test module through container use.
+- `ResultsFeed`'s import at `SpotlightRoute.tsx:13` has its stored `IMPORTS`
+  edge; the same file's actual JSX user at line 132 is listed as
+  `SpotlightRoute`. An import binding is not a missing caller declaration.
+  The other import binding, `makeScriptedTurn`, is also covered.
+- An initial throwaway audit asserted that the importing module itself must
+  appear in the symbol listing. The `ResultsFeed` site disproved that audit
+  assumption, not the product result: its file and actual user are listed,
+  and the unchanged differential oracle already covers the import.
+  Corrected the harness to require both a stored import edge at that
+  statement and a listed importing file; rerun exited 0.
+
+### 3. R8 whole-call latency
+
+No corpus edits or concurrent index/audit jobs during timing.
+Selected 20 distinct targets at evenly spaced ranks of the fixed cohort
+sorted by compiler closure size, with target-name tie-breaking.
+Closures range from 0 to 10,740 dependents. Default display depth: 2.
+Percentiles use nearest rank.
+
+“Actual whole call” measures real `ImpactSession.query` plus
+`renderImpact`, excluding workspace discovery and CLI/model startup.
+All answers were fresh; a build hook counted zero build requests and
+would fail immediately if called. The split is a separate staged replay
+of the same twenty targets, using the same database/probe/query/render APIs;
+it is not instrumentation inside the actual session. Percentiles of stages
+must not be summed.
+
+| Measurement | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|
+| Actual whole call | 849.82 | 1172.98 | 1240.76 |
+| Replay: probe, including `readFiles` | 78.93 | 81.87 | 82.33 |
+| Replay: open database + construct `ImpactQuery` | 428.06 | 450.18 | 452.30 |
+| Replay: query/traverse | 332.76 | 450.32 | 678.68 |
+| Replay: render | 0.10 | 0.25 | 0.52 |
+| Replay: close | 0.20 | 0.23 | 0.52 |
+| Replay: whole call | 840.49 | 948.00 | 1181.48 |
+
+An additional constructor-only profile separated SQLite open from the R8
+constructor cost, over twenty fresh database/query instances:
+
+| Constructor profile | p50 (ms) | p95 (ms) | Max (ms) |
+|---|---:|---:|---:|
+| `openPublished` | 0.11 | 0.17 | 0.24 |
+| `new ImpactQuery` | 414.07 | 481.10 | 550.83 |
+
+**FAIL: whole-call p95 is not below 300 ms.** Constructor and query work
+both contribute materially; SQLite open and rendering do not explain the
+miss. No optimization was attempted: this session permits code changes
+only for a wrong low, and none was found.
+
+### 4. Commands, evidence and limits
+
+Commands executed from the repository; `$EVIDENCE_DIR` was
+`/var/tmp/ksd-m2b-r5b-w2`. Measurement/audit scripts were throwaway
+verification harnesses, not product code. Harness sources were removed after
+verification. Raw results remain in that temporary directory:
+`cold-current.json`, `cold-current.time`,
+`distribution.json`, `lows.json`, `audit.json`, `transitions.json`,
+`latency.json`, `constructor-summary.json`.
+
+```sh
+git fetch origin
+git status --short --branch
+git checkout origin/m2b-impact
+git log -1 --format='%h %s'
+node --version
+uname -sm
+codegraph status
+gitnexus status
+npm run build
+/usr/bin/time -f 'wall=%e maxrss_kb=%M exit=%x' \
+  -o "$EVIDENCE_DIR/cold-current.time" \
+  node dist/adapters/cli/main.js index \
+  --root /var/tmp/m2a2/omp-src --full --json \
+  > "$EVIDENCE_DIR/cold-current.json" 2> "$EVIDENCE_DIR/cold-current.err"
+node "$EVIDENCE_DIR/measure.mjs" > "$EVIDENCE_DIR/distribution-summary.json"
+node --max-old-space-size=8192 --expose-gc "$EVIDENCE_DIR/audit.mjs" \
+  > "$EVIDENCE_DIR/audit-summary.json"
+node "$EVIDENCE_DIR/latency.mjs" > "$EVIDENCE_DIR/latency-summary.json"
+git switch -c m2b-impact-w2
+```
+
+The dependency-lock comparison found zero mismatches; no `npm ci` was
+needed. Both graph indexes reported current; no LSP was configured.
+An initial cohort-harness assertion failed because it reshuffled the new,
+larger declaration population. It was corrected to replay the original
+population and assert equality with the saved keys, without replacing any
+target. Both final measurement and reference-audit harnesses exited 0.
+The constructor profile and source/edge inspections used inline
+`node --input-type=module` commands.
+
+**NOT VERIFIED:** live OMP, macOS, CI, one-file drift latency, a new full
+`npm test`/mutation smoke/deep differential-300 run. Those are outside W2;
+no product change or wrong low invalidated their prior evidence.
+No accepted snapshot or golden expectation changed. No injected agent
+context changes were observed. Nothing was pushed, merged or deployed.
+W2's correctness sampling passes; its latency gate remains unmet.
