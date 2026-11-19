@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -83,6 +83,26 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const exit = await new Promise((resolve) => child.once('close', resolve));
     assert.equal(exit, 2);
     assert.match(stderr, /requires --root/);
+  });
+
+  it('rejects nested roots that would resolve to a broader workspace', async () => {
+    const parent = await mkdtemp(join(tmpdir(), 'ksd-mcp-parent-'));
+    try {
+      const nested = join(parent, 'nested');
+      await mkdir(nested);
+      await writeFile(join(parent, 'ei.config.json'), '{}\n');
+      const child = spawn(process.execPath, [entry, '--root', nested], {
+        env: { ...process.env, KSD_MCP_ROOT: '' },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      const code = await new Promise((resolve) => child.once('close', resolve));
+      assert.equal(code, 2);
+      assert.match(stderr, /must be the exact accessible KSD workspace root/);
+    } finally {
+      await rm(parent, { recursive: true, force: true });
+    }
   });
 
   it('2025-11-25 lifecycle, read-only tools and status without an index', async (t) => {
