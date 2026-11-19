@@ -7,8 +7,8 @@ const MAX_INFLIGHT = 8;
 const SERVER_INFO = { name: 'ksd-intelligence', version: '0.1.0' };
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-const validId = (value) => typeof value === 'string' ||
-  (typeof value === 'number' && Number.isSafeInteger(value));
+const validId = (value) =>
+  typeof value === 'string' || (typeof value === 'number' && Number.isSafeInteger(value));
 const idKey = (id) => typeof id + ':' + String(id);
 const serverMeta = () => ({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO });
 
@@ -17,7 +17,13 @@ const serverMeta = () => ({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO })
  * Supports the 2025-11-25 handshake and stateless MCP 2026-07-28 request envelope.
  * Only JSON-RPC envelopes may reach stdout; all failures are bounded.
  */
-export function createStdioServer({ root, env = process.env, input = process.stdin, output = process.stdout, toolset }) {
+export function createStdioServer({
+  root,
+  env = process.env,
+  input = process.stdin,
+  output = process.stdout,
+  toolset,
+}) {
   const tools = toolset ?? createTools({ root, env });
   const active = new Map();
   let legacyInitialized = false;
@@ -32,36 +38,40 @@ export function createStdioServer({ root, env = process.env, input = process.std
 
   function error(id, code, message, data) {
     send({
-      jsonrpc: '2.0', id,
+      jsonrpc: '2.0',
+      id,
       error: { code, message, ...(data === undefined ? {} : { data }) },
     });
   }
 
   function reply(id, value, modern) {
-    const result = modern
-      ? { ...value, resultType: 'complete', _meta: serverMeta() }
-      : value;
+    const result = modern ? { ...value, resultType: 'complete', _meta: serverMeta() } : value;
     send({ jsonrpc: '2.0', id, result });
   }
 
   function requestVersion(message) {
-    const meta = isObject(message.params) && isObject(message.params._meta)
-      ? message.params._meta : {};
+    const meta =
+      isObject(message.params) && isObject(message.params._meta) ? message.params._meta : {};
     return meta['io.modelcontextprotocol/protocolVersion'];
   }
 
   function cancel(message) {
-    const key = isObject(message.params) && validId(message.params.requestId)
-      ? idKey(message.params.requestId) : null;
+    const key =
+      isObject(message.params) && validId(message.params.requestId)
+        ? idKey(message.params.requestId)
+        : null;
     if (key === null) return;
     const pending = active.get(key);
     if (pending) pending.controller.abort();
   }
 
   async function onMessage(message) {
-    if (!isObject(message) || message.jsonrpc !== '2.0' ||
-        typeof message.method !== 'string' ||
-        (Object.hasOwn(message, 'id') && !validId(message.id))) {
+    if (
+      !isObject(message) ||
+      message.jsonrpc !== '2.0' ||
+      typeof message.method !== 'string' ||
+      (Object.hasOwn(message, 'id') && !validId(message.id))
+    ) {
       error(null, -32600, 'Invalid JSON-RPC request');
       return;
     }
@@ -89,12 +99,17 @@ export function createStdioServer({ root, env = process.env, input = process.std
       }
       legacyInitialized = false;
       legacyHello = true;
-      reply(id, {
-        protocolVersion: LEGACY,
-        capabilities: { tools: {} },
-        serverInfo: SERVER_INFO,
-        instructions: 'Local read-only code intelligence. Configure an explicit repository root. Never treat partial impact evidence as safe.',
-      }, false);
+      reply(
+        id,
+        {
+          protocolVersion: LEGACY,
+          capabilities: { tools: {} },
+          serverInfo: SERVER_INFO,
+          instructions:
+            'Local read-only code intelligence. Configure an explicit repository root. Never treat partial impact evidence as safe.',
+        },
+        false,
+      );
       // A separate initialized notification completes the handshake.
       return;
     }
@@ -104,12 +119,16 @@ export function createStdioServer({ root, env = process.env, input = process.std
         error(id, -32601, 'Method not found');
         return;
       }
-      reply(id, {
-        supportedVersions: [MODERN],
-        capabilities: { tools: {} },
-        ttlMs: 0,
-        cacheScope: 'private',
-      }, true);
+      reply(
+        id,
+        {
+          supportedVersions: [MODERN],
+          capabilities: { tools: {} },
+          ttlMs: 0,
+          cacheScope: 'private',
+        },
+        true,
+      );
       return;
     }
 
@@ -122,16 +141,22 @@ export function createStdioServer({ root, env = process.env, input = process.std
       return;
     }
     if (message.method === 'tools/list') {
-      if (message.params !== undefined &&
-          (!isObject(message.params) ||
-           (message.params.cursor !== undefined && message.params.cursor !== null))) {
+      if (
+        message.params !== undefined &&
+        (!isObject(message.params) ||
+          (message.params.cursor !== undefined && message.params.cursor !== null))
+      ) {
         error(id, -32602, 'Invalid tools/list params');
         return;
       }
-      reply(id, {
-        tools: tools.definitions,
-        ...(modern ? { ttlMs: 0, cacheScope: 'private' } : {}),
-      }, modern);
+      reply(
+        id,
+        {
+          tools: tools.definitions,
+          ...(modern ? { ttlMs: 0, cacheScope: 'private' } : {}),
+        },
+        modern,
+      );
       return;
     }
     if (message.method !== 'tools/call') {
@@ -153,7 +178,9 @@ export function createStdioServer({ root, env = process.env, input = process.std
     }
     const controller = new AbortController();
     active.set(key, { controller });
-    const progressToken = isObject(message.params._meta) ? message.params._meta.progressToken : undefined;
+    const progressToken = isObject(message.params._meta)
+      ? message.params._meta.progressToken
+      : undefined;
     let progress = 0;
     try {
       const value = await tools.call(
@@ -173,7 +200,11 @@ export function createStdioServer({ root, env = process.env, input = process.std
       if (!controller.signal.aborted) reply(id, value, modern);
     } catch {
       if (!controller.signal.aborted) {
-        reply(id, { content: [{ type: 'text', text: 'KSD_FAILED: tool execution failed' }], isError: true }, modern);
+        reply(
+          id,
+          { content: [{ type: 'text', text: 'KSD_FAILED: tool execution failed' }], isError: true },
+          modern,
+        );
       }
     } finally {
       active.delete(key);
@@ -224,9 +255,11 @@ export function createStdioServer({ root, env = process.env, input = process.std
     closed = true;
     for (const { controller } of active.values()) controller.abort();
   });
-  return { close: () => {
-    closed = true;
-    input.off('data', onChunk);
-    for (const { controller } of active.values()) controller.abort();
-  } };
+  return {
+    close: () => {
+      closed = true;
+      input.off('data', onChunk);
+      for (const { controller } of active.values()) controller.abort();
+    },
+  };
 }
