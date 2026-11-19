@@ -2,6 +2,7 @@
 import { realpathSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { createStdioServer } from './mcp/stdio.mjs';
+import { loadWorkspace } from '../dist/core/engine/workspace.js';
 
 const argv = process.argv.slice(2);
 let supplied;
@@ -24,6 +25,15 @@ try {
   if (!statSync(root).isDirectory()) throw new Error('not a directory');
 } catch {
   console.error('KSD MCP root is not an accessible directory');
+  process.exit(2);
+}
+// KSD's workspace resolver can walk up to a parent git/config root. Refuse implicit
+// expansion beyond the root explicitly authorized in the MCP configuration.
+try {
+  const workspace = await loadWorkspace(root);
+  if (workspace.root !== root) throw new Error('subdirectory is not the workspace root');
+} catch {
+  console.error('KSD MCP root must be the exact accessible KSD workspace root');
   process.exit(2);
 }
 // AGY may spawn MCP servers from its application directory rather than the workspace.
