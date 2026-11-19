@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ksd-intelligence": {
+      "command": "node",
+      "args": [
+        "/ABS/PATH/ksd-intelligence/scripts/agy-mcp.mjs",
+        "--root",
+        "/ABS/PATH/my-project"
+      ],
+      "enabledTools": ["ei_status", "ei_impact"],
+      "timeoutSeconds": 180
+    }
+  }
+}
