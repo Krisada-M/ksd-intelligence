@@ -9,8 +9,10 @@ import { PassThrough } from 'node:stream';
 import { createStdioServer } from '../../scripts/mcp/stdio.mjs';
 
 const entry = fileURLToPath(new URL('../../scripts/agy-mcp.mjs', import.meta.url));
-const modernMeta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28',
-  'io.modelcontextprotocol/clientCapabilities': {} };
+const modernMeta = {
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
 
 async function start(env = {}) {
   const root = await mkdtemp(join(tmpdir(), 'ksd-mcp-'));
@@ -50,7 +52,10 @@ async function start(env = {}) {
         reject(new Error('MCP response timed out'));
       }, 15000);
       timeout.unref();
-      waiter.resolve = (message) => { clearTimeout(timeout); resolve(message); };
+      waiter.resolve = (message) => {
+        clearTimeout(timeout);
+        resolve(message);
+      };
     });
   };
   const send = (message) => child.stdin.write(JSON.stringify(message) + '\n');
@@ -79,7 +84,9 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stderr = '';
-    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
     const exit = await new Promise((resolve) => child.once('close', resolve));
     assert.equal(exit, 2);
     assert.match(stderr, /requires --root/);
@@ -96,7 +103,9 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
         stdio: ['pipe', 'pipe', 'pipe'],
       });
       let stderr = '';
-      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
       const code = await new Promise((resolve) => child.once('close', resolve));
       assert.equal(code, 2);
       assert.match(stderr, /must be the exact accessible KSD workspace root/);
@@ -111,12 +120,17 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const before = await c.request(1, 'tools/list', {});
     assert.equal(before.error.code, -32000);
     const hello = await c.request(2, 'initialize', {
-      protocolVersion: '2025-11-25', clientInfo: { name: 'test', version: '1' }, capabilities: {},
+      protocolVersion: '2025-11-25',
+      clientInfo: { name: 'test', version: '1' },
+      capabilities: {},
     });
     assert.equal(hello.result.protocolVersion, '2025-11-25');
     c.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
     const list = await c.request(3, 'tools/list', {});
-    assert.deepEqual(list.result.tools.map((tool) => tool.name), ['ei_status', 'ei_impact']);
+    assert.deepEqual(
+      list.result.tools.map((tool) => tool.name),
+      ['ei_status', 'ei_impact'],
+    );
     assert.ok(list.result.tools.every((tool) => tool.annotations.readOnlyHint === true));
     assert.equal(list.result.tools[1].inputSchema.additionalProperties, false);
     const status = await c.request(4, 'tools/call', { name: 'ei_status', arguments: {} });
@@ -132,7 +146,10 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     assert.deepEqual(discover.result.supportedVersions, ['2026-07-28']);
     assert.equal(discover.result.resultType, 'complete');
     assert.equal(discover.result.cacheScope, 'private');
-    assert.equal(discover.result._meta['io.modelcontextprotocol/serverInfo'].name, 'ksd-intelligence');
+    assert.equal(
+      discover.result._meta['io.modelcontextprotocol/serverInfo'].name,
+      'ksd-intelligence',
+    );
     const list = await c.request(2, 'tools/list', meta);
     assert.equal(list.result.resultType, 'complete');
     assert.equal(list.result.ttlMs, 0);
@@ -147,16 +164,22 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     t.after(c.stop);
     const meta = { _meta: modernMeta };
     const invalid = await c.request(1, 'tools/call', {
-      ...meta, name: 'ei_impact', arguments: { targets: ['calculateFee'], root: '/etc' },
+      ...meta,
+      name: 'ei_impact',
+      arguments: { targets: ['calculateFee'], root: '/etc' },
     });
     assert.equal(invalid.result.isError, true);
     assert.match(invalid.result.content[0].text, /^INVALID_INPUT: unknown argument/);
     const badDepth = await c.request(2, 'tools/call', {
-      ...meta, name: 'ei_impact', arguments: { targets: ['a'], depth: 11 },
+      ...meta,
+      name: 'ei_impact',
+      arguments: { targets: ['a'], depth: 11 },
     });
     assert.equal(badDepth.result.isError, true);
     const unknown = await c.request(3, 'tools/call', {
-      ...meta, name: 'shell_exec', arguments: { command: 'whoami' },
+      ...meta,
+      name: 'shell_exec',
+      arguments: { command: 'whoami' },
     });
     assert.equal(unknown.result.isError, true);
     const unsupported = await c.request(4, 'tools/list', {
@@ -171,10 +194,14 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     t.after(c.stop);
     const meta = { _meta: modernMeta };
     const list = await c.request(1, 'tools/list', meta);
-    assert.deepEqual(list.result.tools.map((tool) => tool.name),
-      ['ei_status', 'ei_impact', 'ei_workflow']);
+    assert.deepEqual(
+      list.result.tools.map((tool) => tool.name),
+      ['ei_status', 'ei_impact', 'ei_workflow'],
+    );
     const response = await c.request(2, 'tools/call', {
-      ...meta, name: 'ei_workflow', arguments: { task: 'fix crash', stage: 'investigate' },
+      ...meta,
+      name: 'ei_workflow',
+      arguments: { task: 'fix crash', stage: 'investigate' },
     });
     assert.equal(response.result.isError, true);
     assert.match(response.result.content[0].text, /KSD_FAILED:|SKILLS_UNAVAILABLE:/);
@@ -205,7 +232,9 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const output = new PassThrough();
     let out = '';
     output.setEncoding('utf8');
-    output.on('data', (chunk) => { out += chunk; });
+    output.on('data', (chunk) => {
+      out += chunk;
+    });
     let aborted = false;
     const server = createStdioServer({
       root: '/',
@@ -215,17 +244,27 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
         definitions: [{ name: 'slow' }],
         async call(_name, _args, signal) {
           await new Promise((resolve) => {
-            signal.addEventListener('abort', () => { aborted = true; resolve(); }, { once: true });
+            signal.addEventListener(
+              'abort',
+              () => {
+                aborted = true;
+                resolve();
+              },
+              { once: true },
+            );
           });
           return { content: [{ type: 'text', text: 'done' }] };
         },
       },
     });
     const send = (message) => input.write(JSON.stringify(message) + '\n');
-    send({ jsonrpc: '2.0', id: 'a', method: 'tools/call',
-      params: { _meta: modernMeta, name: 'slow', arguments: {} } });
-    send({ jsonrpc: '2.0', method: 'notifications/cancelled',
-      params: { requestId: 'a' } });
+    send({
+      jsonrpc: '2.0',
+      id: 'a',
+      method: 'tools/call',
+      params: { _meta: modernMeta, name: 'slow', arguments: {} },
+    });
+    send({ jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 'a' } });
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(aborted, true);
     assert.doesNotMatch(out, /"id":"a"/);
