@@ -17,10 +17,11 @@ const serverMeta = () => ({ 'io.modelcontextprotocol/serverInfo': SERVER_INFO })
  * Supports the 2025-11-25 handshake and stateless MCP 2026-07-28 request envelope.
  * Only JSON-RPC envelopes may reach stdout; all failures are bounded.
  */
-export function createStdioServer({ root, env = process.env, input = process.stdin, output = process.stdout }) {
-  const tools = createTools({ root, env });
+export function createStdioServer({ root, env = process.env, input = process.stdin, output = process.stdout, toolset }) {
+  const tools = toolset ?? createTools({ root, env });
   const active = new Map();
   let legacyInitialized = false;
+  let legacyHello = false;
   let buffered = Buffer.alloc(0);
   let discarding = false;
   let closed = false;
@@ -67,11 +68,9 @@ export function createStdioServer({ root, env = process.env, input = process.std
     const isNotification = !Object.hasOwn(message, 'id');
     if (isNotification) {
       if (message.method === 'notifications/cancelled') cancel(message);
-      if (message.method === 'notifications/initialized' && legacyInitialized === false) {
-        // A client can only become ready after a completed initialize request.
-        return;
+      if (message.method === 'notifications/initialized' && legacyHello) {
+        legacyInitialized = true;
       }
-      if (message.method === 'notifications/initialized') legacyInitialized = true;
       return;
     }
     const id = message.id;
@@ -89,6 +88,7 @@ export function createStdioServer({ root, env = process.env, input = process.std
         return;
       }
       legacyInitialized = false;
+      legacyHello = true;
       reply(id, {
         protocolVersion: LEGACY,
         capabilities: { tools: {} },
@@ -96,7 +96,6 @@ export function createStdioServer({ root, env = process.env, input = process.std
         instructions: 'Local read-only code intelligence. Configure an explicit repository root. Never treat partial impact evidence as safe.',
       }, false);
       // A separate initialized notification completes the handshake.
-      legacyInitialized = false;
       return;
     }
 
