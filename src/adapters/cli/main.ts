@@ -77,7 +77,8 @@ const USAGE = `usage:
   main.js status [--root <path>] [--json]         (index, coverage, runtime, TypeScript, store, lock)
   main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui]
   main.js load  --task "..." [same options]      (needs checkouts; fails closed)
-  main.js sources check [--write] [--lock <path>]  (never clones or fetches)`;
+  main.js sources check [--write] [--lock <path>]  (never clones or fetches)
+  main.js mcp   --root <path> [--workflow]        (local stdio MCP server for Antigravity)`;
 async function run(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -98,6 +99,7 @@ async function run(argv: string[]): Promise<number> {
       deep: { type: 'boolean' },
       differential: { type: 'string' },
       depth: { type: 'string' },
+      workflow: { type: 'boolean' },
     },
   });
   const [command, sub] = positionals;
@@ -298,6 +300,33 @@ async function run(argv: string[]): Promise<number> {
     console.log(formatReports(result.reports));
     if (result.reports.some((report) => report.written)) await writeLock(lockPath, result.lock);
     return result.reports.some((report) => reportStatus(report) === 'ERROR') ? 1 : 0;
+  }
+
+  if (command === 'mcp') {
+    if (sub !== undefined) {
+      console.error('usage: main.js mcp --root /absolute/path/to/repository [--workflow]');
+      return 2;
+    }
+    const stdioUrl = new URL('../../../scripts/mcp/stdio.mjs', import.meta.url).href;
+    const { createStdioServer, resolveMcpRoot } = (await import(stdioUrl)) as {
+      createStdioServer: (options: { root: string; env?: NodeJS.ProcessEnv }) => {
+        close: () => void;
+        done: Promise<void>;
+      };
+      resolveMcpRoot: (
+        supplied: string | undefined,
+        env?: NodeJS.ProcessEnv,
+      ) => Promise<{ ok: true; root: string } | { ok: false; message: string }>;
+    };
+    const resolved = await resolveMcpRoot(values.root, process.env);
+    if (!resolved.ok) {
+      console.error(resolved.message);
+      return 2;
+    }
+    const env = values.workflow === true ? { ...process.env, KSD_MCP_WORKFLOW: '1' } : process.env;
+    const server = createStdioServer({ root: resolved.root, env });
+    await server.done;
+    return 0;
   }
 
   console.error(USAGE);

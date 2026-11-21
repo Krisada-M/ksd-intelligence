@@ -32,7 +32,9 @@ In scope, in order:
 
 Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
 
-Out of scope until the owner says otherwise: MCP adapter, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
+Out of scope until the owner says otherwise: MCP adapters other than the explicitly approved MAGY1 AGY stdio bridge, npm publishing, SBOM, compression/CCR, knowledge store, visual QA adapter, GitLab adapter, graph database servers, external vector or embedding services, Rust.
+
+**Owner-directed integration exception (2026-11-19):** MAGY1 is approved as a self-contained adapter-only milestone with brief `docs/briefs/MAGY1-mcp.md`. It may reuse the existing compiled KSD Core but must not alter policy, OMP behavior, index contracts or golden results; it requires a Draft PR, the existing quality gates and five documented self-review passes. AGY live-host support remains NOT VERIFIED until a separate manual smoke check.
 
 Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a baseline, not proof that the index/impact engine works. When a milestone is done, stop and report. Do not start the next milestone.
 

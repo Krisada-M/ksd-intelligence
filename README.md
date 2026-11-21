@@ -144,3 +144,11 @@ Never run both plugins at once (the policy would be injected twice). The old `Kr
 - One router: do not also enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers. KSD Engineering Proxy policy outranks skill text; rendered output always starts with a precedence header before any skill text.
 - Only allowlisted skills load; symlink escapes and files over 64 KiB are rejected; frontmatter is required.
 - Skill Markdown can contain hostile instructions. The loader cannot detect them. What it enforces: fixed `mayMerge`/`mayDeploy: false`, the precedence header first, and rejection of any skill whose content differs from its pinned hash.
+
+## Antigravity (AGY) integration (owner-directed MAGY1)
+
+The optional local MCP bridge exposes KSD's compiled core to Antigravity over stdio; it does **not** install KSD's OMP Engineering Policy in AGY or make AGY a second OMP runtime.
+
+Run `node scripts/agy-mcp.mjs --root /absolute/path/to/project` (or `node dist/adapters/cli/main.js mcp --root /absolute/path/to/project [--workflow]`) from a built checkout (Node >= 22.5). Configure this command in Antigravity's `mcp_config.json` with explicit absolute paths. The two default tools are `ei_status` and `ei_impact`; `ei_workflow` is opt-in through `KSD_MCP_WORKFLOW=1` (or `--workflow`). The server never accepts a project root from tool arguments.
+
+See [AGY setup, limitations and verification](docs/integrations/antigravity.md) and [AGY config example](docs/examples/antigravity-mcp_config.json). Protocol tests are not proof that a real AGY IDE or CLI build has successfully connected: mark live integration **NOT VERIFIED** until tested.

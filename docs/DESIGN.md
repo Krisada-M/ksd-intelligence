@@ -772,3 +772,11 @@ Each decision gets a short ADR in `docs/adr/` when the milestone that depends on
 4. Whether GitNexus is active for repos the owner works in; if so, how its answers compare on the same M3 tasks.
 5. Upstream skill content review: the owner reads the 15 pinned SKILL.md files once and re-reads diffs on each update.
 6. Whether 10 is the right `manyCallers` threshold, and 4,000 characters the right per-target budget (dogfood log).
+
+## Owner-directed exception — Antigravity MCP adapter (2026-11-19)
+
+The owner has explicitly authorized **MAGY1** as a standalone adapter-only integration milestone, superseding the earlier general MCP deferral for this narrow read-only local transport only. Scope, tests and manual host gate: `docs/briefs/MAGY1-mcp.md`. Installation and configuration: `docs/integrations/antigravity.md`.
+
+Antigravity is a **consumer of the existing KSD Core**, not a second index or an alternative agent runtime: `AGY -> local MCP stdio -> KSD dist/core`; OMP remains unchanged and continues to own KSD policy injection, its approvals and commands. MAGY1 ships `ei_status` and `ei_impact` by default; the pinned `ei_workflow` reader is opt-in. Source-code writes, auto-merge, scripts from skills and AGY Engineering Policy injection are not provided.
+
+No other MCP host adapter, AGY native plugin/skill packaging or policy migration is authorized by this exception. Existing roadmaps and acceptance criteria for M2b/M3/M2c remain unchanged. Green mock/protocol tests on CI do **not** prove compatibility in live AGY; a macOS/Linux runtime smoke must be separately recorded before making that claim.
