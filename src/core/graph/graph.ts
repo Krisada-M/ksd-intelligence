@@ -81,7 +81,7 @@ export class Graph {
 
   /**
    * Resolves what an agent would type to a key: `path#name`, `path:line`, `Owner.member` or a bare
-   * name. A bare name matches module-level names first, then member names.
+   * name. A bare name matches module-level names and member names alike (F7).
    */
   symbol(query: string): SymbolMatch {
     const keys = (sql: string, ...params: (string | number)[]): string[] =>
@@ -118,7 +118,16 @@ export class Graph {
         })
         .filter((row) => row.hit)
         .sort((a, b) => a.width - b.width);
-      candidates = holding.length === 0 ? [] : [holding[0]?.key ?? ''];
+      if (holding.length === 0) {
+        candidates = [];
+      } else {
+        const minWidth = holding[0]!.width;
+        const narrowest = holding.filter((row) => row.width === minWidth);
+        // Drop parent containers that share an equal span with an inner member; keep sibling ties.
+        candidates = narrowest
+          .filter((row) => !narrowest.some((other) => other.key.startsWith(`${row.key}.`)))
+          .map((row) => row.key);
+      }
       if (candidates.length === 0)
         candidates = keys(
           `SELECT s.key AS key FROM ${DECLARED} WHERE s.key = ?`,
@@ -127,13 +136,11 @@ export class Graph {
     } else if (query.includes('.')) {
       candidates = keys(`SELECT s.key AS key FROM ${DECLARED} WHERE d.name = ? ORDER BY 1`, query);
     } else {
-      candidates = keys(`SELECT s.key AS key FROM ${DECLARED} WHERE d.name = ? ORDER BY 1`, query);
-      if (candidates.length === 0) {
-        candidates = keys(
-          `SELECT s.key AS key FROM ${DECLARED} WHERE d.simple = ? ORDER BY 1`,
-          query,
-        );
-      }
+      candidates = keys(
+        `SELECT s.key AS key FROM ${DECLARED} WHERE d.simple = ? OR d.name = ? ORDER BY 1`,
+        query,
+        query,
+      );
     }
     if (candidates.length === 1) return { kind: 'found', key: candidates[0] ?? '' };
     if (candidates.length > 1) return { kind: 'ambiguous', candidates };

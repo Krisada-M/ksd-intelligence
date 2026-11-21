@@ -281,25 +281,34 @@ export class Resolver {
             return null;
         };
         const staticImport = (spec, at) => {
+            const targetKind = this.moduleTarget(spec, sf).kind;
+            const trackBindings = targetKind === 'file' || targetKind === 'unresolved';
             const target = fileImport(spec, at);
             if (target !== null)
                 addMarker(`static-import:${target}`, at);
-            return target;
+            return { path: target, trackBindings };
         };
-        /** An import or re-export binding is unresolved when the module has no such export. */
-        const binding = (name, imported, at) => {
+        const brokenImports = new Map();
+        /** An import or re-export binding is unresolved when the module or export fails to resolve. */
+        const binding = (name, names, at) => {
             const symbol = checker.getSymbolAtLocation(name);
             if (symbol === undefined)
                 return;
             if ((this.resolveAliases(symbol).declarations ?? []).length > 0)
                 return;
-            addUnresolved({
-                file,
-                line: line(at),
-                name: imported,
-                reason: 'unresolved-import',
-                source: declarations.moduleKey,
-            });
+            const filtered = [...new Set(names.filter((entry) => entry !== 'default' && entry !== ''))];
+            if (filtered.length === 0)
+                return;
+            brokenImports.set(symbol, filtered);
+            for (const imported of filtered) {
+                addUnresolved({
+                    file,
+                    line: line(at),
+                    name: imported,
+                    reason: 'unresolved-import',
+                    source: declarations.moduleKey,
+                });
+            }
         };
         const kindOfUse = (id, targetIsClass) => {
             let expr = id;
@@ -352,9 +361,23 @@ export class Resolver {
         };
         const use = (id, symbol) => {
             const at = line(id);
-            // A use of a broken import binding: the import site already holds the unresolved record.
-            if ((this.resolveAliases(symbol).declarations ?? []).length === 0)
+            if ((this.resolveAliases(symbol).declarations ?? []).length === 0) {
+                const names = brokenImports.get(symbol);
+                if (names === undefined)
+                    return;
+                const source = enclosingKey(id, declarations);
+                if (ts.isPropertyAccessExpression(id.parent) && id.parent.expression === id) {
+                    const prop = id.parent.name;
+                    const propReason = kindOfUse(prop, false) === 'CALLS' ? 'unresolved-name-match' : 'unresolved-import';
+                    addUnresolved({ file, line: line(prop), name: prop.text, reason: propReason, source });
+                    return;
+                }
+                const reason = kindOfUse(id, false) === 'CALLS' ? 'unresolved-name-match' : 'unresolved-import';
+                for (const imported of names) {
+                    addUnresolved({ file, line: at, name: imported, reason, source });
+                }
                 return;
+            }
             const source = enclosingKey(id, declarations);
             const isClass = (this.resolveAliases(symbol).flags & ts.SymbolFlags.Class) !== 0;
             const kind = kindOfUse(id, isClass);
@@ -399,10 +422,12 @@ export class Resolver {
                 }
                 return;
             }
-            // `{ a: 1 }`, `{ a() {} }`, `{ a }` typed by context: the literal's property implements the
-            // contextual one. A shorthand also uses the value it names, below.
+            // `{ a: 1 }`, `{ a() {} }`, `{ get a() {} }`, `{ a }` typed by context: the literal's property
+            // implements the contextual one. A shorthand also uses the value it names, below.
             if ((ts.isPropertyAssignment(parent) ||
                 ts.isMethodDeclaration(parent) ||
+                ts.isGetAccessorDeclaration(parent) ||
+                ts.isSetAccessorDeclaration(parent) ||
                 ts.isShorthandPropertyAssignment(parent)) &&
                 parent.name === id &&
                 ts.isObjectLiteralExpression(parent.parent)) {
@@ -451,7 +476,10 @@ export class Resolver {
                 }
                 return;
             }
-            if ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent)) &&
+            if ((ts.isPropertyAssignment(parent) ||
+                ts.isMethodDeclaration(parent) ||
+                ts.isGetAccessorDeclaration(parent) ||
+                ts.isSetAccessorDeclaration(parent)) &&
                 parent.name === node &&
                 ts.isObjectLiteralExpression(parent.parent)) {
                 for (const property of propertiesOfType(contextualTypeOf(parent.parent), node.text)) {
@@ -516,32 +544,35 @@ export class Resolver {
                 return;
             for (const clause of node.heritageClauses ?? []) {
                 const isImplements = clause.token === ts.SyntaxKind.ImplementsKeyword;
-                // A class `extends` is an ordinary reference; implements and interface extension are kept.
-                if (ts.isClassLike(node) && !isImplements)
-                    continue;
+                // Type-level `IMPLEMENTS` applies to `implements` and interface extension, not class `extends`.
+                const addTypeLevel = !ts.isClassLike(node) || isImplements;
                 for (const typeNode of clause.types) {
-                    const expression = typeNode.expression;
-                    const name = ts.isPropertyAccessExpression(expression) ? expression.name : expression;
-                    const symbol = checker.getSymbolAtLocation(name);
-                    if (symbol === undefined)
-                        continue;
-                    for (const declaration of this.targetNodes(symbol)) {
-                        const target = this.targetOfDeclaration(declaration);
-                        if (typeof target === 'object') {
-                            addEdge(ownerKey, target.key, 'IMPLEMENTS', line(typeNode));
+                    if (addTypeLevel) {
+                        const expression = typeNode.expression;
+                        const name = ts.isPropertyAccessExpression(expression) ? expression.name : expression;
+                        const symbol = checker.getSymbolAtLocation(name);
+                        if (symbol !== undefined) {
+                            for (const declaration of this.targetNodes(symbol)) {
+                                const target = this.targetOfDeclaration(declaration);
+                                if (typeof target === 'object') {
+                                    addEdge(ownerKey, target.key, 'IMPLEMENTS', line(typeNode));
+                                }
+                            }
                         }
                     }
-                    if (!ts.isClassLike(node))
-                        continue;
-                    const implemented = checker.getTypeAtLocation(typeNode);
+                    const inherited = checker.getTypeAtLocation(typeNode);
                     for (const member of node.members) {
+                        if (ts.isClassLike(node) &&
+                            (ts.getCombinedModifierFlags(member) & ts.ModifierFlags.Static) !== 0) {
+                            continue;
+                        }
                         const memberKey = declarations.keyOf.get(member);
                         const memberName = member.name;
                         if (memberKey === undefined || memberName === undefined)
                             continue;
                         if (!ts.isIdentifier(memberName) && !ts.isStringLiteral(memberName))
                             continue;
-                        const property = checker.getPropertyOfType(implemented, memberName.text);
+                        const property = checker.getPropertyOfType(inherited, memberName.text);
                         for (const declaration of property?.declarations ?? []) {
                             const target = this.targetOfDeclaration(declaration);
                             if (typeof target === 'object') {
@@ -552,12 +583,40 @@ export class Resolver {
                 }
             }
         };
+        const unwrapExpression = (expr) => {
+            let current = expr;
+            while (true) {
+                if (ts.isParenthesizedExpression(current) ||
+                    ts.isAsExpression(current) ||
+                    ts.isSatisfiesExpression(current) ||
+                    ts.isTypeAssertionExpression(current) ||
+                    ts.isNonNullExpression(current)) {
+                    current = current.expression;
+                    continue;
+                }
+                return current;
+            }
+        };
+        const extractHead = (expr) => {
+            const current = unwrapExpression(expr);
+            if (ts.isTemplateExpression(current))
+                return current.head.text;
+            if (ts.isStringLiteralLike(current))
+                return current.text;
+            if (ts.isBinaryExpression(current) &&
+                current.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+                const leftUnwrapped = unwrapExpression(current.left);
+                const rightUnwrapped = unwrapExpression(current.right);
+                const leftHead = extractHead(leftUnwrapped);
+                if (ts.isStringLiteralLike(leftUnwrapped) && ts.isStringLiteralLike(rightUnwrapped)) {
+                    return leftHead + rightUnwrapped.text;
+                }
+                return leftHead;
+            }
+            return '';
+        };
         const staticPrefix = (arg) => {
-            let head = '';
-            if (ts.isTemplateExpression(arg))
-                head = arg.head.text;
-            else if (ts.isBinaryExpression(arg) && ts.isStringLiteralLike(arg.left))
-                head = arg.left.text;
+            const head = extractHead(arg);
             if (!head.startsWith('.'))
                 return head === '' ? '*' : head;
             // normalize keeps a trailing slash, so `./handlers/` stays a directory prefix
@@ -588,7 +647,13 @@ export class Resolver {
                 return;
             const source = enclosingKey(node, declarations);
             if (!ts.isStringLiteralLike(arg)) {
-                addGap({ file, line: line(node), code: 'cjs-require', detail: '*', source });
+                addGap({
+                    file,
+                    line: line(node),
+                    code: 'cjs-require',
+                    detail: staticPrefix(arg),
+                    source,
+                });
                 return;
             }
             // TypeScript binds `require` only in JavaScript files; in TypeScript its result is untyped.
@@ -596,6 +661,63 @@ export class Resolver {
             const path = fileImport(arg, node);
             if (!bound) {
                 addGap({ file, line: line(node), code: 'cjs-require', detail: path ?? arg.text, source });
+            }
+        };
+        const propertyNameText = (name) => {
+            if (ts.isIdentifier(name) || ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) {
+                return name.text;
+            }
+            return null;
+        };
+        const emitComputedOwner = (declaration, atNode, source) => {
+            if (ts.isSourceFile(declaration)) {
+                const info = this.infoOf(declaration);
+                if (info.inScope && info.path !== null) {
+                    addGap({
+                        file,
+                        line: line(atNode),
+                        code: 'computed-member-access',
+                        detail: `${info.path}#${MODULE_NAME}`,
+                        source,
+                    });
+                }
+                return;
+            }
+            const initializer = (ts.isVariableDeclaration(declaration) ||
+                ts.isPropertyDeclaration(declaration) ||
+                ts.isPropertyAssignment(declaration)) &&
+                declaration.initializer !== undefined
+                ? unwrapExpression(declaration.initializer)
+                : undefined;
+            const holdsMembers = ts.isClassLike(declaration) ||
+                ts.isEnumDeclaration(declaration) ||
+                ts.isModuleDeclaration(declaration) ||
+                (initializer !== undefined && ts.isObjectLiteralExpression(initializer));
+            if (!holdsMembers)
+                return;
+            const target = this.targetOfDeclaration(declaration);
+            if (typeof target === 'object') {
+                addGap({
+                    file,
+                    line: line(atNode),
+                    code: 'computed-member-access',
+                    detail: target.key,
+                    source,
+                });
+                return;
+            }
+            if (target === 'local') {
+                const ownerSf = declaration.getSourceFile();
+                const info = this.infoOf(ownerSf);
+                if (info.inScope && info.path !== null) {
+                    addGap({
+                        file,
+                        line: line(atNode),
+                        code: 'computed-member-access',
+                        detail: enclosingKey(declaration, this.declarationsOf(ownerSf)),
+                        source,
+                    });
+                }
             }
         };
         const elementAccess = (node) => {
@@ -609,32 +731,95 @@ export class Resolver {
             }
             // `u[k]` with `k: keyof Usage`: any member of Usage may be read.
             keyGaps(node, this.keys.expression(argument));
-            const receiver = ts.isPropertyAccessExpression(node.expression)
-                ? node.expression.name
-                : node.expression;
-            if (!ts.isIdentifier(receiver))
-                return;
-            const symbol = checker.getSymbolAtLocation(receiver);
-            if (symbol === undefined)
-                return;
-            for (const declaration of this.targetNodes(symbol)) {
-                const target = this.targetOfDeclaration(declaration);
-                if (typeof target !== 'object')
-                    continue;
-                const holdsMembers = ts.isClassLike(declaration) ||
-                    ts.isEnumDeclaration(declaration) ||
-                    ts.isModuleDeclaration(declaration) ||
-                    (ts.isVariableDeclaration(declaration) &&
-                        declaration.initializer !== undefined &&
-                        ts.isObjectLiteralExpression(declaration.initializer));
-                if (holdsMembers) {
+            const source = enclosingKey(node, declarations);
+            const unwrapped = unwrapExpression(node.expression);
+            if (ts.isObjectLiteralExpression(unwrapped)) {
+                const ownerSf = unwrapped.getSourceFile();
+                const info = this.infoOf(ownerSf);
+                if (info.inScope && info.path !== null) {
                     addGap({
                         file,
                         line: line(node),
                         code: 'computed-member-access',
-                        detail: target.key,
-                        source: enclosingKey(node, declarations),
+                        detail: enclosingKey(unwrapped, this.declarationsOf(ownerSf)),
+                        source,
                     });
+                }
+                return;
+            }
+            const chainNames = [];
+            const chainNodes = [];
+            let root = unwrapped;
+            while (true) {
+                const current = unwrapExpression(root);
+                if (ts.isPropertyAccessExpression(current)) {
+                    chainNames.push(current.name.text);
+                    chainNodes.push(current.name);
+                    root = current.expression;
+                }
+                else if (ts.isElementAccessExpression(current) &&
+                    (ts.isStringLiteralLike(current.argumentExpression) ||
+                        ts.isNumericLiteral(current.argumentExpression))) {
+                    chainNames.push(current.argumentExpression.text);
+                    chainNodes.push(current.argumentExpression);
+                    root = current.expression;
+                }
+                else {
+                    root = current;
+                    break;
+                }
+            }
+            chainNames.reverse();
+            chainNodes.reverse();
+            const leaf = chainNodes.length > 0 ? chainNodes[chainNodes.length - 1] : root;
+            const leafSymbol = checker.getSymbolAtLocation(leaf);
+            if (leafSymbol !== undefined) {
+                for (const declaration of this.targetNodes(leafSymbol)) {
+                    emitComputedOwner(declaration, node, source);
+                }
+            }
+            if (chainNames.length > 0) {
+                const startNode = ts.isThisTypeNode(root) || root.kind === ts.SyntaxKind.ThisKeyword ? chainNodes[0] : root;
+                const stepOffset = startNode === root ? 0 : 1;
+                const startSymbol = startNode !== undefined ? checker.getSymbolAtLocation(startNode) : undefined;
+                if (startSymbol !== undefined) {
+                    const walkChain = (decl, names) => {
+                        if (!('initializer' in decl) || decl.initializer === undefined)
+                            return;
+                        let currentExpr = unwrapExpression(decl.initializer);
+                        let ownerDecl;
+                        for (const propName of names) {
+                            if (!ts.isObjectLiteralExpression(currentExpr))
+                                return;
+                            const match = currentExpr.properties.find((prop) => prop.name !== undefined && propertyNameText(prop.name) === propName);
+                            if (match === undefined)
+                                return;
+                            if (ts.isPropertyAssignment(match)) {
+                                ownerDecl = match;
+                                currentExpr = unwrapExpression(match.initializer);
+                            }
+                            else if (ts.isShorthandPropertyAssignment(match)) {
+                                const sym = checker.getSymbolAtLocation(match.name);
+                                const valDecl = sym !== undefined ? this.targetNodes(sym)[0] : undefined;
+                                if (valDecl === undefined ||
+                                    !('initializer' in valDecl) ||
+                                    valDecl.initializer === undefined) {
+                                    return;
+                                }
+                                ownerDecl = valDecl;
+                                currentExpr = unwrapExpression(valDecl.initializer);
+                            }
+                            else {
+                                return;
+                            }
+                        }
+                        if (ownerDecl !== undefined && ts.isObjectLiteralExpression(currentExpr)) {
+                            emitComputedOwner(ownerDecl, node, source);
+                        }
+                    };
+                    for (const decl of this.targetNodes(startSymbol)) {
+                        walkChain(decl, chainNames.slice(stepOffset));
+                    }
                 }
             }
         };
@@ -662,16 +847,21 @@ export class Resolver {
                 return;
             }
             if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) {
-                const target = staticImport(node.moduleSpecifier, node);
+                const { trackBindings } = staticImport(node.moduleSpecifier, node);
                 const clause = node.importClause;
-                if (target !== null && clause !== undefined) {
+                if (trackBindings && clause !== undefined) {
                     if (clause.name !== undefined)
-                        binding(clause.name, 'default', node);
+                        binding(clause.name, [clause.name.text], node);
                     const bindings = clause.namedBindings;
                     if (bindings !== undefined && ts.isNamedImports(bindings)) {
                         for (const element of bindings.elements) {
-                            binding(element.name, (element.propertyName ?? element.name).text, element);
+                            const local = element.name.text;
+                            const imported = (element.propertyName ?? element.name).text;
+                            binding(element.name, [imported, local], element);
                         }
+                    }
+                    else if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
+                        binding(bindings.name, [bindings.name.text], node);
                     }
                 }
                 if (node.moduleSpecifier.text === 'react-native')
@@ -684,19 +874,27 @@ export class Resolver {
                 // `export { a }` names local declarations: their export status, not a use
                 if (spec === undefined || !ts.isStringLiteralLike(spec))
                     return;
-                if (staticImport(spec, node) === null || clause === undefined)
+                const { trackBindings } = staticImport(spec, node);
+                if (!trackBindings || clause === undefined)
                     return;
                 if (ts.isNamedExports(clause)) {
                     for (const element of clause.elements) {
-                        binding(element.name, (element.propertyName ?? element.name).text, element);
+                        const exported = element.name.text;
+                        const imported = (element.propertyName ?? element.name).text;
+                        binding(element.name, [imported, exported], element);
                     }
+                }
+                else if (ts.isNamespaceExport(clause)) {
+                    binding(clause.name, [clause.name.text], node);
                 }
                 return; // re-exports are recorded in the exports table
             }
             if (ts.isImportEqualsDeclaration(node) &&
                 ts.isExternalModuleReference(node.moduleReference) &&
                 ts.isStringLiteralLike(node.moduleReference.expression)) {
-                staticImport(node.moduleReference.expression, node);
+                const { trackBindings } = staticImport(node.moduleReference.expression, node);
+                if (trackBindings)
+                    binding(node.name, [node.name.text], node);
                 return;
             }
             if (ts.isImportTypeNode(node) &&
@@ -772,13 +970,19 @@ export class Resolver {
         const ts = this.ts;
         const checker = this.checker;
         const names = this.scope.declarationNames;
+        const canNameSymbol = (type) => {
+            if ((type.flags & (ts.TypeFlags.String | ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) {
+                return true;
+            }
+            return type.isUnion() && type.types.some(canNameSymbol);
+        };
         const couldName = (node) => {
             if (ts.isLiteralTypeNode(node.parent))
                 return false; // a type position declares a shape
             const contextual = checker.getContextualType(node);
             if (contextual === undefined)
                 return true;
-            return ((contextual.flags & (ts.TypeFlags.String | ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0);
+            return canNameSymbol(contextual);
         };
         const found = new Map();
         const walk = (node) => {

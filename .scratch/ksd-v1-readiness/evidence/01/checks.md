@@ -73,3 +73,23 @@ Acceptance verifier returned **BLOCK** on the preceding worktree evidence. The c
 - Bundle: `/tmp/ksd-m2b-round6-handoff.BH0u3I/m2b-final.bundle`
 - SHA-256: `8f0c0eb549374684edd949944685474914aa68e66b51fd7a42e89b5353181ab2`
 - After copying the bundle and the local tracker separately, run `git fetch /path/to/m2b-final.bundle refs/heads/m2b-final:refs/heads/m2b-round6-candidate` in the WSL checkout containing the prerequisite. Test the candidate in a disposable checkout using the pinned corpus and cohort from the [runbook](../../round-6-verification.md). This import and reference lane have not been run.
+
+## WSL2 Linux x86_64 verification and reference-corpus completion (2026-11-22)
+
+Host: Linux WSL2 x86_64. Node: `v24.21.0`. TypeScript runtime: `5.9.3` (`sha256 3ae902c92cc44dace175c0e69e13a4b0899f6983c6121d76b9ab8dd5795e7675`). Branch: `m2b-final` (code commit `7ee7307`). Reference corpus: `/var/tmp/m2a2/omp-src` at `04cd1a7549a02d62ad1d24826198d52507595683`.
+
+| Command | Observed result |
+|---|---|
+| `npm test` | Exit 0; 605 tests, 59 suites, 605 pass, 0 fail, 0 skipped. |
+| `npm run typecheck && npm run lint && npm run format:check` | Exit 0 for all three; Prettier: “All matched files use Prettier code style!” |
+| `npm run check:dist` | Exit 0 after commit `7ee7307`. |
+| `node scripts/check-protected-paths.mjs HEAD~1 HEAD` | Exit 0; `No protected paths changed.` |
+| `node dist/adapters/cli/main.js setup --check` | Exit 0; TypeScript `5.9.3` ready, SHA-256 `3ae902c92cc44dace175c0e69e13a4b0899f6983c6121d76b9ab8dd5795e7675`. |
+| `node .scratch/ksd-v1-readiness/round-6-fixture.mjs` | Exit 0; `linux x64`, `v24.21.0`, `320` compiler callers, untracked caller indexed, `0` graph differences, `300` differential declarations, `640` references, `0` misses. |
+| `node dist/adapters/cli/main.js index --root /var/tmp/m2a2/omp-src --full --json > /var/tmp/ksd-m2b-r6/pre-r8-index.json` | Exit 0; 10,502 scanned, 6,829 indexable, 165,011 declarations, 0 problems. |
+| `node dist/adapters/cli/main.js status --root /var/tmp/m2a2/omp-src --json > /var/tmp/ksd-m2b-r6/status.json` | Exit 0; `state: "ready"`, `schemaVersion: 4`. |
+| `node dist/adapters/cli/main.js doctor --deep --root /var/tmp/m2a2/omp-src --differential 300 --json > /var/tmp/ksd-m2b-r6/doctor-deep.json` | Exit 0; `differences.count: 0`, `counterDifferences.count: 0`, `differential: { declarations: 300, references: 8103, covered: 8103, misses: [] }`. |
+| Round 6 mutation smoke (`16` mutants across F1–F15 and R8) | Exit 0; **16/16 killed, 0 survived** (`/var/tmp/ksd-m2b-r6/mutate-r6.json`). |
+| 200-target fixed cohort & 20-`low` audit (`/var/tmp/ksd-m2b-r6/cohort-audit-edit.json`) | Exit 0; `low: 17`, `medium: 138`, `unknown: 45`; `20/20` lows audited against `findReferences` (`63/63` references covered, `0` uncovered). |
+| R8 20-target before/after latency (`/var/tmp/ksd-m2b-r6/{before,after}-r8-latency.json`) | Exit 0; whole-call p50 `1,497.78 ms -> 201.18 ms`, p95 `2,106.21 ms -> 291.54 ms` (< 300 ms); staged total p50 `1,479.50 ms -> 221.72 ms`, p95 `1,667.23 ms -> 240.56 ms` (< 300 ms); 20/20 results bit-for-bit identical. |
+| 1-file body edit latency on `oh-my-pi` | Exit 0; `26,338.98 ms` (`26.34 s`), `indexState: "updated"`, `updatedFiles: 1`, `lastReason: "1 changed · 0 removed · 1 resolved"`. |

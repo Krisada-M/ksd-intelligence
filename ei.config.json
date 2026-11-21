@@ -9,7 +9,8 @@
       "tests/**"
     ],
     "exclude": [
-      "**/dist/**"
+      "**/dist/**",
+      "tests/fixtures/**"
     ],
     "routes": [],
     "maxDepth": 10,

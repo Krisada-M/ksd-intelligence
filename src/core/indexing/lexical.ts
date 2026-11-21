@@ -1,5 +1,90 @@
+import type * as TS from 'typescript';
 import type { Ts } from './declarations.js';
 import type { FileRows } from '../../storage/records.js';
+
+const regexPrefixCache = new WeakMap<Ts, ReadonlySet<TS.SyntaxKind>>();
+
+function regexPrefixTokens(ts: Ts): ReadonlySet<TS.SyntaxKind> {
+  let cached = regexPrefixCache.get(ts);
+  if (cached === undefined) {
+    const k = ts.SyntaxKind;
+    cached = new Set<TS.SyntaxKind>([
+      k.Unknown,
+      k.EqualsToken,
+      k.OpenParenToken,
+      k.SemicolonToken,
+      k.BarBarToken,
+      k.AmpersandAmpersandToken,
+      k.QuestionQuestionToken,
+      k.ExclamationToken,
+      k.PlusToken,
+      k.MinusToken,
+      k.AsteriskToken,
+      k.AsteriskAsteriskToken,
+      k.SlashToken,
+      k.SlashEqualsToken,
+      k.PercentToken,
+      k.TildeToken,
+      k.DotDotDotToken,
+      k.PlusEqualsToken,
+      k.MinusEqualsToken,
+      k.AsteriskEqualsToken,
+      k.AsteriskAsteriskEqualsToken,
+      k.PercentEqualsToken,
+      k.LessThanLessThanToken,
+      k.LessThanLessThanEqualsToken,
+      k.GreaterThanGreaterThanToken,
+      k.GreaterThanGreaterThanEqualsToken,
+      k.GreaterThanGreaterThanGreaterThanToken,
+      k.GreaterThanGreaterThanGreaterThanEqualsToken,
+      k.AmpersandToken,
+      k.AmpersandEqualsToken,
+      k.BarToken,
+      k.BarEqualsToken,
+      k.CaretToken,
+      k.CaretEqualsToken,
+      k.BarBarEqualsToken,
+      k.AmpersandAmpersandEqualsToken,
+      k.QuestionQuestionEqualsToken,
+      k.EqualsEqualsToken,
+      k.EqualsEqualsEqualsToken,
+      k.ExclamationEqualsToken,
+      k.ExclamationEqualsEqualsToken,
+      k.LessThanToken,
+      k.LessThanEqualsToken,
+      k.GreaterThanToken,
+      k.GreaterThanEqualsToken,
+      k.OpenBracketToken,
+      k.OpenBraceToken,
+      k.CommaToken,
+      k.ColonToken,
+      k.QuestionToken,
+      k.EqualsGreaterThanToken,
+      k.TemplateHead,
+      k.TemplateMiddle,
+      k.ReturnKeyword,
+      k.ThrowKeyword,
+      k.CaseKeyword,
+      k.ElseKeyword,
+      k.AwaitKeyword,
+      k.YieldKeyword,
+      k.TypeOfKeyword,
+      k.VoidKeyword,
+      k.DeleteKeyword,
+      k.DoKeyword,
+      k.TryKeyword,
+      k.FinallyKeyword,
+      k.InKeyword,
+      k.InstanceOfKeyword,
+      k.NewKeyword,
+      k.OfKeyword,
+      k.ExportKeyword,
+      k.DefaultKeyword,
+    ]);
+    regexPrefixCache.set(ts, cached);
+  }
+  return cached;
+}
 
 /** The line of a byte offset in `content`, from precomputed line starts. */
 function lineOf(lineStarts: readonly number[], offset: number): number {
@@ -39,8 +124,25 @@ export function scanLexically(
     content,
   );
   const templateBraces: number[] = [];
-  let previous = ts.SyntaxKind.Unknown;
+  let previous = ts.SyntaxKind.Unknown as TS.SyntaxKind;
   const controlParens: boolean[] = [];
+  const regexPrefixes = regexPrefixTokens(ts);
+  let regexOffsets: ReadonlySet<number> | undefined;
+  const regexStartsHere = (offset: number): boolean => {
+    if (regexOffsets === undefined) {
+      // Only parse a full AST on the rare `}` + `/` boundary so `{ a: 1 } / x` and
+      // `function() {} / x` remain division while `if (b) {} \n /regex/` stays a regex.
+      const collected = new Set<number>();
+      const sf = ts.createSourceFile(file, content, ts.ScriptTarget.Latest, false);
+      const visit = (node: TS.Node): void => {
+        if (ts.isRegularExpressionLiteral(node)) collected.add(node.getStart(sf));
+        ts.forEachChild(node, visit);
+      };
+      visit(sf);
+      regexOffsets = collected;
+    }
+    return regexOffsets.has(offset);
+  };
   for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
     if (token === ts.SyntaxKind.OpenParenToken) {
       controlParens.push(
@@ -64,31 +166,9 @@ export function scanLexically(
       templateBraces.push(0);
     }
     if (
-      token === ts.SyntaxKind.SlashToken &&
-      (previous === ts.SyntaxKind.Unknown ||
-        previous === ts.SyntaxKind.EqualsToken ||
-        previous === ts.SyntaxKind.OpenParenToken ||
-        previous === ts.SyntaxKind.SemicolonToken ||
-        previous === ts.SyntaxKind.BarBarToken ||
-        previous === ts.SyntaxKind.AmpersandAmpersandToken ||
-        previous === ts.SyntaxKind.QuestionQuestionToken ||
-        previous === ts.SyntaxKind.ExclamationToken ||
-        previous === ts.SyntaxKind.PlusToken ||
-        previous === ts.SyntaxKind.MinusToken ||
-        previous === ts.SyntaxKind.AsteriskToken ||
-        previous === ts.SyntaxKind.EqualsEqualsToken ||
-        previous === ts.SyntaxKind.EqualsEqualsEqualsToken ||
-        previous === ts.SyntaxKind.OpenBracketToken ||
-        previous === ts.SyntaxKind.OpenBraceToken ||
-        previous === ts.SyntaxKind.CommaToken ||
-        previous === ts.SyntaxKind.ColonToken ||
-        previous === ts.SyntaxKind.QuestionToken ||
-        previous === ts.SyntaxKind.ReturnKeyword ||
-        previous === ts.SyntaxKind.ThrowKeyword ||
-        previous === ts.SyntaxKind.CaseKeyword ||
-        previous === ts.SyntaxKind.EqualsGreaterThanToken ||
-        previous === ts.SyntaxKind.TemplateHead ||
-        previous === ts.SyntaxKind.TemplateMiddle)
+      (token === ts.SyntaxKind.SlashToken || token === ts.SyntaxKind.SlashEqualsToken) &&
+      (regexPrefixes.has(previous) ||
+        (previous === ts.SyntaxKind.CloseBraceToken && regexStartsHere(scanner.getTokenStart())))
     ) {
       token = scanner.reScanSlashToken();
     }
@@ -108,9 +188,11 @@ export function scanLexically(
       }
     }
     previous =
-      token === ts.SyntaxKind.CloseParenToken && controlParens.pop()
-        ? ts.SyntaxKind.Unknown
-        : token;
+      previous === ts.SyntaxKind.DotToken || previous === ts.SyntaxKind.QuestionDotToken
+        ? ts.SyntaxKind.Identifier
+        : token === ts.SyntaxKind.CloseParenToken && controlParens.pop()
+          ? ts.SyntaxKind.Unknown
+          : token;
   }
 
   return {

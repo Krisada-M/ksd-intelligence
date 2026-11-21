@@ -111,26 +111,117 @@ export class KeyAccess {
             if (parameter?.type === undefined)
                 return [];
             const rest = parameter.dotDotDotToken !== undefined;
-            const declared = inArray || rest ? this.elementTypeNode(parameter.type) : parameter.type;
-            if (declared === undefined || (inArray && rest))
+            if (inArray && rest)
                 return [];
-            return this.writtenOwners(declared).flatMap((owner) => this.instantiate(owner, call, parameter.parent));
+            const declared = inArray || rest ? this.elementTypeNodes(parameter.type) : [parameter.type];
+            if (declared.length === 0)
+                return [];
+            return declared
+                .flatMap((d) => this.writtenOwners(d))
+                .flatMap((owner) => this.instantiate(owner, call, parameter.parent));
         }
-        const parent = node.parent;
+        const parent = argument.parent;
         if ((ts.isVariableDeclaration(parent) ||
             ts.isPropertyDeclaration(parent) ||
             ts.isParameter(parent)) &&
-            parent.initializer === node &&
+            parent.initializer === argument &&
             parent.type !== undefined) {
-            return this.concrete(this.writtenOwners(parent.type));
+            const nodes = inArray ? this.elementTypeNodes(parent.type) : [parent.type];
+            return this.concrete(nodes.flatMap((t) => this.writtenOwners(t)));
         }
-        return this.concrete(this.ownersOfType(this.checker.getContextualType(node)));
+        if ((ts.isAsExpression(parent) ||
+            ts.isSatisfiesExpression(parent) ||
+            ts.isTypeAssertionExpression(parent)) &&
+            parent.expression === argument) {
+            const nodes = inArray ? this.elementTypeNodes(parent.type) : [parent.type];
+            return this.concrete(nodes.flatMap((t) => this.writtenOwners(t)));
+        }
+        if (ts.isPropertyAssignment(parent) &&
+            parent.initializer === argument &&
+            ts.isObjectLiteralExpression(parent.parent)) {
+            const fromProp = this.ownersOfPropertyAssignment(parent, inArray);
+            if (fromProp.length > 0)
+                return fromProp;
+        }
+        const contextual = this.checker.getContextualType(node);
+        if (contextual !== undefined) {
+            const fromContext = this.concrete(this.ownersOfType(contextual));
+            if (fromContext.length > 0)
+                return fromContext;
+        }
+        if (inArray) {
+            const arrCtx = this.checker.getContextualType(argument);
+            if (arrCtx !== undefined) {
+                const elementTypes = (arrCtx.isUnion() ? arrCtx.types : [arrCtx])
+                    .map((t) => this.checker.getIndexTypeOfType(t, ts.IndexKind.Number))
+                    .filter((t) => t !== undefined);
+                return this.concrete(elementTypes.flatMap((t) => this.ownersOfType(t)));
+            }
+        }
+        return [];
+    }
+    ownersOfPropertyAssignment(prop, inArray) {
+        const ts = this.ts;
+        if (!ts.isObjectLiteralExpression(prop.parent))
+            return [];
+        const propName = prop.name;
+        if (!ts.isIdentifier(propName) &&
+            !ts.isStringLiteralLike(propName) &&
+            !ts.isNumericLiteral(propName)) {
+            return [];
+        }
+        const objType = this.checker.getContextualType(prop.parent);
+        if (objType === undefined)
+            return [];
+        const owners = [];
+        for (const part of objType.isUnion() ? objType.types : [objType]) {
+            const symbol = this.checker.getPropertyOfType(part, propName.text);
+            for (const decl of symbol?.declarations ?? []) {
+                if ('type' in decl && decl.type !== undefined) {
+                    const typeNode = decl.type;
+                    const nodes = inArray ? this.elementTypeNodes(typeNode) : [typeNode];
+                    owners.push(...this.concrete(nodes.flatMap((t) => this.writtenOwners(t))));
+                }
+            }
+        }
+        return owners;
+    }
+    isBroadStringLike(type) {
+        if ((type.flags &
+            (this.ts.TypeFlags.String | this.ts.TypeFlags.Any | this.ts.TypeFlags.Unknown)) !==
+            0) {
+            return true;
+        }
+        return type.isUnion() && type.types.some((t) => this.isBroadStringLike(t));
     }
     ownersOfExpression(node) {
         const ts = this.ts;
+        if (ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) {
+            return this.ownersOfExpression(node.expression);
+        }
+        if (ts.isAsExpression(node) ||
+            ts.isSatisfiesExpression(node) ||
+            ts.isTypeAssertionExpression(node)) {
+            return this.concrete(this.writtenOwners(node.type));
+        }
+        const exprType = this.checker.getTypeAtLocation(node);
+        if (this.isBroadStringLike(this.checker.getBaseConstraintOfType(exprType) ?? exprType)) {
+            return [];
+        }
+        if (ts.isConditionalExpression(node)) {
+            return [
+                ...this.ownersOfExpression(node.whenTrue),
+                ...this.ownersOfExpression(node.whenFalse),
+            ];
+        }
+        if (ts.isBinaryExpression(node) &&
+            (node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ||
+                node.operatorToken.kind === ts.SyntaxKind.BarBarToken)) {
+            return [...this.ownersOfExpression(node.left), ...this.ownersOfExpression(node.right)];
+        }
         const name = ts.isPropertyAccessExpression(node) ? node.name : node;
         if (!ts.isIdentifier(name)) {
-            return this.concrete(this.ownersOfType(this.checker.getTypeAtLocation(node)));
+            return this.concrete(this.ownersOfType(exprType));
         }
         let symbol = this.checker.getSymbolAtLocation(name);
         if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
@@ -152,14 +243,46 @@ export class KeyAccess {
         }
         return this.concrete(this.ownersOfType(this.checker.getTypeOfSymbol(symbol)));
     }
-    writtenOwners(node) {
+    writtenOwners(node, seen = new Set()) {
+        if (seen.has(node))
+            return [];
+        seen.add(node);
+        const ts = this.ts;
         const type = this.checker.getTypeFromTypeNode(node);
         const constraint = this.checker.getBaseConstraintOfType(type) ?? type;
         // `keyof Usage | string` is just string: its syntax must not turn log("cost") into a read.
-        if ((constraint.flags &
-            (this.ts.TypeFlags.String | this.ts.TypeFlags.Any | this.ts.TypeFlags.Unknown)) !==
-            0) {
+        if ((constraint.flags & (ts.TypeFlags.String | ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0 ||
+            this.isBroadStringLike(type)) {
             return [];
+        }
+        if (ts.isParenthesizedTypeNode(node)) {
+            return this.writtenOwners(node.type, seen);
+        }
+        if (ts.isUnionTypeNode(node)) {
+            return node.types.flatMap((part) => this.writtenOwners(part, seen));
+        }
+        if (ts.isTypeReferenceNode(node)) {
+            let symbol = this.checker.getSymbolAtLocation(node.typeName);
+            if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0) {
+                symbol = this.checker.getAliasedSymbol(symbol);
+            }
+            const decl = symbol?.declarations?.[0];
+            if (decl !== undefined && ts.isTypeAliasDeclaration(decl)) {
+                if (decl.typeParameters === undefined) {
+                    return this.writtenOwners(decl.type, seen);
+                }
+                // Single-property interfaces collapse `keyof Single` to a string literal; map `type Keys<T> = keyof T` directly.
+                if (ts.isTypeOperatorNode(decl.type) &&
+                    decl.type.operator === ts.SyntaxKind.KeyOfKeyword &&
+                    ts.isTypeReferenceNode(decl.type.type) &&
+                    ts.isIdentifier(decl.type.type.typeName)) {
+                    const paramName = decl.type.type.typeName.text;
+                    const idx = decl.typeParameters.findIndex((p) => p.name.text === paramName);
+                    const arg = idx >= 0 ? node.typeArguments?.[idx] : undefined;
+                    if (arg !== undefined)
+                        return [this.checker.getTypeFromTypeNode(arg)];
+                }
+            }
         }
         const targets = this.keyofTargets(node);
         // Resolving the type preserves instantiated generic aliases such as `Keys<Usage>`.
@@ -169,13 +292,21 @@ export class KeyAccess {
     }
     /** Owners of a key type: `keyof X`, a key union built from one, or a constrained `K`. */
     ownersOfType(type, depth = 0) {
-        if (type === undefined || depth > 3)
+        if (type === undefined || depth > 6)
+            return [];
+        if (this.isBroadStringLike(type))
             return [];
         if (isIndexType(this.ts, type))
             return [type.type];
         const origin = unionOrigin(type);
-        if (origin !== undefined && isIndexType(this.ts, origin))
-            return [origin.type];
+        if (origin !== undefined) {
+            const fromOrigin = this.ownersOfType(origin, depth + 1);
+            if (fromOrigin.length > 0)
+                return fromOrigin;
+        }
+        if (type.isUnion()) {
+            return type.types.flatMap((part) => this.ownersOfType(part, depth + 1));
+        }
         if ((type.flags & this.ts.TypeFlags.TypeParameter) !== 0) {
             return this.ownersOfType(type.getConstraint(), depth + 1);
         }
@@ -211,19 +342,23 @@ export class KeyAccess {
         }
         return [];
     }
-    elementTypeNode(node) {
+    elementTypeNodes(node) {
         const ts = this.ts;
+        if (ts.isParenthesizedTypeNode(node))
+            return this.elementTypeNodes(node.type);
+        if (ts.isUnionTypeNode(node))
+            return node.types.flatMap((t) => this.elementTypeNodes(t));
         if (ts.isArrayTypeNode(node))
-            return node.elementType;
+            return [node.elementType];
         if (ts.isTypeOperatorNode(node) && node.operator === ts.SyntaxKind.ReadonlyKeyword) {
-            return this.elementTypeNode(node.type);
+            return this.elementTypeNodes(node.type);
         }
         if (ts.isTypeReferenceNode(node) &&
             ts.isIdentifier(node.typeName) &&
             (node.typeName.text === 'Array' || node.typeName.text === 'ReadonlyArray')) {
-            return node.typeArguments?.[0];
+            return node.typeArguments?.[0] !== undefined ? [node.typeArguments[0]] : [];
         }
-        return undefined;
+        return [];
     }
     parameterAt(call, index) {
         if (index < 0)

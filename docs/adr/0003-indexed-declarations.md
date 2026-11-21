@@ -42,7 +42,7 @@ String literals are not uses, with one exception: a literal that names a propert
 
 ## Edge kinds
 
-`CALLS` (the use is the callee of a call or `new` on a function), `CONSTRUCTS` (`new` on a class), `REFERENCES` (any other value or type use, including passing a function as a value and JSX element use), `IMPORTS` (file-level: this module imports that one), `IMPLEMENTS` (class to interface member, interface extension), `TESTS` (file-level: a test file reaches the target).
+`CALLS` (the use is the callee of a call or `new` on a function), `CONSTRUCTS` (`new` on a class), `REFERENCES` (any other value or type use, including passing a function as a value and JSX element use), `IMPORTS` (file-level: this module imports that one), `IMPLEMENTS` (class to implemented interface, overriding non-static member to base-class or interface member, interface extension and redeclared interface member), `TESTS` (file-level: a test file reaches the target).
 
 One enclosing symbol may have several edges to the same target; they are stored once per (source, target, kind) with the list of sites.
 

@@ -202,10 +202,15 @@ async function run(argv) {
             console.log(JSON.stringify(result, null, 2));
             return 0;
         }
+        const dry = values['dry-run'] === true;
         const status = result.configOverwritten
-            ? 'overwritten'
+            ? dry
+                ? 'would overwrite'
+                : 'overwritten'
             : result.configCreated
-                ? 'created'
+                ? dry
+                    ? 'would create'
+                    : 'created'
                 : 'already exists, skipped';
         console.log('Project initialized:');
         console.log(`  Repo ID:    ${result.repoId}`);

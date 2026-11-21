@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import type { ImpactConfig } from '../kernel/config.js';
 import type { FileRecord } from '../../storage/sqlite.js';
-import { exclusionOf, hashFile, mapLimit, statVisible } from './scan.js';
+import { hashFile, kindOf, mapLimit, neverReadOf, statVisible } from './scan.js';
 
 export interface ProbeResult {
   /** Visible on disk now, absent from the fingerprint. */
@@ -37,28 +37,34 @@ export async function probe(
   const added: string[] = [];
   const changed: string[] = [];
   const touched: string[] = [];
-  let hashed = 0;
+  const toHash: { entry: (typeof entries)[number]; previousHash: string; statSame: boolean }[] = [];
 
-  await mapLimit(entries, 32, async (entry) => {
+  for (const entry of entries) {
     const previous = known.get(entry.path);
     known.delete(entry.path);
     if (!previous) {
       added.push(entry.path);
-      return;
+      continue;
     }
     const statSame = entry.size === previous.size && entry.mtimeMs === previous.mtimeMs;
     // The common case on every query: nothing to read, so no path matching either.
-    if (statSame && freshness === 'stat') return;
-    const readable = !entry.symlink && exclusionOf(entry.path, impact) === null;
+    if (statSame && freshness === 'stat') continue;
+    const readable = !entry.symlink && neverReadOf(entry.path, kindOf(entry.path), impact) === null;
     if (!readable || previous.hash === null) {
       if (!statSame) changed.push(entry.path);
-      return;
+      continue;
     }
-    hashed++;
-    const hash = await hashFile(join(root, entry.path), entry.size);
-    if (hash !== previous.hash) changed.push(entry.path);
-    else if (!statSame) touched.push(entry.path);
-  });
+    toHash.push({ entry, previousHash: previous.hash, statSame });
+  }
+
+  const hashed = toHash.length;
+  if (hashed > 0) {
+    await mapLimit(toHash, 32, async ({ entry, previousHash, statSame }) => {
+      const hash = await hashFile(join(root, entry.path), entry.size);
+      if (hash !== previousHash) changed.push(entry.path);
+      else if (!statSame) touched.push(entry.path);
+    });
+  }
 
   return {
     added: added.sort(),
