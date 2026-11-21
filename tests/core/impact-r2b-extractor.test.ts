@@ -88,7 +88,7 @@ describe('D55 lexical and contextual name scoping', () => {
       const typed = db
         .prepare("SELECT lines FROM name_tokens WHERE file = ? AND name = 'input'")
         .get('packages/shared/src/typed.ts');
-      assert.deepEqual(JSON.parse(String(typed?.lines)), [6, 7, 8]);
+      assert.deepEqual(JSON.parse(String(typed?.lines)), [5, 6, 7, 8]);
       assert.deepEqual(
         db
           .prepare("SELECT line, kind FROM markers WHERE file = ? AND kind LIKE 'static-import:%'")

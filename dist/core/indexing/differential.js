@@ -265,7 +265,10 @@ export function differential(ts, root, db, options) {
                     // has no declaration to be a use of: TypeScript relates it to every other literal typed the
                     // same way, but none uses another. Keys that have declarations are still checked.
                     const member = node.parent;
-                    if ((ts.isPropertyAssignment(member) || ts.isMethodDeclaration(member)) &&
+                    if ((ts.isPropertyAssignment(member) ||
+                        ts.isMethodDeclaration(member) ||
+                        ts.isGetAccessorDeclaration(member) ||
+                        ts.isSetAccessorDeclaration(member)) &&
                         member.name === node &&
                         ts.isObjectLiteralExpression(member.parent) &&
                         (ts.isIdentifier(node) || ts.isStringLiteralLike(node) || ts.isNumericLiteral(node))) {

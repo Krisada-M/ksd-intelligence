@@ -1,8 +1,8 @@
-# Round 6 findings evidence — PARTIAL
+# Round 6 findings evidence — VERIFIED (F1–F15, R8, D59 small items, and real-corpus gates)
 
-The first regression worktree started at `368695e` (`m2b-final`), from owner-confirmed base `6be6c2e77b5e5d4ae79e3e487b40e8fcd54cb6dc`. F1, F2 and F4 reviewer-input tests passed on `368695e`, before additional body-use and dispatch coverage. F3, F5 and F6 had the verbatim red output below before targeted fixes.
+All 15 review findings (`F1`–`F15`), `R8` on-demand SQLite loading + schema v4 indexes, `ei init --dry-run` `(would create)`/`(would overwrite)`, `tests/fixtures/**` exclusion in `ei.config.json`, and contextually typed object-literal `get`/`set` accessors were verified on Linux WSL2 x86_64 (commit `7ee7307` on `m2b-final`), with 605/605 unit/integration tests passing, 16/16 Round 6 mutants killed, and all `oh-my-pi` reference-corpus gates passing ([checks.md](checks.md), [r8-split.md](r8-split.md)).
 
-The local candidate was subsequently committed as `c8809aa3aea7b7d2f099d73dd355e6adc0f37d11`; acceptance remains blocked by the external and mutation evidence listed in [checks.md](checks.md).
+The earlier macOS worktree notes below are retained for historical traceability.
 
 | Finding | Fix summary | Test name / evidence | Status |
 |---|---|---|---|

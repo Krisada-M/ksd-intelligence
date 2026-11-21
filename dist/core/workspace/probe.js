@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { exclusionOf, hashFile, mapLimit, statVisible } from './scan.js';
+import { hashFile, kindOf, mapLimit, neverReadOf, statVisible } from './scan.js';
 /**
  * Two-level freshness, level 1 (D22): list the visible files, stat each, and read only files whose
  * (size, mtime) differ from the fingerprint. Blind spot, accepted for queries: a same-size edit
@@ -13,31 +13,36 @@ export async function probe(root, impact, fingerprint, freshness = impact.freshn
     const added = [];
     const changed = [];
     const touched = [];
-    let hashed = 0;
-    await mapLimit(entries, 32, async (entry) => {
+    const toHash = [];
+    for (const entry of entries) {
         const previous = known.get(entry.path);
         known.delete(entry.path);
         if (!previous) {
             added.push(entry.path);
-            return;
+            continue;
         }
         const statSame = entry.size === previous.size && entry.mtimeMs === previous.mtimeMs;
         // The common case on every query: nothing to read, so no path matching either.
         if (statSame && freshness === 'stat')
-            return;
-        const readable = !entry.symlink && exclusionOf(entry.path, impact) === null;
+            continue;
+        const readable = !entry.symlink && neverReadOf(entry.path, kindOf(entry.path), impact) === null;
         if (!readable || previous.hash === null) {
             if (!statSame)
                 changed.push(entry.path);
-            return;
+            continue;
         }
-        hashed++;
-        const hash = await hashFile(join(root, entry.path), entry.size);
-        if (hash !== previous.hash)
-            changed.push(entry.path);
-        else if (!statSame)
-            touched.push(entry.path);
-    });
+        toHash.push({ entry, previousHash: previous.hash, statSame });
+    }
+    const hashed = toHash.length;
+    if (hashed > 0) {
+        await mapLimit(toHash, 32, async ({ entry, previousHash, statSame }) => {
+            const hash = await hashFile(join(root, entry.path), entry.size);
+            if (hash !== previousHash)
+                changed.push(entry.path);
+            else if (!statSame)
+                touched.push(entry.path);
+        });
+    }
     return {
         added: added.sort(),
         deleted: [...known.keys()].sort(),

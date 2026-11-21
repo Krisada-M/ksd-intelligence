@@ -16,6 +16,7 @@ import {
   readFiles,
   readMeta,
   readSchemaVersion,
+  type FileRecord,
 } from '../../storage/sqlite.js';
 import { ImpactQuery, type ImpactAnswer } from './query.js';
 
@@ -83,6 +84,9 @@ function markStale(answer: ImpactAnswer, reason: string): ImpactAnswer {
       value: {
         ...answer.value,
         results: answer.value.results.map((result) => staleResult(result, reason)),
+        ...(answer.value.aggregate === undefined
+          ? {}
+          : { aggregate: staleResult(answer.value.aggregate, reason) }),
       },
     };
   }
@@ -148,10 +152,20 @@ function staleReasonText(
 }
 
 const TIMED_OUT = Symbol('build wait expired');
+const ABORTED = Symbol('wait aborted');
+
+interface SharedBuild {
+  task: Promise<EngineOutcome>;
+  controller: AbortController;
+  waiters: Set<{ signal?: AbortSignal }>;
+  progressCallbacks: Set<NonNullable<BuildOptions['onProgress']>>;
+  hasDetachedWaiter: boolean;
+  cancelled: boolean;
+}
 
 /** One repository's query coordinator. No database is held open between calls. */
 export class ImpactSession {
-  private building: Promise<EngineOutcome> | null = null;
+  private activeBuild: SharedBuild | null = null;
   private lastFailed: { fingerprint: string; message: string } | null = null;
   private readonly build: NonNullable<ImpactSessionOptions['build']>;
   private readonly waitMs: number;
@@ -168,23 +182,35 @@ export class ImpactSession {
     this.onProgress = options.onProgress;
   }
 
-  private startBuild(callOptions: {
-    signal?: AbortSignal;
-    onProgress?: BuildOptions['onProgress'];
-  }): Promise<EngineOutcome> {
-    if (this.building !== null) return this.building;
-    const onProgress: BuildOptions['onProgress'] =
-      this.onProgress || callOptions.onProgress
-        ? (message, data) => {
-            this.onProgress?.(message, data);
-            callOptions.onProgress?.(message, data);
-          }
-        : undefined;
+  private ensureBuild(): SharedBuild {
+    if (this.activeBuild !== null && !this.activeBuild.cancelled) {
+      return this.activeBuild;
+    }
+    const controller = new AbortController();
+    const waiters = new Set<{ signal?: AbortSignal }>();
+    const progressCallbacks = new Set<NonNullable<BuildOptions['onProgress']>>();
+    const onProgress: BuildOptions['onProgress'] = (message, data) => {
+      this.onProgress?.(message, data);
+      for (const cb of progressCallbacks) cb(message, data);
+    };
+    const shared: SharedBuild = {
+      task: Promise.resolve({
+        ok: false,
+        code: 'index-failed',
+        message: 'uninitialized',
+        fix: 'retry',
+      }),
+      controller,
+      waiters,
+      progressCallbacks,
+      hasDetachedWaiter: false,
+      cancelled: false,
+    };
     const task = Promise.resolve()
       .then(() =>
         this.build(this.workspace, {
           onProgress,
-          signal: callOptions.signal,
+          signal: controller.signal,
         }),
       )
       .catch((error: unknown): EngineOutcome => ({
@@ -193,47 +219,132 @@ export class ImpactSession {
         message: error instanceof Error ? error.message : String(error),
         fix: 'retry once: ei index',
       }));
-    this.building = task;
+    shared.task = task;
+    this.activeBuild = shared;
     void task.then(() => {
-      if (this.building === task) this.building = null;
+      if (this.activeBuild === shared) this.activeBuild = null;
     });
-    return task;
+    return shared;
+  }
+
+  private async runBuildWait(
+    deadline: number,
+    callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] },
+  ): Promise<EngineOutcome | typeof TIMED_OUT> {
+    // If an earlier cancelled build is still tearing down its child process, wait for teardown
+    // before starting a fresh build so we neither join a dying build nor race the lock file.
+    while (this.activeBuild !== null && this.activeBuild.cancelled) {
+      const cancelling = this.activeBuild;
+      const settled = await this.raceWait(cancelling.task, deadline, callOptions.signal);
+      if (settled === ABORTED || callOptions.signal?.aborted) {
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: 'retry' };
+      }
+      if (settled === TIMED_OUT) return TIMED_OUT;
+    }
+
+    const shared = this.ensureBuild();
+    const waiter = { signal: callOptions.signal };
+    shared.waiters.add(waiter);
+    if (callOptions.onProgress !== undefined) shared.progressCallbacks.add(callOptions.onProgress);
+
+    let settled: EngineOutcome | typeof TIMED_OUT | typeof ABORTED;
+    try {
+      settled = await this.raceWait(shared.task, deadline, callOptions.signal);
+      if (settled === TIMED_OUT && this.waitAfterExpiry && !callOptions.signal?.aborted) {
+        settled = await this.raceWait(shared.task, Number.POSITIVE_INFINITY, callOptions.signal);
+      }
+    } finally {
+      shared.waiters.delete(waiter);
+      if (callOptions.onProgress !== undefined) {
+        shared.progressCallbacks.delete(callOptions.onProgress);
+      }
+    }
+
+    if (settled === TIMED_OUT && !callOptions.signal?.aborted) {
+      shared.hasDetachedWaiter = true;
+      return TIMED_OUT;
+    }
+
+    if (settled === ABORTED || callOptions.signal?.aborted) {
+      const noLiveWaiters = [...shared.waiters].every((w) => w.signal?.aborted === true);
+      if (noLiveWaiters && !shared.hasDetachedWaiter && !shared.cancelled) {
+        shared.cancelled = true;
+        shared.controller.abort();
+      }
+      if (shared.cancelled) await shared.task;
+      return { ok: false, code: 'index-failed', message: 'Cancelled', fix: 'retry' };
+    }
+
+    return settled;
+  }
+
+  private raceWait<T>(
+    promise: Promise<T>,
+    deadline: number,
+    signal?: AbortSignal,
+  ): Promise<T | typeof TIMED_OUT | typeof ABORTED> {
+    if (signal?.aborted) return Promise.resolve(ABORTED);
+    const competitors: Promise<T | typeof TIMED_OUT | typeof ABORTED>[] = [promise];
+    let timer: NodeJS.Timeout | undefined;
+    if (Number.isFinite(deadline)) {
+      const remaining = Math.max(0, deadline - Date.now());
+      competitors.push(
+        new Promise<typeof TIMED_OUT>((resolve) => {
+          timer = setTimeout(() => resolve(TIMED_OUT), remaining);
+        }),
+      );
+    }
+    let onAbort: (() => void) | undefined;
+    if (signal !== undefined) {
+      competitors.push(
+        new Promise<typeof ABORTED>((resolve) => {
+          onAbort = () => resolve(ABORTED);
+          signal.addEventListener('abort', onAbort, { once: true });
+        }),
+      );
+    }
+    return Promise.race(competitors).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+      if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort);
+    });
   }
 
   private async untilPublished(
     previousId: string | null,
     deadline: number,
     signal?: AbortSignal,
-  ): Promise<boolean> {
-    while (Date.now() < deadline && !signal?.aborted) {
+  ): Promise<'published' | 'released' | 'timed-out' | 'aborted'> {
+    while (Date.now() < deadline) {
+      if (signal?.aborted) return 'aborted';
       const db = openPublished(this.workspace.cacheDir);
       try {
-        if (db !== null && readMeta(db).build_id !== previousId) return true;
+        if (db !== null && readMeta(db).build_id !== previousId) return 'published';
       } finally {
         db?.close();
       }
-      if (!Number.isFinite(deadline)) {
-        const holder = readLockHolder(this.workspace.cacheDir);
-        if (holder === null || !isHolderAlive(holder)) {
-          const check = openPublished(this.workspace.cacheDir);
-          try {
-            return check !== null && readMeta(check).build_id !== previousId;
-          } finally {
-            check?.close();
-          }
+      const holder = readLockHolder(this.workspace.cacheDir);
+      if (holder === null || !isHolderAlive(holder)) {
+        const check = openPublished(this.workspace.cacheDir);
+        try {
+          return check !== null && readMeta(check).build_id !== previousId
+            ? 'published'
+            : 'released';
+        } finally {
+          check?.close();
         }
       }
       await delay(Math.min(50, Math.max(1, deadline - Date.now())));
     }
-    return false;
+    return signal?.aborted ? 'aborted' : 'timed-out';
   }
 
   private answer(
     targets: readonly string[],
     depth: number | undefined,
     db: DatabaseSync,
+    options?: { files?: readonly FileRecord[]; meta?: Record<string, string> },
   ): ImpactAnswer[] {
-    return new ImpactQuery(db, this.workspace.config.impact).batch(targets, depth);
+    return new ImpactQuery(db, this.workspace.config.impact, options).batch(targets, depth);
   }
 
   async query(
@@ -275,6 +386,7 @@ export class ImpactSession {
     }
 
     let db: DatabaseSync | null = null;
+    let prefetched: { files?: readonly FileRecord[]; meta?: Record<string, string> } | undefined;
     let driftedFiles: string[] = [];
     let fingerprint = '';
     let previousId: string | null = null;
@@ -292,10 +404,12 @@ export class ImpactSession {
           previousId = meta.build_id ?? null;
           const persistedFailure = lastFailure(this.workspace.cacheDir, meta.built_at);
           if (persistedFailure !== null) staleReason = `update failed: ${persistedFailure}`;
+          const files = readFiles(db);
+          prefetched = { files, meta };
           const drift = await probe(
             this.workspace.root,
             this.workspace.config.impact,
-            readFiles(db),
+            files,
             this.workspace.config.impact.freshness,
           );
           driftedFiles = [...new Set([...drift.added, ...drift.changed, ...drift.deleted])].sort();
@@ -307,13 +421,15 @@ export class ImpactSession {
             this.lastFailed = null;
             const reason = `stale-index: ${staleReason}`;
             return {
-              answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
+              answers: this.answer(targets, depth, db, prefetched).map((answer) =>
+                markStale(answer, reason),
+              ),
               index: { state: 'stale', updatedFiles: 0, driftedFiles },
             };
           }
           if (driftedFiles.length === 0) {
             this.lastFailed = null;
-            const answers = this.answer(targets, depth, db);
+            const answers = this.answer(targets, depth, db, prefetched);
             return { answers, index: { state: 'fresh', updatedFiles: 0, driftedFiles: [] } };
           }
           fingerprint = driftFingerprint(this.workspace.root, driftedFiles, configHash);
@@ -324,7 +440,9 @@ export class ImpactSession {
               `; update failed: ${this.lastFailed.message}`,
             );
             return {
-              answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
+              answers: this.answer(targets, depth, db, prefetched).map((answer) =>
+                markStale(answer, reason),
+              ),
               index: { state: 'stale', updatedFiles: 0, driftedFiles },
             };
           }
@@ -332,20 +450,7 @@ export class ImpactSession {
       }
 
       const deadline = Date.now() + this.waitMs;
-      const task = this.startBuild(callOptions);
-      let timer: NodeJS.Timeout | undefined;
-      const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
-        timer = setTimeout(() => resolve(TIMED_OUT), Math.max(0, this.waitMs));
-      });
-      let outcome: EngineOutcome | typeof TIMED_OUT;
-      try {
-        outcome = await Promise.race([task, timeout]);
-      } finally {
-        clearTimeout(timer);
-      }
-      if (outcome === TIMED_OUT && this.waitAfterExpiry && !callOptions.signal?.aborted) {
-        outcome = await task;
-      }
+      let outcome = await this.runBuildWait(deadline, callOptions);
       if (callOptions.signal?.aborted) {
         return {
           answers: failure(targets, 'Cancelled'),
@@ -353,27 +458,28 @@ export class ImpactSession {
         };
       }
       if (outcome !== TIMED_OUT && !outcome.ok && outcome.code === 'busy') {
-        const published = await this.untilPublished(
+        const status = await this.untilPublished(
           previousId,
           this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline,
           callOptions.signal,
         );
-        if (callOptions.signal?.aborted) {
+        if (status === 'aborted' || callOptions.signal?.aborted) {
           return {
             answers: failure(targets, 'Cancelled'),
             index: { state: 'stale', updatedFiles: 0, driftedFiles },
           };
         }
-        outcome = published
-          ? { ok: true, value: { action: 'update' } }
-          : this.waitAfterExpiry
-            ? {
-                ok: false,
-                code: 'index-failed',
-                message: 'another session released the lock without publishing',
-                fix: 'run: ei index',
-              }
-            : TIMED_OUT;
+        outcome =
+          status === 'published'
+            ? { ok: true, value: { action: 'update' } }
+            : status === 'released' || this.waitAfterExpiry
+              ? {
+                  ok: false,
+                  code: 'index-failed',
+                  message: 'another session released the lock without publishing',
+                  fix: 'run: ei index',
+                }
+              : TIMED_OUT;
       }
       if (outcome !== TIMED_OUT && outcome.ok && outcome.value.action === 'failed') {
         const problems = outcome.value.problems;
@@ -424,7 +530,9 @@ export class ImpactSession {
       const failureMessage = outcome === TIMED_OUT ? '' : `; update failed: ${outcome.message}`;
       const reason = staleReasonText(driftedFiles, staleReason, failureMessage);
       return {
-        answers: this.answer(targets, depth, db).map((answer) => markStale(answer, reason)),
+        answers: this.answer(targets, depth, db, prefetched).map((answer) =>
+          markStale(answer, reason),
+        ),
         index: { state: 'stale', updatedFiles: 0, driftedFiles },
       };
     } catch (error) {

@@ -121,9 +121,17 @@ describe('M2b owner-confirmed query oracle', () => {
     );
   });
   it('C08 both overload signatures resolve to one target', () => {
-    assert.equal(result(indexer, repo, `${pay}/fee.ts:7`).target, fee);
-    assert.equal(result(indexer, repo, `${pay}/fee.ts:8`).target, fee);
-    assert.equal(result(indexer, repo, fee).target, fee);
+    const r7 = result(indexer, repo, `${pay}/fee.ts:7`);
+    const r8 = result(indexer, repo, `${pay}/fee.ts:8`);
+    const rFee = result(indexer, repo, fee);
+    for (const r of [r7, r8, rFee]) {
+      assert.equal(r.target, fee);
+      has(r, 1, `${pay}/service.ts#PaymentService.charge`, 'CALLS');
+      has(r, 1, 'apps/web/src/checkout.ts#submit', 'CALLS');
+      has(r, 1, charge, 'CALLS');
+    }
+    assert.deepEqual(r7.byDepth[0], rFee.byDepth[0]);
+    assert.deepEqual(r8.byDepth[0], rFee.byDepth[0]);
   });
   it('C09 type-only import is a reference without pulling fee callers', () => {
     const r = result(indexer, repo, `${pay}/fee.ts#Fee`);

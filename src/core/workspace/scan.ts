@@ -98,7 +98,7 @@ export function exclusionOf(path: string, impact: ImpactConfig): 'secret' | 'exc
  * `dist`, `.git`), and non-code files in `impact.exclude`. Owner-excluded code files are hashed
  * and scanned lexically for the name cross-check while keeping `reason: 'excluded'`.
  */
-function neverReadOf(
+export function neverReadOf(
   path: string,
   kind: FileKind,
   impact: ImpactConfig,

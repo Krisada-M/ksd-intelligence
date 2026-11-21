@@ -994,3 +994,109 @@ no product change or wrong low invalidated their prior evidence.
 No accepted snapshot or golden expectation changed. No injected agent
 context changes were observed. Nothing was pushed, merged or deployed.
 W2's correctness sampling passes; its latency gate remains unmet.
+
+## Round 6 — Final fix round after independent review (2026-11-22)
+
+**VERIFIED:** Linux x86_64 (WSL2), Node `24.21.0`, TypeScript `5.9.3`.
+Branch `m2b-final` from `origin/m2b-impact` with W2 measurements (`c3a7fe9`)
+and all D59 decisions (`F1`–`F15`, `R8`, `ei init --dry-run` labels, and
+`tests/fixtures/**` in `ei.config.json` `exclude`).
+
+### 1. Cold rebuild and fixed 200-target cohort
+
+Reference checkout: `/var/tmp/m2a2/omp-src`, commit
+`04cd1a7549a02d62ad1d24826198d52507595683`. Cold rebuild with F1–F15
+extractor changes exited 0 with zero VERIFY problems:
+- Census: `10,502` scanned files, `6,829` indexable, `21` orphan, `3,652` unindexed (`23` packages, `41` tsconfigs, `6` programs).
+- Counts: `165,011` declarations (`158,182` non-module), `637,638` edges, `36,702` unresolved, `22,979` gap sites, `83,449` name tokens, `9,017` external imports, `36,741` exports, `38,980` markers.
+- Schema version: `4` (Migration 4 adds `edges_target_covering`, `edges_implements`, `unresolved_name`, `gap_sites_code`, `markers_kind`, and `external_imports_specifier`; drops redundant `edges_target`).
+- Extractor stamp: `bd3f216f33845127`.
+
+Evaluated the saved 200-target cohort (`/var/tmp/ksd-m2b-r2b-wT2ESH/before.json.targets.json`) at depth 10 with zero working-tree drift:
+
+| Level | Round 2b | W2 | Round 6 | Round 6 share |
+|---|---:|---:|---:|---:|
+| low | 17 | 17 | 17 | 8.5% |
+| medium | 94 | 146 | 138 | 69.0% |
+| unknown | 89 | 37 | 45 | 22.5% |
+
+| Completeness reason | W2 targets | W2 sole | Round 6 targets | Round 6 sole |
+|---|---:|---:|---:|---:|
+| `string-name-match` | 20 | 13 | 21 | 12 |
+| `computed-member-access` | 9 | 7 | 19 | 14 |
+| `unresolved-name-match` | 8 | 3 | 8 | 2 |
+| `interface-dispatch` | 4 | 4 | 5 | 4 |
+| `cjs-require` | 3 | 1 | 3 | 1 |
+| `dynamic-import` | 2 | 0 | 2 | 0 |
+
+`common-name` occurs on `58` targets (`49` medium, `9` unknown).
+All 17 `low` targets from W2 remained `low`. Exactly 8 formerly `medium`
+targets became `unknown`, each directly explained by Round 6 wrong-low fixes:
+- 7 targets gained `computed-member-access` gaps from F4 (unwrapped `as`/`satisfies`/parens/non-null, local/nested object holders, class property holders, and module/barrel namespace receivers):
+  - `packages/agent/src/telemetry.ts#AgentIdentity`
+  - `packages/ai/src/providers/openai-responses-wire.ts#ResponseCustomToolCallOutput.type`
+  - `packages/coding-agent/src/config/model-resolver.ts#AgentModelPatternResolutionOptions.settingsOverride`
+  - `packages/coding-agent/src/config/settings.ts#SettingsOptions.cwd`
+  - `packages/coding-agent/src/judgment/cache.ts#CachedAnswers`
+  - `packages/coding-agent/src/registry/agent-registry.ts#AgentRef.session`
+  - `packages/snapcompact/src/snapcompact.ts#Frame.chars`
+- 1 target gained `string-name-match` sites from F8 (lexical regex-vs-division rescanning after statement-ending `}` and prefix tokens):
+  - `packages/coding-agent/src/session/turn-recovery.ts#TurnRecoveryHost.isCompacting`
+
+### 2. Twenty low-result reference audits
+
+Audited all 17 `low` targets in the 200-target cohort plus the 3 additional
+`low` targets from the seed-1 continuation (`interactiveContext`,
+`hackerNewsModel`, `bareMathEnvBlockLength`) against TypeScript
+`findReferences` across the engine's 6 program groups:
+- **20 declarations checked, 63 non-definition reference sites in scope, 63 covered, 0 uncovered (`0` wrong-`low`).**
+
+### 3. R8 whole-call latency (before vs after) and 1-file body edit latency
+
+Measured the exact 20-target latency cohort (`/var/tmp/ksd-m2b-r5b-w2/latency.json`,
+closures ranging from `0` to `10,745` compiler dependents, display depth 2)
+before and after R8 on the Round 6 index, and verified that all 20 targets
+produce bit-for-bit identical normalized results (`verdict`, `completeness`,
+`reach`, `factors`, `tests`, `byDepth`) and rendered character counts:
+
+| Measurement | Before R8 p50 (ms) | Before R8 p95 (ms) | Before R8 Max (ms) | After R8 p50 (ms) | After R8 p95 (ms) | After R8 Max (ms) |
+|---|---:|---:|---:|---:|---:|---:|
+| Actual whole call (`ImpactSession.query` + `renderImpact`) | 1497.78 | 2106.21 | 2460.86 | **201.18** | **291.54** | 312.52 |
+| Replay: `openPublished` + `readMeta` + `readFiles` | 23.69 | 27.89 | 30.61 | 15.21 | 17.80 | 20.60 |
+| Replay: `probe` (`stat`) | 102.44 | 111.25 | 132.95 | 65.14 | 69.76 | 69.89 |
+| Replay: construct `ImpactQuery` | 729.64 | 821.12 | 838.39 | **18.30** | **24.75** | 25.23 |
+| Replay: query/traverse (`iq.query(target, 2)`) | 617.64 | 819.67 | 1237.95 | **119.77** | **143.04** | 203.53 |
+| Replay: `renderImpact` | 0.14 | 0.58 | 1.15 | 0.09 | 0.22 | 0.32 |
+| Replay: `db.close` | 0.39 | 0.61 | 0.77 | 0.39 | 0.63 | 0.64 |
+| Replay: total staged | 1479.50 | 1667.23 | 2133.13 | **221.72** | **240.56** | **298.54** |
+
+**PASS: whole-call p95 is `291.54 ms` (< 300 ms target) and staged p95 is `240.56 ms` (< 300 ms).**
+
+One-file body edit latency (appending `void 0;` to `packages/ai/test/issue-6913-harmony-marker-escaping.test.ts`, querying `packages/ai/test/issue-6913-harmony-marker-escaping.test.ts#ESCAPED` via `ImpactSession.query`, then restoring the file and re-syncing):
+- Wall time: **`26,338.98 ms` (`26.34 s`)** — completes within the 60 s `waitMs` window (Row 2 of §2.3 "Updated in time": `index.state = "updated"`, `updatedFiles = 1`, `lastReason = "1 changed · 0 removed · 1 resolved"`, phases `scan 2,149 ms · program 20,558 ms · extract 206 ms · resolve 195 ms · verify 2,196 ms · publish 0 ms`).
+
+### 4. `ei doctor --deep --differential 300`, local checks and mutation smoke
+
+`ei doctor --deep --root /var/tmp/m2a2/omp-src --differential 300 --json`
+ initially flagged 3 references in `packages/coding-agent/test/system-prompt-inventory.test.ts`
+(lines 275, 287, 379: `get label()` and `get parameters()` inside an
+`ObjectLiteralExpression` contextually typed by `AgentTool` / `Tool`),
+because `src/core/indexing/resolve.ts` handled `PropertyAssignment`,
+`MethodDeclaration`, and `ShorthandPropertyAssignment` on contextually
+typed object literals but omitted `GetAccessorDeclaration` and
+`SetAccessorDeclaration`. Extended `resolve.ts` (and the mapped-type
+literal-key check in `differential.ts`) to include `isGetAccessorDeclaration`
+and `isSetAccessorDeclaration`, and added a fixture regression test in
+`tests/core/impact-round6-wronglow.test.ts`. Rerun exited 0:
+- `differences.count: 0` (`onlyActive: []`, `onlyCold: []`), `counterDifferences.count: 0`.
+- `differential`: `300` declarations, `8,103` references in scope, `8,103` covered (`8,102` `edge`, `1` `exportStatus`, `0` `recordOnly`), `26` `docOnly`, `0` misses.
+
+```text
+npm test               tests 605 · suites 59 · pass 605 · fail 0 · cancelled 0 · skipped 0
+npm run typecheck      exit 0
+npm run lint           exit 0
+npm run format:check   All matched files use Prettier code style!
+npm run check:dist     exit 0
+```
+
+Round 6 mutation smoke covering all extractor-changing and query/render/session fixes (`R6-F1-BrokenImport`, `R6-F2-TransitiveImplements`, `R6-F3-UnionKeyof`, `R6-F4-WrappedReceiver`, `R6-F4-BarrelReexportOwner`, `R6-F5-ModuleDynamicGap`, `R6-F6-FileAggregate`, `R6-F7-LineSpanTies`, `R6-F8-LexicalRegexPrefix`, `R6-F9-ProbeNeverRead`, `R6-F10-NoLevelScrub`, `R6-F11-FileReachUnion`, `R6-F12-SharedBuildCancel`, `R6-F14-EscapedNames`, `R6-F15-Depth1OverflowAdvice`, `R6-R8-ContainerEdges`): **VERIFIED 16/16 killed, 0 survived**.

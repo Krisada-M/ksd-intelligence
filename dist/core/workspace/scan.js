@@ -71,7 +71,7 @@ export function exclusionOf(path, impact) {
  * `dist`, `.git`), and non-code files in `impact.exclude`. Owner-excluded code files are hashed
  * and scanned lexically for the name cross-check while keeping `reason: 'excluded'`.
  */
-function neverReadOf(path, kind, impact) {
+export function neverReadOf(path, kind, impact) {
     if (SECRET_PATTERNS.some((pattern) => matchGlob(pattern, path)))
         return 'secret';
     if (!IS_CODE[kind] && SECRET_NAME_PATTERNS.some((pattern) => matchGlob(pattern, path))) {

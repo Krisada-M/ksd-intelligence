@@ -118,6 +118,18 @@ const MIGRATIONS = [
       ) STRICT;
       CREATE INDEX markers_file ON markers (file);`,
     },
+    {
+        // M2b R8: covering and on-demand indexes so queries avoid full-table constructor loads.
+        version: 4,
+        sql: `
+      DROP INDEX edges_target;
+      CREATE INDEX edges_target_covering ON edges (target, source, kind, strength);
+      CREATE INDEX edges_implements ON edges (source, target) WHERE kind = 'IMPLEMENTS';
+      CREATE INDEX unresolved_name ON unresolved (name);
+      CREATE INDEX gap_sites_code ON gap_sites (code, detail);
+      CREATE INDEX markers_kind ON markers (kind);
+      CREATE INDEX external_imports_specifier ON external_imports (specifier);`,
+    },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.length;
 export function indexPath(cacheDir) {

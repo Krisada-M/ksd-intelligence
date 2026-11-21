@@ -35,13 +35,14 @@ function assertOneVerdict(block: string, label: string): void {
     1,
     `${label}: expected exactly one level word on ACTION line: ${actionLines[0]}`,
   );
+  // Template+slot rendering (F10) places the verdict only on `ACTION ... · level <verdict>`
+  // and never introduces a second verdict/action header line while preserving symbol names verbatim.
   for (const line of lines) {
-    if (line.startsWith('ACTION ')) continue;
-    const matches = line.match(LEVEL_RE) ?? [];
-    assert.deepEqual(
-      matches,
-      [],
-      `${label}: unexpected level word(s) ${JSON.stringify(matches)} outside ACTION line in: ${line}`,
+    if (line === actionLines[0]) continue;
+    assert.equal(
+      /^(ACTION|VERDICT)\b/.test(line),
+      false,
+      `${label}: unexpected verdict/action line outside ACTION header: ${line}`,
     );
   }
 }
@@ -305,6 +306,9 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
     };
     const rendered = renderAnswer({ input: 'unknownHelper', kind: 'result', value: mutated });
     assertOneVerdict(rendered, 'synthetic-collision');
+    assert.ok(rendered.includes('unknownHelper'));
+    assert.ok(rendered.includes('packages/api/src/high.ts'));
+    assert.ok(rendered.includes('critical'));
   });
 
   it('caps single-target output at 4,000 characters, keeps depth 1, and names follow-up call on overflow', () => {
@@ -351,7 +355,11 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       const overflowLines = text.split('\n').filter((line) => /Depth \d+: .* more in /.test(line));
       assert.ok(overflowLines.length >= 1, 'expected at least one overflow summary line');
       for (const line of overflowLines) {
-        assert.match(line, /Call again with depth \d+ and a single target to list them\./);
+        if (line.trimStart().startsWith('Depth 1:')) {
+          assert.equal(line.includes('Call again with depth 1 and a single target'), false, line);
+        } else {
+          assert.match(line, /Call again with depth \d+ and a single target to list them\./);
+        }
       }
     }
   });
@@ -438,7 +446,8 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
 
     assert.ok(text.length <= TARGET_BUDGET, `length ${text.length} <= ${TARGET_BUDGET}`);
     assert.ok(elapsedMs < 300, `5,000-caller render took ${elapsedMs.toFixed(1)} ms (>= 300 ms)`);
-    assert.match(text, /Call again with depth 1 and a single target to list them\./);
+    assert.match(text, /Depth 1: [\d,]+ more in \d+ files\./);
+    assert.equal(text.includes('Call again with depth 1 and a single target to list them.'), false);
     assertOneVerdict(text, '5000-callers');
   });
 

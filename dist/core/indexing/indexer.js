@@ -130,6 +130,43 @@ function roundPhases(phases) {
     return rounded;
 }
 /**
+ * Decodes escaped string/template literals and identifiers only when `\\` is present so new
+ * declaration names match `\u0070`, `\u{70}`, `\x70`, and template escapes incrementally (F14).
+ */
+function mentionsAnyName(ts, sf, names, nameList) {
+    const text = sf.text;
+    if (nameList.some((name) => text.includes(name)))
+        return true;
+    if (!text.includes('\\'))
+        return false;
+    let found = false;
+    const visit = (node) => {
+        if (found)
+            return;
+        if (ts.isStringLiteralLike(node)) {
+            if (names.has(node.text)) {
+                found = true;
+                return;
+            }
+        }
+        else if (ts.isIdentifier(node)) {
+            if (names.has(ts.idText(node))) {
+                found = true;
+                return;
+            }
+        }
+        else if (ts.isPrivateIdentifier(node)) {
+            if (names.has(ts.idText(node).slice(1))) {
+                found = true;
+                return;
+            }
+        }
+        ts.forEachChild(node, visit);
+    };
+    visit(sf);
+    return found;
+}
+/**
  * The index pipeline of one repository (DESIGN §6.2.1): scan → extract-local → resolve → verify →
  * publish. It keeps nothing between runs: every update creates its programs from the census.
  */
@@ -502,10 +539,12 @@ export class Indexer {
                 pending.add(path);
             if (entering.length > 0) {
                 // A name new to the index: files mentioning it were never recorded under it.
+                const enteringSet = new Set(entering);
                 for (const path of indexableNow) {
-                    const text = sourceOf(path)?.sf.text;
-                    if (text !== undefined && entering.some((name) => text.includes(name)))
+                    const sf = sourceOf(path)?.sf;
+                    if (sf !== undefined && mentionsAnyName(this.ts, sf, enteringSet, entering)) {
                         pending.add(path);
+                    }
                 }
             }
             progress('resolve', { files: pending.size });
