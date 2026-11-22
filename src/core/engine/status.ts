@@ -18,6 +18,7 @@ import {
   readSchemaVersion,
   type FileRecord,
 } from '../../storage/sqlite.js';
+import { consumeAuditWarning } from '../audit/log.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
 import { chooseRuntime, memoryLimitMb, type EngineRuntime } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript, type TypescriptCheck } from './typescript.js';
@@ -88,6 +89,7 @@ export interface WorkspaceStatus {
   failure: BuildFailure | null;
   drift: ProbeResult | null;
   lock: { pid: number; startedAt: string; alive: boolean } | null;
+  auditWarning?: string | null;
 }
 
 function stringList(raw: string | undefined): string[] {
@@ -285,11 +287,13 @@ export async function workspaceStatus(
     lock: holder && { pid: holder.pid, startedAt: holder.startedAt, alive: isHolderAlive(holder) },
   };
   const degraded = degradation(partial, impactConfigHash(impact));
+  const auditWarning = consumeAuditWarning(workspace.cacheDir);
   return {
     state: degraded === null ? 'ready' : 'degraded',
     reason: degraded?.[0] ?? null,
     fix: degraded?.[1] ?? null,
     ...partial,
+    ...(auditWarning !== null ? { auditWarning } : {}),
   };
 }
 
@@ -475,6 +479,9 @@ export function renderStatus(status: WorkspaceStatus): string {
       `Uses        approximate · indexed ${indexed.toLocaleString('en-US')} · skipped ${counted(skippedUses)} · ` +
         `indexed share ${useTotal === 0 ? 'n/a' : `${((indexed / useTotal) * 100).toFixed(1)}%`}`,
     );
+  }
+  if (status.auditWarning) {
+    lines.push(`Audit       write failed (${status.auditWarning}); non-blocking`);
   }
 
   const text = lines.join('\n');

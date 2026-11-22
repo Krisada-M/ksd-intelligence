@@ -1,5 +1,13 @@
+import {
+  auditFieldsForChanges,
+  auditFieldsForImpact,
+  auditFieldsForWorkflow,
+  consumeAuditWarning,
+  recordAudit,
+} from '../../dist/core/audit/index.js';
 import { workspaceStatus, renderStatus } from '../../dist/core/engine/status.js';
-import { loadWorkspace } from '../../dist/core/engine/workspace.js';
+import { engineVersion } from '../../dist/core/engine/typescript.js';
+import { loadWorkspace, resolveWorkspaceCache } from '../../dist/core/engine/workspace.js';
 import { runChanges } from '../../dist/core/changes/changes.js';
 import { renderChangesOutcome } from '../../dist/core/changes/render.js';
 import { ImpactSession } from '../../dist/core/impact/session.js';
@@ -8,6 +16,7 @@ import { prepareWorkflow } from '../../dist/workflow/loader.js';
 import { renderWorkflow } from '../../dist/workflow/render.js';
 import { rootsFromEnv } from '../../dist/workflow/catalog.js';
 import { readLock, defaultLockPath } from '../../dist/workflow/sources.js';
+import { WorkflowError } from '../../dist/workflow/types.js';
 
 const objectSchema = (properties, required = []) => ({
   type: 'object',
@@ -211,11 +220,21 @@ export function createTools({ root, env = process.env }) {
   const enabled = env.EI_DISABLED !== '1';
   const workflowEnabled = enabled && env.KSD_MCP_WORKFLOW === '1';
   const definitions = enabled ? [...BASE_TOOLS, ...(workflowEnabled ? [WORKFLOW_TOOL] : [])] : [];
+  const cacheHome =
+    env !== process.env && typeof env.HOME === 'string' && env.HOME !== '' ? env.HOME : undefined;
   let sessionPromise;
+  let cacheInfoPromise;
+
+  async function cacheInfo() {
+    if (!cacheInfoPromise) {
+      cacheInfoPromise = resolveWorkspaceCache(root, cacheHome).catch(() => null);
+    }
+    return cacheInfoPromise;
+  }
 
   async function impactSession() {
     if (!sessionPromise) {
-      sessionPromise = loadWorkspace(root)
+      sessionPromise = loadWorkspace(root, cacheHome)
         .then((workspace) => new ImpactSession(workspace))
         .catch((error) => {
           sessionPromise = undefined;
@@ -225,16 +244,57 @@ export function createTools({ root, env = process.env }) {
     return sessionPromise;
   }
 
+  async function writeAudit(entry, explicitCache) {
+    if (!enabled) return;
+    const info = explicitCache ?? (await cacheInfo());
+    if (!info) return;
+    recordAudit(
+      info.cacheDir,
+      {
+        ts: new Date().toISOString(),
+        adapter: 'mcp',
+        engine: engineVersion(),
+        ...entry,
+      },
+      { env, root: info.root },
+    );
+  }
+
   async function call(name, args, signal, onProgress = () => {}) {
     if (!definitions.some((tool) => tool.name === name))
       return result('TOOL_UNAVAILABLE: tool is disabled or unknown', true);
+    const started = performance.now();
     const invalid = validate(name, args);
-    if (invalid) return result(invalid, true);
+    if (invalid) {
+      await writeAudit({
+        tool: name,
+        outcome: 'failure',
+        ms: performance.now() - started,
+        code: 'INVALID_INPUT',
+        codes: ['INVALID_INPUT'],
+        ...(name === 'ei_workflow' && isObject(args) && typeof args.task === 'string'
+          ? { task: args.task }
+          : {}),
+      });
+      return result(invalid, true);
+    }
     if (signal.aborted) return result('Cancelled', true);
     try {
       if (name === 'ei_status') {
-        const status = await workspaceStatus(root, { env });
+        const status = await workspaceStatus(root, { env, cacheHome });
         if (signal.aborted) return result('Cancelled', true);
+        await writeAudit(
+          {
+            tool: 'ei_status',
+            outcome: 'result',
+            ms: performance.now() - started,
+            ...(status.typescript.ok ? { ts_version: status.typescript.runtime.version } : {}),
+            statusState: status.state,
+          },
+          { root: status.root, cacheDir: status.cacheDir },
+        );
+        const extraWarning = consumeAuditWarning(status.cacheDir);
+        if (extraWarning !== null) status.auditWarning = extraWarning;
         return result(renderStatus(status));
       }
       if (name === 'ei_impact') {
@@ -244,6 +304,16 @@ export function createTools({ root, env = process.env }) {
           onProgress: (message) => onProgress(message),
         });
         if (signal.aborted) return result('Cancelled', true);
+        const ws = session.getWorkspace();
+        await writeAudit(
+          {
+            tool: 'ei_impact',
+            outcome: 'result',
+            ms: performance.now() - started,
+            ...auditFieldsForImpact(batch, engineVersion()),
+          },
+          { root: ws.root, cacheDir: ws.cacheDir },
+        );
         return result(
           renderImpact(batch),
           batch.answers.some((answer) => answer.kind === 'failure'),
@@ -259,6 +329,16 @@ export function createTools({ root, env = process.env }) {
           onProgress: (message) => onProgress(message),
         });
         if (signal.aborted) return result('Cancelled', true);
+        const ws = session.getWorkspace();
+        await writeAudit(
+          {
+            tool: 'ei_changes',
+            outcome: outcome.kind,
+            ms: performance.now() - started,
+            ...auditFieldsForChanges(outcome, engineVersion()),
+          },
+          { root: ws.root, cacheDir: ws.cacheDir },
+        );
         return result(renderChangesOutcome(outcome), outcome.kind === 'failure');
       }
       const workflow = await prepareWorkflow({
@@ -272,9 +352,27 @@ export function createTools({ root, env = process.env }) {
         lock: await readLock(defaultLockPath()),
       });
       if (signal.aborted) return result('Cancelled', true);
+      await writeAudit({
+        tool: 'ei_workflow',
+        outcome: 'result',
+        ms: performance.now() - started,
+        ...auditFieldsForWorkflow(workflow),
+      });
       return result(renderWorkflow(workflow));
     } catch (error) {
       if (signal.aborted) return result('Cancelled', true);
+      await writeAudit({
+        tool: name,
+        outcome: 'error',
+        ms: performance.now() - started,
+        code: error instanceof WorkflowError ? error.code : 'KSD_FAILED',
+        ...(name === 'ei_workflow' && isObject(args) && typeof args.task === 'string'
+          ? { task: args.task }
+          : {}),
+        ...(name === 'ei_workflow' && isObject(args) && typeof args.stage === 'string'
+          ? { stage: args.stage }
+          : {}),
+      });
       const message = error instanceof Error ? error.message : String(error);
       return result('KSD_FAILED: ' + message.slice(0, 1000), true);
     }

@@ -91,7 +91,7 @@ The workflow header gains one line per stage telling the agent which evidence to
 |---|---|
 | investigate / implement | "Before changing a symbol, call `ei_impact` on it and follow the verdict's action." |
 | verify | "Run the tests listed by `ei_impact` / `ei_changes`; report real output." |
-| review / ship | "Call `ei_changes` and include its `policy` verdict and `unindexedChanges` in your report." |
+| review / ship | "Call `ei_changes` and include its verdict and `unindexedChanges` in your report." |
 
 ## 3. Limiting the library's own wrong answers
 

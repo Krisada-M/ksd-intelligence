@@ -86,7 +86,7 @@ export type {
   StagedSkillUpdate,
   UpstreamUpdateCheck,
 } from './workflow/updates.js';
-export { PRECEDENCE_HEADER, renderWorkflow } from './workflow/render.js';
+export { PRECEDENCE_HEADER, renderWorkflow, stageProtocolLine } from './workflow/render.js';
 export { hasRequirementComplianceSignal, routeTask } from './workflow/router.js';
 export type { RouteInput } from './workflow/router.js';
 export {
@@ -159,6 +159,30 @@ export {
   resolveCacheDir,
 } from './core/workspace/init.js';
 export type { InitProjectOptions, InitProjectResult } from './core/workspace/init.js';
+export { loadWorkspace, resolveWorkspaceCache } from './core/engine/workspace.js';
+export type { Workspace, WorkspaceCacheInfo } from './core/engine/workspace.js';
+export {
+  AUDIT_FILE,
+  MAX_AUDIT_BYTES,
+  MAX_ROTATIONS,
+  MAX_TASK_CHARS,
+  clearAuditState,
+  consumeAuditWarning,
+  parseSince,
+  recordAudit,
+  renderAuditSummary,
+  sanitizeAuditText,
+  summarizeAudit,
+} from './core/audit/index.js';
+export type {
+  AuditEntry,
+  AuditOutcome,
+  AuditSummary,
+  AuditTool,
+  RecordAuditOptions,
+  SlowCallSummary,
+  SummarizeAuditOptions,
+} from './core/audit/index.js';
 export { runChanges } from './core/changes/changes.js';
 export type { ChangesOptions } from './core/changes/changes.js';
 export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';

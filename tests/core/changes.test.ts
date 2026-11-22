@@ -700,20 +700,22 @@ describe('M2c Round 2 — ei_changes', () => {
     });
     try {
       const workspace = await loadWorkspace(repo, cacheHome);
+      const feePath = join(repo, 'packages/payments/src/fee.ts');
+      const fixed = 1_700_000_000;
+      utimesSync(feePath, fixed, fixed);
       await new Indexer(ts, workspace.root, workspace.cacheDir).index({
         impact: impactOf(repo),
         full: true,
         freshness: 'hash',
       });
 
-      // Mutation M6 check: same-length edit with restored atime & mtime
-      const feePath = join(repo, 'packages/payments/src/fee.ts');
+      // Mutation M6 check: same-length edit with exact whole-second mtime restored (no sub-ms drift)
       const orig = await readFile(feePath, 'utf8');
-      const origStat = statSync(feePath);
       const edited = replaceExact(orig, 'return 0;', 'return 1;');
       assert.equal(Buffer.byteLength(edited), Buffer.byteLength(orig), 'exact same byte length');
       await writeFile(feePath, edited);
-      utimesSync(feePath, origStat.atime, origStat.mtime);
+      utimesSync(feePath, fixed, fixed);
+      assert.equal(statSync(feePath).mtimeMs, fixed * 1000);
 
       // Fresh hash probe must detect the edit even though (size, mtimeMs) is unchanged!
       const freshHashRes = await runOnRepo(repo, cacheHome);

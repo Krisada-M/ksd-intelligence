@@ -13,10 +13,12 @@
  * disables only policy injection and /engineering-review; EI_DISABLED=1 disables
  * only the ei_* tools.
  */
+import { auditFieldsForChanges, auditFieldsForImpact, auditFieldsForWorkflow, consumeAuditWarning, recordAudit, } from '../../core/audit/index.js';
 import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
-import { loadWorkspace } from '../../core/engine/workspace.js';
+import { engineVersion } from '../../core/engine/typescript.js';
+import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { isRecord } from '../../core/kernel/guards.js';
@@ -24,7 +26,7 @@ import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
 import { defaultLockPath, readLock } from '../../workflow/sources.js';
-import { RISKS, STAGES, TASK_TYPES } from '../../workflow/types.js';
+import { RISKS, STAGES, TASK_TYPES, WorkflowError } from '../../workflow/types.js';
 import { createExtension as createPolicyExtension } from '../../policy/index.js';
 import { SECTION_KEY } from '../../policy/policy.js';
 function errorResult(message) {
@@ -36,7 +38,16 @@ function warnLoad(stage, error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error(`ksd-intelligence: ${stage} failed to register (${SECTION_KEY}): ${message}`);
 }
-function registerEiWorkflow(pi, env, lockPath, skillsDir) {
+async function tryResolveCache(cwd, cacheHome) {
+    try {
+        const info = await resolveWorkspaceCache(cwd ?? process.cwd(), cacheHome);
+        return { root: info.root, cacheDir: info.cacheDir };
+    }
+    catch {
+        return null;
+    }
+}
+function registerEiWorkflow(pi, env, lockPath, skillsDir, cacheHome) {
     const z = pi.zod;
     const shape = {
         task: z.string(),
@@ -61,9 +72,10 @@ function registerEiWorkflow(pi, env, lockPath, skillsDir) {
             'Set `potetoMode: true` only when the user explicitly opts into poteto-mode.',
         parameters: z.object(shape),
         approval: 'read',
-        async execute(_toolCallId, params, signal) {
+        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
+            const started = performance.now();
             try {
                 const workflow = await prepareWorkflow({
                     ...params,
@@ -72,6 +84,18 @@ function registerEiWorkflow(pi, env, lockPath, skillsDir) {
                     lock: await readLock(lockPath),
                     skillsDir,
                 });
+                const cache = await tryResolveCache(ctx?.cwd, cacheHome);
+                if (cache !== null) {
+                    recordAudit(cache.cacheDir, {
+                        ts: new Date().toISOString(),
+                        tool: 'ei_workflow',
+                        adapter: 'omp',
+                        outcome: 'result',
+                        ms: performance.now() - started,
+                        engine: engineVersion(),
+                        ...auditFieldsForWorkflow(workflow),
+                    }, { env, root: cache.root });
+                }
                 return {
                     content: [{ type: 'text', text: renderWorkflow(workflow) }],
                     details: {
@@ -85,12 +109,28 @@ function registerEiWorkflow(pi, env, lockPath, skillsDir) {
                 };
             }
             catch (error) {
+                const cache = await tryResolveCache(ctx?.cwd, cacheHome);
+                if (cache !== null) {
+                    const task = isRecord(params) && typeof params.task === 'string' ? params.task : undefined;
+                    const stage = isRecord(params) && typeof params.stage === 'string' ? params.stage : undefined;
+                    recordAudit(cache.cacheDir, {
+                        ts: new Date().toISOString(),
+                        tool: 'ei_workflow',
+                        adapter: 'omp',
+                        outcome: 'error',
+                        ms: performance.now() - started,
+                        engine: engineVersion(),
+                        code: error instanceof WorkflowError ? error.code : 'WORKFLOW_ERROR',
+                        ...(task !== undefined ? { task } : {}),
+                        ...(stage !== undefined ? { stage } : {}),
+                    }, { env, root: cache.root });
+                }
                 return errorResult(error instanceof Error ? error.message : String(error));
             }
         },
     });
 }
-function registerEiStatus(pi, env) {
+function registerEiStatus(pi, deps, env) {
     pi.registerTool({
         name: 'ei_status',
         label: 'KSD Index Status',
@@ -102,18 +142,47 @@ function registerEiStatus(pi, env) {
         async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
+            const started = performance.now();
             try {
-                const status = await workspaceStatus(ctx?.cwd ?? process.cwd(), { env });
+                const status = await workspaceStatus(ctx?.cwd ?? process.cwd(), {
+                    cacheHome: deps.cacheHome,
+                    env,
+                });
+                recordAudit(status.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_status',
+                    adapter: 'omp',
+                    outcome: 'result',
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    ...(status.typescript.ok ? { ts_version: status.typescript.runtime.version } : {}),
+                    statusState: status.state,
+                }, { env, root: status.root });
+                const extraWarning = consumeAuditWarning(status.cacheDir);
+                if (extraWarning !== null)
+                    status.auditWarning = extraWarning;
                 return { content: [{ type: 'text', text: renderStatus(status) }], details: status };
             }
             catch (error) {
+                const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+                if (cache !== null) {
+                    recordAudit(cache.cacheDir, {
+                        ts: new Date().toISOString(),
+                        tool: 'ei_status',
+                        adapter: 'omp',
+                        outcome: 'error',
+                        ms: performance.now() - started,
+                        engine: engineVersion(),
+                        code: 'index-failed',
+                    }, { env, root: cache.root });
+                }
                 const message = error instanceof Error ? error.message : String(error);
                 return errorResult(`index-failed: ${message}. Retry once; if it fails again, continue without ei_status and say so in your report.`);
             }
         },
     });
 }
-function registerEiImpact(pi, deps, sessions) {
+function registerEiImpact(pi, deps, env, sessions) {
     const z = pi.zod;
     const targetsSchema = (() => {
         const base = z.array ? z.array(z.string()) : z.string();
@@ -140,6 +209,23 @@ function registerEiImpact(pi, deps, sessions) {
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
+            const started = performance.now();
+            const recordInvalid = async (targets) => {
+                const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+                if (cache === null)
+                    return;
+                recordAudit(cache.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_impact',
+                    adapter: 'omp',
+                    outcome: 'failure',
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    code: 'INVALID_INPUT',
+                    codes: ['INVALID_INPUT'],
+                    ...(targets && targets.length > 0 ? { targets: [...targets] } : {}),
+                }, { env, root: cache.root });
+            };
             try {
                 const rawTargets = isRecord(params) ? params.targets : undefined;
                 const rawDepth = isRecord(params) ? params.depth : undefined;
@@ -147,6 +233,7 @@ function registerEiImpact(pi, deps, sessions) {
                     rawTargets.length < 1 ||
                     rawTargets.length > 5 ||
                     rawTargets.some((target) => typeof target !== 'string' || target.trim() === '')) {
+                    await recordInvalid();
                     return errorResult('INVALID_INPUT: provide 1–5 non-empty string targets');
                 }
                 if (rawDepth !== undefined &&
@@ -154,6 +241,7 @@ function registerEiImpact(pi, deps, sessions) {
                         !Number.isInteger(rawDepth) ||
                         rawDepth < 1 ||
                         rawDepth > 10)) {
+                    await recordInvalid(rawTargets);
                     return errorResult('INVALID_INPUT: depth must be an integer 1–10');
                 }
                 const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
@@ -173,6 +261,15 @@ function registerEiImpact(pi, deps, sessions) {
                 const text = renderImpact(batch);
                 if (text === 'Cancelled')
                     return errorResult('Cancelled');
+                recordAudit(workspace.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_impact',
+                    adapter: 'omp',
+                    outcome: 'result',
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    ...auditFieldsForImpact(batch, engineVersion()),
+                }, { env, root: workspace.root });
                 const details = impactDetails(batch);
                 const failed = batch.answers.some((answer) => answer.kind === 'failure');
                 if (failed) {
@@ -183,13 +280,25 @@ function registerEiImpact(pi, deps, sessions) {
             catch (error) {
                 if (signal?.aborted)
                     return errorResult('Cancelled');
+                const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+                if (cache !== null) {
+                    recordAudit(cache.cacheDir, {
+                        ts: new Date().toISOString(),
+                        tool: 'ei_impact',
+                        adapter: 'omp',
+                        outcome: 'error',
+                        ms: performance.now() - started,
+                        engine: engineVersion(),
+                        code: 'index-failed',
+                    }, { env, root: cache.root });
+                }
                 const message = error instanceof Error ? error.message : String(error);
                 return errorResult(`index-failed: ${message}. Retry once; if it fails again, continue without ei_impact and say so in your report.`);
             }
         },
     });
 }
-function registerEiChanges(pi, deps, sessions) {
+function registerEiChanges(pi, deps, env, sessions) {
     const z = pi.zod;
     const baseSchema = z
         .string()
@@ -218,11 +327,28 @@ function registerEiChanges(pi, deps, sessions) {
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
+            const started = performance.now();
+            const recordInvalid = async () => {
+                const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+                if (cache === null)
+                    return;
+                recordAudit(cache.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_changes',
+                    adapter: 'omp',
+                    outcome: 'failure',
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    code: 'INVALID_INPUT',
+                    codes: ['INVALID_INPUT'],
+                }, { env, root: cache.root });
+            };
             try {
                 const rawBase = isRecord(params) ? params.base : undefined;
                 const rawDepth = isRecord(params) ? params.depth : undefined;
                 const rawPlanned = isRecord(params) ? params.planned : undefined;
                 if (rawBase !== undefined && typeof rawBase !== 'string') {
+                    await recordInvalid();
                     return errorResult('INVALID_INPUT: base must be a string');
                 }
                 if (rawDepth !== undefined &&
@@ -230,11 +356,13 @@ function registerEiChanges(pi, deps, sessions) {
                         !Number.isInteger(rawDepth) ||
                         rawDepth < 1 ||
                         rawDepth > 10)) {
+                    await recordInvalid();
                     return errorResult('INVALID_INPUT: depth must be an integer 1–10');
                 }
                 if (rawPlanned !== undefined &&
                     (!Array.isArray(rawPlanned) ||
                         rawPlanned.some((target) => typeof target !== 'string' || target.trim() === ''))) {
+                    await recordInvalid();
                     return errorResult('INVALID_INPUT: planned must be an array of non-empty strings');
                 }
                 const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
@@ -257,6 +385,15 @@ function registerEiChanges(pi, deps, sessions) {
                 const text = renderChangesOutcome(outcome);
                 if (text === 'Cancelled')
                     return errorResult('Cancelled');
+                recordAudit(workspace.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_changes',
+                    adapter: 'omp',
+                    outcome: outcome.kind,
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    ...auditFieldsForChanges(outcome, engineVersion()),
+                }, { env, root: workspace.root });
                 if (outcome.kind === 'failure') {
                     return { isError: true, content: [{ type: 'text', text }], details: outcome };
                 }
@@ -268,6 +405,18 @@ function registerEiChanges(pi, deps, sessions) {
             catch (error) {
                 if (signal?.aborted)
                     return errorResult('Cancelled');
+                const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+                if (cache !== null) {
+                    recordAudit(cache.cacheDir, {
+                        ts: new Date().toISOString(),
+                        tool: 'ei_changes',
+                        adapter: 'omp',
+                        outcome: 'error',
+                        ms: performance.now() - started,
+                        engine: engineVersion(),
+                        code: 'index-failed',
+                    }, { env, root: cache.root });
+                }
                 const message = error instanceof Error ? error.message : String(error);
                 return errorResult(`index-failed: ${message}. Retry once; if it fails again, continue without ei_changes and say so in your report.`);
             }
@@ -288,25 +437,25 @@ export default function ksdIntelligenceExtension(pi, deps = {}) {
         return;
     const sessions = new Map();
     try {
-        registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath(), deps.skillsDir);
+        registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath(), deps.skillsDir, deps.cacheHome);
     }
     catch (error) {
         warnLoad('ei_workflow tool', error);
     }
     try {
-        registerEiStatus(pi, env);
+        registerEiStatus(pi, deps, env);
     }
     catch (error) {
         warnLoad('ei_status tool', error);
     }
     try {
-        registerEiImpact(pi, deps, sessions);
+        registerEiImpact(pi, deps, env, sessions);
     }
     catch (error) {
         warnLoad('ei_impact tool', error);
     }
     try {
-        registerEiChanges(pi, deps, sessions);
+        registerEiChanges(pi, deps, env, sessions);
     }
     catch (error) {
         warnLoad('ei_changes tool', error);

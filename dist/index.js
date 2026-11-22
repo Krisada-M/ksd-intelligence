@@ -6,11 +6,13 @@ export { buildAgySkillsConfig, detectAgyPaths, discoverAgySkills } from './adapt
 export { detectOmpEnvironment, discoverOmpSkills } from './adapters/omp/skills.js';
 export { defaultRegistryPath, parseRegistry, readRegistry, validateRegistryConsistency, writeRegistry, } from './workflow/registry.js';
 export { checkUpstreamUpdates, defaultUpdateStateDir, publishStagedUpdate, rollbackSkillUpdate, stageSkillUpdate, } from './workflow/updates.js';
-export { PRECEDENCE_HEADER, renderWorkflow } from './workflow/render.js';
+export { PRECEDENCE_HEADER, renderWorkflow, stageProtocolLine } from './workflow/render.js';
 export { hasRequirementComplianceSignal, routeTask } from './workflow/router.js';
 export { checkSources, defaultLockPath, formatReports, parseLock, readLock, reportStatus, writeLock, } from './workflow/sources.js';
 export { CATALOG_SKILL_NAMES, COMPLIANCE_DIMENSIONS, ORCHESTRATOR_SKILL_ID, PROVIDER_IDS, RISKS, SKILL_IDS, SKILL_PACK_IDS, STAGES, TASK_TYPES, WorkflowError, } from './workflow/types.js';
 export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig, resolveRiskZones, } from './core/kernel/config.js';
 export { computeRepoId, detectProjectLayout, discoverTsconfigs, findGitRoot, initProject, resolveCacheDir, } from './core/workspace/init.js';
+export { loadWorkspace, resolveWorkspaceCache } from './core/engine/workspace.js';
+export { AUDIT_FILE, MAX_AUDIT_BYTES, MAX_ROTATIONS, MAX_TASK_CHARS, clearAuditState, consumeAuditWarning, parseSince, recordAudit, renderAuditSummary, sanitizeAuditText, summarizeAudit, } from './core/audit/index.js';
 export { runChanges } from './core/changes/changes.js';
 export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';

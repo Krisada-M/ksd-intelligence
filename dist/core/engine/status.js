@@ -7,6 +7,7 @@ import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { probe } from '../workspace/probe.js';
 import { FAILURE_FILE, SCHEMA_VERSION, indexPath, openPublished, readFiles, readMeta, readSchemaVersion, } from '../../storage/sqlite.js';
+import { consumeAuditWarning } from '../audit/log.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
 import { chooseRuntime, memoryLimitMb } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript } from './typescript.js';
@@ -203,11 +204,13 @@ export async function workspaceStatus(start, options = {}) {
         lock: holder && { pid: holder.pid, startedAt: holder.startedAt, alive: isHolderAlive(holder) },
     };
     const degraded = degradation(partial, impactConfigHash(impact));
+    const auditWarning = consumeAuditWarning(workspace.cacheDir);
     return {
         state: degraded === null ? 'ready' : 'degraded',
         reason: degraded?.[0] ?? null,
         fix: degraded?.[1] ?? null,
         ...partial,
+        ...(auditWarning !== null ? { auditWarning } : {}),
     };
 }
 /** DESIGN §14: the engine's peak memory, as of the last build. */
@@ -366,6 +369,9 @@ export function renderStatus(status) {
         const useTotal = Object.values(index.graph.uses).reduce((sum, count) => sum + count, 0);
         lines.push(`Uses        approximate · indexed ${indexed.toLocaleString('en-US')} · skipped ${counted(skippedUses)} · ` +
             `indexed share ${useTotal === 0 ? 'n/a' : `${((indexed / useTotal) * 100).toFixed(1)}%`}`);
+    }
+    if (status.auditWarning) {
+        lines.push(`Audit       write failed (${status.auditWarning}); non-blocking`);
     }
     const text = lines.join('\n');
     // Budget guard: lists above are already capped with "+N more"; this only fires on huge paths.

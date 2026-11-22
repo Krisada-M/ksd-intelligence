@@ -14,6 +14,21 @@ function classifiedNote(workflow: Workflow): string {
   return workflow.classifiedBy;
 }
 
+export function stageProtocolLine(stage: Workflow['stage']): string {
+  switch (stage) {
+    case 'investigate':
+    case 'implement':
+      return "Stage Protocol: Before changing a symbol, call `ei_impact` on it and follow the verdict's action.\n";
+    case 'verify':
+      return 'Stage Protocol: Run the tests listed by `ei_impact` / `ei_changes`; report real output.\n';
+    case 'review':
+    case 'ship':
+      return 'Stage Protocol: Call `ei_changes` and include its verdict and `unindexedChanges` in your report.\n';
+    case 'plan':
+      return '';
+  }
+}
+
 export function renderWorkflow(workflow: Workflow): string {
   const secondaryLine =
     workflow.secondaryPacks.length > 0
@@ -36,6 +51,7 @@ export function renderWorkflow(workflow: Workflow): string {
     `Task: ${workflow.task}\n` +
     `Type: ${workflow.type} (classifiedBy: ${classifiedNote(workflow)})\n` +
     `Stage: ${workflow.stage}\n` +
+    stageProtocolLine(workflow.stage) +
     `Risk: ${workflow.risk}\n` +
     `Primary Pack: ${workflow.primaryPack}\n` +
     secondaryLine +

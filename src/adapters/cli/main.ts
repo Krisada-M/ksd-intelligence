@@ -1,13 +1,28 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
+import {
+  auditFieldsForChanges,
+  auditFieldsForImpact,
+  auditFieldsForWorkflow,
+  clearAuditState,
+  consumeAuditWarning,
+  parseSince,
+  recordAudit,
+  renderAuditSummary,
+  summarizeAudit,
+} from '../../core/audit/index.js';
 import { buildIndex, doctorDeep } from '../../core/engine/build.js';
-import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
+import { isHolderAlive, readLockHolder } from '../../core/engine/lock.js';
+import { homeRelative, renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import {
   checkTypescriptRuntime,
+  engineVersion,
   pinnedTypescriptVersion,
   setupTypescriptRuntime,
 } from '../../core/engine/typescript.js';
-import { loadWorkspace } from '../../core/engine/workspace.js';
+import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
 import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
@@ -39,6 +54,7 @@ import {
   reportStatus,
   writeLock,
 } from '../../workflow/sources.js';
+import { WorkflowError } from '../../workflow/types.js';
 
 function doctorPassed(report: Record<string, unknown>): boolean {
   const differences = report.differences;
@@ -92,6 +108,8 @@ const USAGE = `usage:
   main.js changes [--base <ref>] [--depth <n>] [--planned <target>]... [--root <path>] [--json] (impact of uncommitted changes)
   main.js doctor  --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status  [--root <path>] [--json]        (index, coverage, runtime, TypeScript, store, lock)
+  main.js audit   [--since <7d|24h|30m|ISO>] [--root <path>] [--json] (summarize audit.jsonl)
+  main.js cache   clear [--root <path>] [--json]  (remove index and audit cache for this repository)
   main.js route   --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui] [--poteto-mode]
   main.js load    --task "..." [same options]     (needs checkouts; fails closed)
   main.js skills  list|check [--platform agy|omp] [--root <path>] [--profile <name>] [--detect-host] [--json]
@@ -101,6 +119,18 @@ const USAGE = `usage:
   main.js skills  rollback [--release <id>] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
   main.js sources check [--write] [--lock <path>] (never clones or fetches)
   main.js mcp     --root <path> [--workflow]      (local stdio MCP server for Antigravity)`;
+
+async function tryResolveCacheCli(
+  root: string | undefined,
+): Promise<{ root: string; cacheDir: string } | null> {
+  try {
+    const info = await resolveWorkspaceCache(root ?? process.cwd());
+    return { root: info.root, cacheDir: info.cacheDir };
+  } catch {
+    return null;
+  }
+}
+
 async function run(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -132,6 +162,7 @@ async function run(argv: string[]): Promise<number> {
       depth: { type: 'string' },
       base: { type: 'string' },
       planned: { type: 'string', multiple: true },
+      since: { type: 'string' },
       workflow: { type: 'boolean' },
     },
   });
@@ -161,9 +192,82 @@ async function run(argv: string[]): Promise<number> {
       console.log('STATUS disabled (EI_DISABLED)');
       return 0;
     }
+    const started = performance.now();
     const status = await workspaceStatus(values.root ?? process.cwd());
+    recordAudit(
+      status.cacheDir,
+      {
+        ts: new Date().toISOString(),
+        tool: 'ei_status',
+        adapter: 'cli',
+        outcome: 'result',
+        ms: performance.now() - started,
+        engine: engineVersion(),
+        ...(status.typescript.ok ? { ts_version: status.typescript.runtime.version } : {}),
+        statusState: status.state,
+      },
+      { root: status.root },
+    );
+    const extraWarning = consumeAuditWarning(status.cacheDir);
+    if (extraWarning !== null) status.auditWarning = extraWarning;
     console.log(values.json === true ? JSON.stringify(status, null, 2) : renderStatus(status));
     return status.state === 'ready' ? 0 : 1;
+  }
+
+  if (command === 'audit') {
+    let sinceMs: number | undefined;
+    if (values.since !== undefined) {
+      const parsed = parseSince(values.since);
+      if (parsed === null) {
+        console.error(
+          `INVALID_INPUT: invalid --since ${JSON.stringify(values.since)}; expected e.g. 7d, 24h, 30m, or ISO timestamp`,
+        );
+        return 2;
+      }
+      sinceMs = parsed;
+    }
+    const { cacheDir } = await resolveWorkspaceCache(values.root ?? process.cwd());
+    const summary = summarizeAudit(cacheDir, {
+      ...(sinceMs !== undefined ? { sinceMs, sinceLabel: values.since } : {}),
+    });
+    console.log(
+      values.json === true ? JSON.stringify(summary, null, 2) : renderAuditSummary(summary),
+    );
+    return 0;
+  }
+
+  if (command === 'cache') {
+    if (sub !== 'clear') {
+      console.error(USAGE);
+      return 2;
+    }
+    const { repoId, cacheDir } = await resolveWorkspaceCache(values.root ?? process.cwd());
+    const holder = readLockHolder(cacheDir);
+    if (holder !== null && isHolderAlive(holder)) {
+      if (values.json === true) {
+        console.log(
+          JSON.stringify({ cleared: false, locked: true, repoId, pid: holder.pid }, null, 2),
+        );
+      } else {
+        console.error(
+          `CACHE LOCKED ${repoId} · build lock held by pid ${holder.pid} since ${holder.startedAt}`,
+        );
+      }
+      return 1;
+    }
+    const existed = existsSync(cacheDir);
+    await rm(cacheDir, { recursive: true, force: true });
+    clearAuditState(cacheDir);
+    if (values.json === true) {
+      console.log(JSON.stringify({ cleared: true, existed, repoId, cacheDir }, null, 2));
+    } else {
+      console.log(
+        existed
+          ? `CACHE CLEARED ${repoId} · removed ${homeRelative(cacheDir)}`
+          : `CACHE CLEARED ${repoId} · nothing to clear (${homeRelative(cacheDir)})`,
+      );
+    }
+    return 0;
   }
 
   if (command === 'index') {
@@ -189,6 +293,7 @@ async function run(argv: string[]): Promise<number> {
   }
 
   if (command === 'impact') {
+    const started = performance.now();
     const targets = positionals.slice(1);
     const rawDepth = values.depth;
     const depth = rawDepth === undefined ? undefined : Number.parseInt(rawDepth, 10);
@@ -202,6 +307,24 @@ async function run(argv: string[]): Promise<number> {
           depth < 1 ||
           depth > 10))
     ) {
+      const cache = await tryResolveCacheCli(values.root);
+      if (cache !== null) {
+        recordAudit(
+          cache.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_impact',
+            adapter: 'cli',
+            outcome: 'failure',
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            code: 'INVALID_INPUT',
+            codes: ['INVALID_INPUT'],
+            ...(targets.length > 0 ? { targets } : {}),
+          },
+          { root: cache.root },
+        );
+      }
       const batch = {
         answers: [
           {
@@ -224,6 +347,19 @@ async function run(argv: string[]): Promise<number> {
       onProgress: (message) => console.error(`ei impact: ${message}`),
     });
     const batch = await session.query(targets, depth);
+    recordAudit(
+      workspace.cacheDir,
+      {
+        ts: new Date().toISOString(),
+        tool: 'ei_impact',
+        adapter: 'cli',
+        outcome: 'result',
+        ms: performance.now() - started,
+        engine: engineVersion(),
+        ...auditFieldsForImpact(batch, engineVersion()),
+      },
+      { root: workspace.root },
+    );
     const details = impactDetails(batch);
     if (values.json === true) {
       console.log(JSON.stringify(details.length === 1 ? details[0] : details, null, 2));
@@ -238,6 +374,7 @@ async function run(argv: string[]): Promise<number> {
       console.log('CHANGES disabled (EI_DISABLED)');
       return 0;
     }
+    const started = performance.now();
     const rawDepth = values.depth;
     const depth = rawDepth === undefined ? undefined : Number.parseInt(rawDepth, 10);
     if (
@@ -248,6 +385,23 @@ async function run(argv: string[]): Promise<number> {
         depth < 1 ||
         depth > 10)
     ) {
+      const cache = await tryResolveCacheCli(values.root);
+      if (cache !== null) {
+        recordAudit(
+          cache.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_changes',
+            adapter: 'cli',
+            outcome: 'failure',
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            code: 'INVALID_INPUT',
+            codes: ['INVALID_INPUT'],
+          },
+          { root: cache.root },
+        );
+      }
       const outcome = {
         kind: 'failure' as const,
         code: 'INVALID_INPUT' as const,
@@ -268,6 +422,19 @@ async function run(argv: string[]): Promise<number> {
       depth,
       planned: values.planned,
     });
+    recordAudit(
+      workspace.cacheDir,
+      {
+        ts: new Date().toISOString(),
+        tool: 'ei_changes',
+        adapter: 'cli',
+        outcome: outcome.kind,
+        ms: performance.now() - started,
+        engine: engineVersion(),
+        ...auditFieldsForChanges(outcome, engineVersion()),
+      },
+      { root: workspace.root },
+    );
     const rendered = renderChangesOutcome(outcome);
     if (values.json === true) {
       console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
@@ -361,14 +528,53 @@ async function run(argv: string[]): Promise<number> {
       console.log(JSON.stringify(routeTask(query), null, 2));
       return 0;
     }
-    const workflow = await prepareWorkflow({
-      ...query,
-      strict: true,
-      roots: rootsFromEnv(process.env),
-      lock: await readLock(lockPath),
-    });
-    console.log(renderWorkflow(workflow));
-    return 0;
+    const started = performance.now();
+    try {
+      const workflow = await prepareWorkflow({
+        ...query,
+        strict: true,
+        roots: rootsFromEnv(process.env),
+        lock: await readLock(lockPath),
+      });
+      const cache = await tryResolveCacheCli(values.root);
+      if (cache !== null) {
+        recordAudit(
+          cache.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_workflow',
+            adapter: 'cli',
+            outcome: 'result',
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            ...auditFieldsForWorkflow(workflow),
+          },
+          { root: cache.root },
+        );
+      }
+      console.log(renderWorkflow(workflow));
+      return 0;
+    } catch (error) {
+      const cache = await tryResolveCacheCli(values.root);
+      if (cache !== null) {
+        recordAudit(
+          cache.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_workflow',
+            adapter: 'cli',
+            outcome: 'error',
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            code: error instanceof WorkflowError ? error.code : 'WORKFLOW_ERROR',
+            ...(query.task !== '' ? { task: query.task } : {}),
+            ...(query.stage !== undefined ? { stage: query.stage } : {}),
+          },
+          { root: cache.root },
+        );
+      }
+      throw error;
+    }
   }
 
   if (command === 'skills' && (sub === 'list' || sub === 'check')) {
