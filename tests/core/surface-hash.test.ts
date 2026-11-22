@@ -2,11 +2,21 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import ts from 'typescript';
 import { fileDeclarations } from '../../src/core/indexing/declarations.js';
-import { surfaceOf, type Surface } from '../../src/core/indexing/surface.js';
+import {
+  declarationSurfaces,
+  surfaceOf,
+  type DeclarationSurfacesResult,
+  type Surface,
+} from '../../src/core/indexing/surface.js';
 
 function surface(source: string, file = 'a.ts'): Surface {
   const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   return surfaceOf(ts, sf, fileDeclarations(ts, sf, file));
+}
+
+function declSurfaces(source: string, file = 'a.ts'): DeclarationSurfacesResult {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  return declarationSurfaces(ts, sf, fileDeclarations(ts, sf, file));
 }
 
 const same = (a: string, b: string, file = 'a.ts'): void =>
@@ -153,5 +163,108 @@ describe('export-surface hash: syntax only, no checker (DESIGN §6.2.1)', () => 
       'export function f(a: number) {\n  return a;\n}\nexport interface I { x: number }\n';
     assert.deepEqual(surface(text), surface(text));
     assert.match(surface(text).hash, /^[0-9a-f]{32}$/);
+  });
+});
+
+describe('declarationSurfaces: per-declaration diff semantics for ei_changes', () => {
+  it('distinguishes body-only edits (modified) from signature/inferred-return edits (signature-changed)', () => {
+    const writtenBefore = declSurfaces(
+      'export function f(a: number): number {\n  return a + 1;\n}\n',
+    );
+    const writtenBodyEdit = declSurfaces(
+      'export function f(a: number): number {\n  return a + 2;\n}\n',
+    );
+    assert.equal(
+      writtenBefore.declarations.get('a.ts#f')?.surfaceHash,
+      writtenBodyEdit.declarations.get('a.ts#f')?.surfaceHash,
+    );
+    assert.notEqual(
+      writtenBefore.declarations.get('a.ts#f')?.bodyHash,
+      writtenBodyEdit.declarations.get('a.ts#f')?.bodyHash,
+    );
+
+    // Inferred return type: surface.ts includes the body, so body edits change surfaceHash.
+    const inferredBefore = declSurfaces('export function g(a: number) {\n  return a + 1;\n}\n');
+    const inferredBodyEdit = declSurfaces('export function g(a: number) {\n  return a + 2;\n}\n');
+    assert.notEqual(
+      inferredBefore.declarations.get('a.ts#g')?.surfaceHash,
+      inferredBodyEdit.declarations.get('a.ts#g')?.surfaceHash,
+    );
+  });
+
+  it('whitespace-only and comment-only edits keep fileTokenHash identical on TS, while JS preserves JSDoc', () => {
+    const a = declSurfaces('export function f(a: number): number {\n  return a + 1;\n}\n');
+    const b = declSurfaces(
+      '// header comment\nexport function f(\n  a: number /* inline */\n): number {\n  return a + 1;\n}\n',
+    );
+    assert.equal(a.fileTokenHash, b.fileTokenHash);
+    assert.equal(a.moduleHash, b.moduleHash);
+
+    const jsBefore = declSurfaces(
+      '/** @returns {number} */\nexport function f() {\n  return 1;\n}\n',
+      'a.js',
+    );
+    const jsDocEdit = declSurfaces(
+      '/** @returns {string} */\nexport function f() {\n  return 1;\n}\n',
+      'a.js',
+    );
+    const jsCommentOnly = declSurfaces(
+      '// plain comment\n/** @returns {number} */\nexport function f() {  return 1; }\n',
+      'a.js',
+    );
+    assert.notEqual(jsBefore.fileTokenHash, jsDocEdit.fileTokenHash);
+    assert.notEqual(
+      jsBefore.declarations.get('a.js#f')?.surfaceHash,
+      jsDocEdit.declarations.get('a.js#f')?.surfaceHash,
+    );
+    assert.equal(jsBefore.fileTokenHash, jsCommentOnly.fileTokenHash);
+  });
+
+  it('isolates container class from its indexed members and detects export bit on const', () => {
+    const clsBefore = declSurfaces(
+      'export class Svc {\n  charge(x: number): number { return x; }\n}\n',
+    );
+    const clsMethodEdit = declSurfaces(
+      'export class Svc {\n  charge(x: number): number { return x * 2; }\n}\n',
+    );
+    assert.equal(
+      clsBefore.declarations.get('a.ts#Svc')?.surfaceHash,
+      clsMethodEdit.declarations.get('a.ts#Svc')?.surfaceHash,
+    );
+    assert.equal(
+      clsBefore.declarations.get('a.ts#Svc')?.bodyHash,
+      clsMethodEdit.declarations.get('a.ts#Svc')?.bodyHash,
+    );
+    assert.notEqual(
+      clsBefore.declarations.get('a.ts#Svc.charge')?.bodyHash,
+      clsMethodEdit.declarations.get('a.ts#Svc.charge')?.bodyHash,
+    );
+
+    const privateConst = declSurfaces('const x: number = 1;\n');
+    const exportedConst = declSurfaces('export const x: number = 1;\n');
+    assert.notEqual(
+      privateConst.declarations.get('a.ts#x')?.surfaceHash,
+      exportedConst.declarations.get('a.ts#x')?.surfaceHash,
+    );
+  });
+
+  it('tracks top-level/import edits in moduleHash and deduplicates CJS aliases', () => {
+    const modA = declSurfaces("import { a } from './x';\nexport function f(): void {}\n");
+    const modB = declSurfaces(
+      "import { a } from './x';\nimport { b } from './y';\nexport function f(): void {}\n",
+    );
+    assert.notEqual(modA.moduleHash, modB.moduleHash);
+    assert.equal(
+      modA.declarations.get('a.ts#f')?.surfaceHash,
+      modB.declarations.get('a.ts#f')?.surfaceHash,
+    );
+
+    const cjsA = declSurfaces('exports.run = function (a) { return a; };\n', 'a.cjs');
+    const cjsB = declSurfaces('exports.run = function (a) { return a + 1; };\n', 'a.cjs');
+    assert.equal(cjsA.declarations.has('a.cjs#run'), true);
+    assert.notEqual(
+      cjsA.declarations.get('a.cjs#run')?.surfaceHash,
+      cjsB.declarations.get('a.cjs#run')?.surfaceHash,
+    );
   });
 });

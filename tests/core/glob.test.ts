@@ -127,3 +127,31 @@ describe('matchAny', () => {
     });
   }
 });
+
+describe('malformed and edge-case globs never throw', () => {
+  const malformed = [
+    '',
+    '[',
+    '[unclosed',
+    '(a|b',
+    'a\\b',
+    '\\',
+    'a{b',
+    'a{b,c',
+    '{a,{b}',
+    'a}b',
+    '***',
+    '!',
+    '![',
+    'a[b-c',
+    'a(b)c\\d',
+  ];
+
+  for (const pattern of malformed) {
+    it(`does not throw for ${JSON.stringify(pattern)}`, () => {
+      assert.doesNotThrow(() => matchGlob(pattern, 'packages/payments/src/fee.ts'));
+      assert.doesNotThrow(() => matchAny([pattern], 'packages/payments/src/fee.ts'));
+      assert.equal(typeof matchGlob(pattern, 'packages/payments/src/fee.ts'), 'boolean');
+    });
+  }
+});

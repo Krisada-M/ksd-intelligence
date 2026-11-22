@@ -8,6 +8,7 @@ import {
   DEFAULT_RISK_ZONES,
   defaultConfig,
   parseProjectConfig,
+  resolveRiskZones,
 } from '../../src/core/kernel/config.js';
 import {
   computeRepoId,
@@ -133,6 +134,39 @@ describe('config core', () => {
     assert.equal(DEFAULT_RISK_ZONES[0]?.floor, 'high');
     assert.equal(DEFAULT_RISK_ZONES[2]?.zone, 'migrations');
     assert.equal(DEFAULT_RISK_ZONES[2]?.floor, 'critical');
+  });
+
+  it('validates riskZones: preserves [], preserves default, and falls back to default on any invalid item', () => {
+    const empty = parseProjectConfig(JSON.stringify({ riskZones: [] }));
+    assert.deepEqual(empty.errors, []);
+    assert.deepEqual(empty.config.riskZones, []);
+    assert.deepEqual(resolveRiskZones(empty.config.riskZones), []);
+
+    const def = parseProjectConfig(JSON.stringify({ riskZones: 'default' }));
+    assert.deepEqual(def.errors, []);
+    assert.equal(def.config.riskZones, 'default');
+    assert.equal(resolveRiskZones(def.config.riskZones).length, 4);
+
+    for (const bad of [
+      'not-default',
+      123,
+      [{ zone: '', floor: 'high', match: ['**/a/**'] }],
+      [{ zone: 'ok', floor: 'medium', match: ['**/a/**'] }],
+      [{ zone: 'ok', floor: 'high', match: [] }],
+      [{ zone: 'ok', floor: 'high', match: ['   '] }],
+      [
+        { zone: 'valid', floor: 'high', match: ['**/valid/**'] },
+        { zone: 'bad', floor: 'invalid', match: ['**/bad/**'] },
+      ],
+    ]) {
+      const parsed = parseProjectConfig(JSON.stringify({ riskZones: bad }));
+      assert.ok(parsed.errors.length > 0, `expected error for ${JSON.stringify(bad)}`);
+      assert.equal(
+        parsed.config.riskZones,
+        'default',
+        `expected fallback to default for ${JSON.stringify(bad)}`,
+      );
+    }
   });
 });
 

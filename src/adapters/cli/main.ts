@@ -8,6 +8,8 @@ import {
   setupTypescriptRuntime,
 } from '../../core/engine/typescript.js';
 import { loadWorkspace } from '../../core/engine/workspace.js';
+import { runChanges } from '../../core/changes/changes.js';
+import { renderChangesOutcome } from '../../core/changes/render.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { initProject } from '../../core/workspace/init.js';
@@ -83,21 +85,22 @@ function renderDoctor(report: Record<string, unknown>): string {
 }
 
 const USAGE = `usage:
-  main.js init  [--root <path>] [--force] [--dry-run] [--json]
-  main.js setup [--check]                         (installs the pinned TypeScript runtime; --check only verifies)
-  main.js index [--root <path>] [--full] [--json] (update the index from the working tree; --full rebuilds cold)
-  main.js impact <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
-  main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
-  main.js status [--root <path>] [--json]         (index, coverage, runtime, TypeScript, store, lock)
-  main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui] [--poteto-mode]
-  main.js load  --task "..." [same options]      (needs checkouts; fails closed)
-  main.js skills list|check [--platform agy|omp] [--root <path>] [--profile <name>] [--detect-host] [--json]
-  main.js skills diff [--lock <path>] [--registry <path>] [--json]
-  main.js skills sync [--stage] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
-  main.js skills publish --stage-id <id> --approve [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
-  main.js skills rollback [--release <id>] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
-  main.js sources check [--write] [--lock <path>]  (never clones or fetches)
-  main.js mcp   --root <path> [--workflow]        (local stdio MCP server for Antigravity)`;
+  main.js init    [--root <path>] [--force] [--dry-run] [--json]
+  main.js setup   [--check]                       (installs the pinned TypeScript runtime; --check only verifies)
+  main.js index   [--root <path>] [--full] [--json] (update the index from the working tree; --full rebuilds cold)
+  main.js impact  <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
+  main.js changes [--base <ref>] [--depth <n>] [--planned <target>]... [--root <path>] [--json] (impact of uncommitted changes)
+  main.js doctor  --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
+  main.js status  [--root <path>] [--json]        (index, coverage, runtime, TypeScript, store, lock)
+  main.js route   --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui] [--poteto-mode]
+  main.js load    --task "..." [same options]     (needs checkouts; fails closed)
+  main.js skills  list|check [--platform agy|omp] [--root <path>] [--profile <name>] [--detect-host] [--json]
+  main.js skills  diff [--lock <path>] [--registry <path>] [--json]
+  main.js skills  sync [--stage] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
+  main.js skills  publish --stage-id <id> --approve [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
+  main.js skills  rollback [--release <id>] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
+  main.js sources check [--write] [--lock <path>] (never clones or fetches)
+  main.js mcp     --root <path> [--workflow]      (local stdio MCP server for Antigravity)`;
 async function run(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -127,6 +130,8 @@ async function run(argv: string[]): Promise<number> {
       deep: { type: 'boolean' },
       differential: { type: 'string' },
       depth: { type: 'string' },
+      base: { type: 'string' },
+      planned: { type: 'string', multiple: true },
       workflow: { type: 'boolean' },
     },
   });
@@ -226,6 +231,50 @@ async function run(argv: string[]): Promise<number> {
       console.log(renderImpact(batch));
     }
     return batch.answers.some((answer) => answer.kind === 'failure') ? 1 : 0;
+  }
+
+  if (command === 'changes') {
+    if (process.env.EI_DISABLED === '1') {
+      console.log('CHANGES disabled (EI_DISABLED)');
+      return 0;
+    }
+    const rawDepth = values.depth;
+    const depth = rawDepth === undefined ? undefined : Number.parseInt(rawDepth, 10);
+    if (
+      rawDepth !== undefined &&
+      (depth === undefined ||
+        !Number.isInteger(depth) ||
+        String(depth) !== rawDepth.trim() ||
+        depth < 1 ||
+        depth > 10)
+    ) {
+      const outcome = {
+        kind: 'failure' as const,
+        code: 'INVALID_INPUT' as const,
+        message: 'depth must be an integer 1–10',
+      };
+      console.log(
+        values.json === true ? JSON.stringify(outcome, null, 2) : renderChangesOutcome(outcome),
+      );
+      return 2;
+    }
+    const workspace = await loadWorkspace(values.root ?? process.cwd());
+    const session = new ImpactSession(workspace, {
+      waitAfterExpiry: true,
+      onProgress: (message) => console.error(`ei changes: ${message}`),
+    });
+    const outcome = await runChanges(session, {
+      base: values.base,
+      depth,
+      planned: values.planned,
+    });
+    const rendered = renderChangesOutcome(outcome);
+    if (values.json === true) {
+      console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
+    } else {
+      console.log(rendered);
+    }
+    return outcome.kind === 'failure' ? 1 : 0;
   }
 
   if (command === 'doctor') {

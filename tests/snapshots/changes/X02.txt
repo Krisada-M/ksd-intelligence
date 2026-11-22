@@ -1,0 +1,17 @@
+CHANGES vs main (merge-base 3e1d5b3) — 1 file, 1 symbol
+ACTION run-tests · level high (zone payments) · picture complete
+REACH 5 direct · 8 total · 7 files · 3 packages · 1 route · factors: cross-package, public-export-surface, route
+
+Signature changed, still called (1)
+  calculateFee  packages/payments/src/fee.ts:9
+    apps/web/src/checkout.ts:4  submit  CALLS
+    packages/api/src/charge.ts:3  chargeHandler  CALLS  gap
+    packages/payments/src/checkout-flow.ts:12  lazyFee  CALLS
+    packages/payments/src/fee.test.ts:1  <module>  CALLS
+    packages/payments/src/service.ts:4  PaymentService.charge  CALLS
+    (+3 transitive callers)
+Tests to run (1)
+  packages/payments/src/fee.test.ts
+Gaps: none
+Next: run the test above, and include this verdict in your report.
+— index updated (full hash) · 26 files · ts 5.9.3 · engine 0.2.0

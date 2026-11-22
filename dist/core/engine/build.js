@@ -92,3 +92,56 @@ export function buildIndex(workspace, options = {}) {
 export function doctorDeep(workspace, options = {}) {
     return runLocked(workspace, 'doctor', { differential: options.differential ?? 0 }, options);
 }
+export async function runChangesDiff(workspace, files, options = {}) {
+    if (options.signal?.aborted) {
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+    }
+    const typescript = await resolveTypescript({
+        version: pinnedTypescriptVersion(),
+        cacheHome: options.cacheHome,
+        repoRoot: workspace.root,
+        useWorkspaceTypescript: workspace.config.impact.useWorkspaceTypescript,
+    });
+    if (!typescript.ok) {
+        return { ok: false, code: 'degraded', message: typescript.reason, fix: typescript.fix };
+    }
+    const runtime = await chooseRuntime(options.env);
+    if (options.signal?.aborted) {
+        return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+    }
+    const host = createEngineHost({
+        runtime,
+        memoryLimitMb: memoryLimitMb(workspace.config.impact.maxMemoryMb),
+        env: options.env,
+    });
+    const onAbort = () => {
+        void host.stop();
+    };
+    options.signal?.addEventListener('abort', onAbort, { once: true });
+    if (options.signal?.aborted)
+        onAbort();
+    try {
+        const reply = await host.request('changes-diff', {
+            typescriptPath: typescript.runtime.path,
+            files,
+        }, { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? 60_000 });
+        if (options.signal?.aborted) {
+            return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
+        }
+        if (reply.ok && isRecord(reply.value))
+            return { ok: true, value: reply.value };
+        if (reply.ok) {
+            return { ok: false, code: 'index-failed', message: 'engine reply is not an object', fix: '' };
+        }
+        return {
+            ok: false,
+            code: 'index-failed',
+            message: reply.message,
+            fix: 'retry once: ei changes',
+        };
+    }
+    finally {
+        options.signal?.removeEventListener('abort', onAbort);
+        await host.stop();
+    }
+}

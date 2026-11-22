@@ -6,8 +6,10 @@ import { buildIndex, type BuildOptions, type EngineOutcome } from '../engine/bui
 import { isHolderAlive, readLockHolder } from '../engine/lock.js';
 import type { Workspace } from '../engine/workspace.js';
 import { impactConfigHash } from '../indexing/stamp.js';
+import type { RiskZoneConfig } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import type { ImpactResult } from '../kernel/types.js';
+import { applyRiskZones } from '../kernel/verdict.js';
 import { probe } from '../workspace/probe.js';
 import {
   FAILURE_FILE,
@@ -60,37 +62,62 @@ function building(targets: readonly string[]): ImpactAnswer[] {
   }));
 }
 
-function staleResult(value: ImpactResult, reason: string): ImpactResult {
+function fileOfKey(key: string): string {
+  const hash = key.indexOf('#');
+  return hash === -1 ? key : key.slice(0, hash);
+}
+
+function staleResult(
+  value: ImpactResult,
+  reason: string,
+  riskZones: 'default' | readonly RiskZoneConfig[],
+): ImpactResult {
+  const paths = [
+    value.span?.file ?? fileOfKey(value.target),
+    ...value.byDepth.flat().map((node) => node.span.file),
+  ];
+  const verdict = applyRiskZones(
+    {
+      ...value.verdict,
+      basis: [...new Set([...value.verdict.basis, 'stale-index'])],
+    },
+    paths,
+    riskZones,
+    {
+      incomplete: true,
+      hasFactors: value.factors.length > 0,
+      preMatchedZones: value.verdict.zones,
+    },
+  );
   return {
     ...value,
     completeness: {
       status: 'partial',
       reasons: [...new Set([...value.completeness.reasons, reason])],
     },
-    verdict: {
-      ...value.verdict,
-      level: 'unknown',
-      action: 'check-gaps',
-      basis: [...new Set([...value.verdict.basis, 'stale-index'])],
-    },
+    verdict,
   };
 }
 
-function markStale(answer: ImpactAnswer, reason: string): ImpactAnswer {
+function markStale(
+  answer: ImpactAnswer,
+  reason: string,
+  riskZones: 'default' | readonly RiskZoneConfig[],
+): ImpactAnswer {
   if (answer.kind !== 'result') return answer;
   if ('results' in answer.value) {
     return {
       ...answer,
       value: {
         ...answer.value,
-        results: answer.value.results.map((result) => staleResult(result, reason)),
+        results: answer.value.results.map((result) => staleResult(result, reason, riskZones)),
         ...(answer.value.aggregate === undefined
           ? {}
-          : { aggregate: staleResult(answer.value.aggregate, reason) }),
+          : { aggregate: staleResult(answer.value.aggregate, reason, riskZones) }),
       },
     };
   }
-  return { ...answer, value: staleResult(answer.value, reason) };
+  return { ...answer, value: staleResult(answer.value, reason, riskZones) };
 }
 
 function updatedFiles(outcome: EngineOutcome, fallback: number): number {
@@ -344,7 +371,10 @@ export class ImpactSession {
     db: DatabaseSync,
     options?: { files?: readonly FileRecord[]; meta?: Record<string, string> },
   ): ImpactAnswer[] {
-    return new ImpactQuery(db, this.workspace.config.impact, options).batch(targets, depth);
+    return new ImpactQuery(db, this.workspace.config.impact, {
+      ...options,
+      riskZones: this.workspace.config.riskZones,
+    }).batch(targets, depth);
   }
 
   async query(
@@ -422,7 +452,7 @@ export class ImpactSession {
             const reason = `stale-index: ${staleReason}`;
             return {
               answers: this.answer(targets, depth, db, prefetched).map((answer) =>
-                markStale(answer, reason),
+                markStale(answer, reason, this.workspace.config.riskZones),
               ),
               index: { state: 'stale', updatedFiles: 0, driftedFiles },
             };
@@ -441,7 +471,7 @@ export class ImpactSession {
             );
             return {
               answers: this.answer(targets, depth, db, prefetched).map((answer) =>
-                markStale(answer, reason),
+                markStale(answer, reason, this.workspace.config.riskZones),
               ),
               index: { state: 'stale', updatedFiles: 0, driftedFiles },
             };
@@ -531,7 +561,7 @@ export class ImpactSession {
       const reason = staleReasonText(driftedFiles, staleReason, failureMessage);
       return {
         answers: this.answer(targets, depth, db, prefetched).map((answer) =>
-          markStale(answer, reason),
+          markStale(answer, reason, this.workspace.config.riskZones),
         ),
         index: { state: 'stale', updatedFiles: 0, driftedFiles },
       };
@@ -545,4 +575,233 @@ export class ImpactSession {
       db?.close();
     }
   }
+
+  getWorkspace(): Workspace {
+    return this.workspace;
+  }
+
+  /**
+   * Ensure the published index is fresh using a full content hash (`freshness: 'hash'`), never
+   * `'stat'`. Caller owns closing the returned `db` when non-null.
+   */
+  async prepareForChanges(
+    callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] } = {},
+  ): Promise<ChangesSessionContext> {
+    if (callOptions.signal?.aborted) {
+      return {
+        db: null,
+        indexState: 'failed',
+        updatedFiles: 0,
+        driftedFiles: [],
+        staleReason: null,
+        failureMessage: 'Cancelled',
+        preUpdateIndexable: null,
+      };
+    }
+
+    let db: DatabaseSync | null = null;
+    let driftedFiles: string[] = [];
+    let fingerprint = '';
+    let previousId: string | null = null;
+    let staleReason = '';
+    let preUpdateIndexable: Set<string> | null = null;
+    try {
+      const configHash = impactConfigHash(this.workspace.config.impact);
+      db = openPublished(this.workspace.cacheDir);
+      if (db !== null) {
+        if (readSchemaVersion(db) !== SCHEMA_VERSION) {
+          staleReason = 'published schema does not match current index';
+          db.close();
+          db = null;
+        } else {
+          const meta = readMeta(db);
+          previousId = meta.build_id ?? null;
+          const persistedFailure = lastFailure(this.workspace.cacheDir, meta.built_at);
+          if (persistedFailure !== null) staleReason = `update failed: ${persistedFailure}`;
+          const files = readFiles(db);
+          preUpdateIndexable = new Set(
+            files.filter((f) => f.status === 'indexable').map((f) => f.path),
+          );
+          const drift = await probe(
+            this.workspace.root,
+            this.workspace.config.impact,
+            files,
+            'hash',
+          );
+          driftedFiles = [...new Set([...drift.added, ...drift.changed, ...drift.deleted])].sort();
+          if (meta.config_hash !== configHash) {
+            staleReason = 'index configuration changed';
+            driftedFiles = [...new Set([...driftedFiles, 'ei.config.json'])].sort();
+          }
+          if (driftedFiles.length === 0 && persistedFailure !== null) {
+            this.lastFailed = null;
+            return {
+              db,
+              indexState: 'stale',
+              updatedFiles: 0,
+              driftedFiles,
+              staleReason: `stale-index: ${staleReason}`,
+              failureMessage: null,
+              preUpdateIndexable,
+            };
+          }
+          if (driftedFiles.length === 0) {
+            this.lastFailed = null;
+            return {
+              db,
+              indexState: 'fresh',
+              updatedFiles: 0,
+              driftedFiles: [],
+              staleReason: null,
+              failureMessage: null,
+              preUpdateIndexable,
+            };
+          }
+          fingerprint = driftFingerprint(this.workspace.root, driftedFiles, configHash);
+          if (this.lastFailed !== null && this.lastFailed.fingerprint === fingerprint) {
+            return {
+              db,
+              indexState: 'stale',
+              updatedFiles: 0,
+              driftedFiles,
+              staleReason: staleReasonText(
+                driftedFiles,
+                staleReason,
+                `; update failed: ${this.lastFailed.message}`,
+              ),
+              failureMessage: null,
+              preUpdateIndexable,
+            };
+          }
+        }
+      }
+
+      const deadline = Date.now() + this.waitMs;
+      let outcome = await this.runBuildWait(deadline, callOptions);
+      if (callOptions.signal?.aborted) {
+        db?.close();
+        return {
+          db: null,
+          indexState: 'failed',
+          updatedFiles: 0,
+          driftedFiles,
+          staleReason: null,
+          failureMessage: 'Cancelled',
+          preUpdateIndexable,
+        };
+      }
+      if (outcome !== TIMED_OUT && !outcome.ok && outcome.code === 'busy') {
+        const status = await this.untilPublished(
+          previousId,
+          this.waitAfterExpiry ? Number.POSITIVE_INFINITY : deadline,
+          callOptions.signal,
+        );
+        if (status === 'aborted' || callOptions.signal?.aborted) {
+          db?.close();
+          return {
+            db: null,
+            indexState: 'failed',
+            updatedFiles: 0,
+            driftedFiles,
+            staleReason: null,
+            failureMessage: 'Cancelled',
+            preUpdateIndexable,
+          };
+        }
+        outcome =
+          status === 'published'
+            ? { ok: true, value: { action: 'update' } }
+            : status === 'released' || this.waitAfterExpiry
+              ? {
+                  ok: false,
+                  code: 'index-failed',
+                  message: 'another session released the lock without publishing',
+                  fix: 'run: ei index',
+                }
+              : TIMED_OUT;
+      }
+      if (outcome !== TIMED_OUT && outcome.ok && outcome.value.action === 'failed') {
+        const problems = outcome.value.problems;
+        outcome = {
+          ok: false,
+          code: 'index-failed',
+          message: Array.isArray(problems) ? problems.join('; ') : 'index verification failed',
+          fix: 'retry once: ei index',
+        };
+      }
+      if (outcome !== TIMED_OUT && outcome.ok) {
+        db?.close();
+        db = openPublished(this.workspace.cacheDir);
+        if (db === null || readSchemaVersion(db) !== SCHEMA_VERSION) {
+          db?.close();
+          db = null;
+          outcome = {
+            ok: false,
+            code: 'index-failed',
+            message: 'build completed without publishing a compatible index',
+            fix: 'retry once: ei index',
+          };
+        } else {
+          this.lastFailed = null;
+          return {
+            db,
+            indexState: 'updated',
+            updatedFiles: updatedFiles(outcome, driftedFiles.length),
+            driftedFiles,
+            staleReason: null,
+            failureMessage: null,
+            preUpdateIndexable,
+          };
+        }
+      }
+      if (outcome !== TIMED_OUT && !outcome.ok && fingerprint !== '') {
+        this.lastFailed = { fingerprint, message: outcome.message };
+      }
+      if (db === null) {
+        return {
+          db: null,
+          indexState: outcome === TIMED_OUT ? 'building' : 'failed',
+          updatedFiles: 0,
+          driftedFiles,
+          staleReason: null,
+          failureMessage:
+            outcome === TIMED_OUT
+              ? 'index update is still running; retry shortly'
+              : outcome.message,
+          preUpdateIndexable,
+        };
+      }
+      const failureMessage = outcome === TIMED_OUT ? '' : `; update failed: ${outcome.message}`;
+      return {
+        db,
+        indexState: 'stale',
+        updatedFiles: 0,
+        driftedFiles,
+        staleReason: staleReasonText(driftedFiles, staleReason, failureMessage),
+        failureMessage: null,
+        preUpdateIndexable,
+      };
+    } catch (error) {
+      db?.close();
+      return {
+        db: null,
+        indexState: 'failed',
+        updatedFiles: 0,
+        driftedFiles,
+        staleReason: null,
+        failureMessage: error instanceof Error ? error.message : String(error),
+        preUpdateIndexable,
+      };
+    }
+  }
+}
+
+export interface ChangesSessionContext {
+  db: DatabaseSync | null;
+  indexState: 'fresh' | 'updated' | 'stale' | 'building' | 'failed';
+  updatedFiles: number;
+  driftedFiles: string[];
+  staleReason: string | null;
+  failureMessage: string | null;
+  preUpdateIndexable: Set<string> | null;
 }

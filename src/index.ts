@@ -136,7 +136,12 @@ export type {
   Workflow,
   WorkflowErrorCode,
 } from './workflow/types.js';
-export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig } from './core/kernel/config.js';
+export {
+  DEFAULT_RISK_ZONES,
+  defaultConfig,
+  parseProjectConfig,
+  resolveRiskZones,
+} from './core/kernel/config.js';
 export type {
   GitlabConfig,
   ImpactConfig,
@@ -154,3 +159,17 @@ export {
   resolveCacheDir,
 } from './core/workspace/init.js';
 export type { InitProjectOptions, InitProjectResult } from './core/workspace/init.js';
+export { runChanges } from './core/changes/changes.js';
+export type { ChangesOptions } from './core/changes/changes.js';
+export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';
+export type {
+  ChangeFileStatus,
+  ChangedFile,
+  ChangedSymbol,
+  ChangedSymbolLiveUser,
+  ChangesPlanSummary,
+  ChangesResult,
+  ChangesTimings,
+  SymbolChangeKind,
+  UnindexedChangeDetail,
+} from './core/kernel/types.js';

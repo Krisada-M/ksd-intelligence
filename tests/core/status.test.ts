@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { cpSync } from 'node:fs';
-import { appendFile, mkdir, mkdtemp, realpath, rm } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -117,7 +117,7 @@ describe('ei index and ei_status (M2a.1)', () => {
       lines[7],
       'Scope       4 packages · tsconfigs 1 (tsconfig.json) · bases 1 · tsconfig problems none',
     );
-    assert.equal(lines[8], 'Config      ei.config.json ok');
+    assert.equal(lines[8], 'Config      ei.config.json ok · zones: none');
     assert.match(lines[3] ?? '', /^Graph {7}\d+ declarations · \d+ edges · programs 1$/);
     assert.equal(
       lines[4],
@@ -238,5 +238,24 @@ describe('ei index and ei_status (M2a.1)', () => {
       env: { ...env, EI_DISABLED: '1' },
     });
     assert.equal(disabled.stdout.trim(), 'STATUS disabled (EI_DISABLED)');
+  });
+
+  it('Config line lists default zones when riskZones is default or falls back on invalid entries', async () => {
+    await writeFile(join(repo, 'ei.config.json'), JSON.stringify({ riskZones: 'default' }));
+    const defText = renderStatus(await workspaceStatus(repo, { cacheHome }));
+    assert.match(
+      defText,
+      /^Config      ei\.config\.json ok · zones: payments, auth, migrations, prod-config$/m,
+    );
+
+    await writeFile(
+      join(repo, 'ei.config.json'),
+      JSON.stringify({ riskZones: [{ zone: '', floor: 'high', match: ['**'] }] }),
+    );
+    const errText = renderStatus(await workspaceStatus(repo, { cacheHome }));
+    assert.match(
+      errText,
+      /^Config      ei\.config\.json: 1 problems, defaults used for those sections: .* · zones: payments, auth, migrations, prod-config$/m,
+    );
   });
 });

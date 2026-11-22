@@ -7,6 +7,7 @@ import { MODULE_NAME } from '../indexing/declarations.js';
 import { isTestFile } from '../indexing/resolve.js';
 import { matchAny, matchGlob } from '../kernel/glob.js';
 import { isRecord } from '../kernel/guards.js';
+import { deriveVerdict, matchedRiskZones } from '../kernel/verdict.js';
 import { readMeta } from '../../storage/sqlite.js';
 /** G14: the traversal always runs to closure; this budget is the only stop. */
 const NODE_BUDGET = 50_000;
@@ -128,6 +129,7 @@ export class ImpactQuery {
     declByIdStmts = new Map();
     incomingByIdStmts = new Map();
     implementsById = null;
+    riskZones;
     globalGapsLoaded = false;
     boundarySourcesLoaded = false;
     hasComputedGaps = null;
@@ -136,6 +138,7 @@ export class ImpactQuery {
         this.db = db;
         this.impact = impact;
         this.nodeBudget = options.nodeBudget ?? NODE_BUDGET;
+        this.riskZones = options.riskZones ?? [];
         this.graph = new Graph(db);
         this.meta = options.meta ?? readMeta(db);
         this.engine = {
@@ -1015,7 +1018,149 @@ export class ImpactQuery {
             throw new Error(`indexed declaration missing: ${key}`);
         return this.buildImpact([target], key, { file: target.file, startLine: target.start, endLine: target.end }, depth, anonymous);
     }
+    unionForChanges(keys, depth, changedFilePaths = []) {
+        const perSymbol = new Map();
+        const compilerBySymbol = new Map();
+        const allInvolvedFiles = new Set(changedFilePaths);
+        const tests = new Set();
+        const reasons = new Set();
+        const factors = new Set();
+        const basis = new Set();
+        for (const key of keys) {
+            if (perSymbol.has(key))
+                continue;
+            const decl = this.get(key);
+            if (decl === undefined)
+                continue;
+            const { result, involvedFiles, compilerLevels } = this.buildImpactWithMeta([decl], key, { file: decl.file, startLine: decl.start, endLine: decl.end }, depth, false);
+            perSymbol.set(key, result);
+            compilerBySymbol.set(key, {
+                levels: compilerLevels,
+                targetPkg: this.packageOf.get(decl.file) ?? null,
+            });
+            for (const file of involvedFiles)
+                allInvolvedFiles.add(file);
+            for (const test of result.tests)
+                tests.add(test);
+            for (const reason of result.completeness.reasons)
+                reasons.add(reason);
+            for (const factor of result.factors)
+                factors.add(factor);
+            for (const b of result.verdict.basis) {
+                if (!b.startsWith('zone:'))
+                    basis.add(b);
+            }
+        }
+        for (const file of new Set(changedFilePaths)) {
+            for (const row of this.statements.tests.all(`${file}#${MODULE_NAME}`)) {
+                tests.add(String(row.file));
+            }
+            if (this.impact.routes.length > 0 && matchAny(this.impact.routes, file)) {
+                factors.add('route');
+                basis.add('route');
+            }
+            for (const kind of this.boundaries(file)) {
+                factors.add(kind);
+                basis.add(kind);
+            }
+        }
+        // Union byDepth across all changed symbols, keeping each symbol at its shallowest depth.
+        const byDepth = [];
+        const seenListing = new Set();
+        for (let d = 0; d < depth; d++) {
+            const levelMap = new Map();
+            for (const result of perSymbol.values()) {
+                for (const node of result.byDepth[d] ?? []) {
+                    if (seenListing.has(node.symbol))
+                        continue;
+                    levelMap.set(`${node.symbol}\0${node.via}`, node);
+                }
+            }
+            if (levelMap.size === 0)
+                continue;
+            for (const node of levelMap.values())
+                seenListing.add(node.symbol);
+            byDepth.push([...levelMap.values()].sort((a, b) => {
+                if (a.span.file !== b.span.file)
+                    return a.span.file < b.span.file ? -1 : 1;
+                if (a.span.startLine !== b.span.startLine)
+                    return a.span.startLine - b.span.startLine;
+                if (a.symbol !== b.symbol)
+                    return a.symbol < b.symbol ? -1 : 1;
+                return a.via < b.via ? -1 : a.via > b.via ? 1 : 0;
+            }));
+        }
+        // Union compiler-grade reach across all changed symbols at shallowest compiler depth.
+        const seenCompiler = new Set();
+        const directCompiler = new Set();
+        const reachedFiles = new Set();
+        const maxCompilerDepth = Math.max(0, ...[...compilerBySymbol.values()].map((c) => c.levels.length));
+        const targetPackages = new Set([...compilerBySymbol.values()].map((c) => c.targetPkg));
+        let crossPackage = [...perSymbol.values()].some((r) => r.reach.crossPackage);
+        for (let d = 0; d < maxCompilerDepth; d++) {
+            const levelSymbols = [];
+            for (const { levels } of compilerBySymbol.values()) {
+                for (const item of levels[d] ?? []) {
+                    if (seenCompiler.has(item.key))
+                        continue;
+                    levelSymbols.push(item.key);
+                }
+            }
+            for (const sym of levelSymbols) {
+                seenCompiler.add(sym);
+                if (d === 0)
+                    directCompiler.add(sym);
+                const file = this.declByKey.get(sym)?.file ?? sym.slice(0, sym.indexOf('#'));
+                reachedFiles.add(file);
+                if (targetPackages.size > 0 && !targetPackages.has(this.packageOf.get(file) ?? null)) {
+                    crossPackage = true;
+                }
+            }
+        }
+        const reachedPackages = new Set([...reachedFiles].map((f) => this.packageOf.get(f) ?? null));
+        const reach = {
+            direct: directCompiler.size,
+            total: seenCompiler.size,
+            files: reachedFiles.size,
+            packages: reachedPackages.size,
+            crossPackage,
+            routes: this.impact.routes.length > 0
+                ? [...reachedFiles].filter((file) => matchAny(this.impact.routes, file)).length
+                : 0,
+        };
+        if (reach.total >= this.impact.manyCallers) {
+            factors.add('many-callers');
+            basis.add('many-callers');
+        }
+        if (crossPackage) {
+            factors.add('cross-package');
+            basis.add('cross-package');
+        }
+        const sortedReasons = [...reasons].sort();
+        return {
+            perSymbol,
+            union: {
+                byDepth,
+                tests: [...tests].sort(),
+                completeness: {
+                    status: sortedReasons.length > 0 ? 'partial' : 'complete',
+                    reasons: sortedReasons,
+                },
+                reach,
+                factors: [...factors].sort(),
+            },
+            allInvolvedFiles,
+            basis: [...basis],
+            limits: { ...this.limits },
+            scannedFiles: this.scannedFiles,
+            freshness: { ...this.freshness },
+            engine: { ...this.engine },
+        };
+    }
     buildImpact(targets, targetKey, span, depth, anonymous) {
+        return this.buildImpactWithMeta(targets, targetKey, span, depth, anonymous).result;
+    }
+    buildImpactWithMeta(targets, targetKey, span, depth, anonymous) {
         const keys = targets.map((target) => target.key);
         const listing = this.traverse(keys, true, false, depth);
         // DESIGN §7.2: reach is over compiler-grade edges only, so a path through a heuristic hop is out.
@@ -1117,26 +1262,31 @@ export class ImpactQuery {
         const factorBasis = factors.flatMap((factor) => factor === 'common-name' && commonNameBases.length > 0
             ? [...new Set(commonNameBases)]
             : [factor]);
+        const zonePaths = new Set([span.file, ...involvedFiles]);
+        const matchedZones = matchedRiskZones(zonePaths, this.riskZones);
         return {
-            target: targetKey,
-            span,
-            byDepth,
-            bridged: [],
-            tests: [...tests].sort(),
-            completeness: { status: incomplete ? 'partial' : 'complete', reasons: sortedReasons },
-            reach,
-            factors,
-            limits: { ...this.limits },
-            scannedFiles: this.scannedFiles,
-            verdict: {
-                level: incomplete ? 'unknown' : factors.length > 0 ? 'medium' : 'low',
-                action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',
-                zones: [],
-                requiredActions: [],
-                basis: [...sortedReasons, ...factorBasis],
+            result: {
+                target: targetKey,
+                span,
+                byDepth,
+                bridged: [],
+                tests: [...tests].sort(),
+                completeness: { status: incomplete ? 'partial' : 'complete', reasons: sortedReasons },
+                reach,
+                factors,
+                limits: { ...this.limits },
+                scannedFiles: this.scannedFiles,
+                verdict: deriveVerdict({
+                    incomplete,
+                    hasFactors: factors.length > 0,
+                    basis: [...sortedReasons, ...factorBasis],
+                    matchedZones,
+                }),
+                freshness: { ...this.freshness },
+                engine: { ...this.engine },
             },
-            freshness: { ...this.freshness },
-            engine: { ...this.engine },
+            involvedFiles: zonePaths,
+            compilerLevels: compiler.levels,
         };
     }
 }

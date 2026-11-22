@@ -1,5 +1,7 @@
 import { workspaceStatus, renderStatus } from '../../dist/core/engine/status.js';
 import { loadWorkspace } from '../../dist/core/engine/workspace.js';
+import { runChanges } from '../../dist/core/changes/changes.js';
+import { renderChangesOutcome } from '../../dist/core/changes/render.js';
 import { ImpactSession } from '../../dist/core/impact/session.js';
 import { renderImpact } from '../../dist/core/impact/render.js';
 import { prepareWorkflow } from '../../dist/workflow/loader.js';
@@ -56,6 +58,37 @@ export const BASE_TOOLS = Object.freeze([
       openWorldHint: false,
     },
   },
+  {
+    name: 'ei_changes',
+    description:
+      'Read-only TS/JS diff impact: compares uncommitted working-tree changes against the merge-base with the default branch (or an explicit base ref), lists changed symbols, callers, tests, unindexed changes and one verdict. The repository root is fixed by server configuration.',
+    inputSchema: objectSchema({
+      base: {
+        type: 'string',
+        minLength: 1,
+        description:
+          'Optional git ref to compare against (default: merge-base with default branch)',
+      },
+      depth: {
+        type: 'integer',
+        minimum: 1,
+        maximum: 10,
+        description: 'Displayed caller depth, default 1',
+      },
+      planned: {
+        type: 'array',
+        items: { type: 'string', minLength: 1 },
+        description:
+          'Optional planned targets or file paths; unmentioned changes appear under Not in plan',
+      },
+    }),
+    annotations: {
+      title: 'KSD Changed Code Impact',
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+  },
 ]);
 
 const WORKFLOW_TOOL = {
@@ -103,7 +136,9 @@ function validate(name, args) {
       ? []
       : name === 'ei_impact'
         ? ['targets', 'depth']
-        : ['task', 'stage', 'risk', 'type', 'potetoMode'];
+        : name === 'ei_changes'
+          ? ['base', 'depth', 'planned']
+          : ['task', 'stage', 'risk', 'type', 'potetoMode'];
   if (Object.keys(args).some((key) => !allowed.includes(key))) {
     return 'INVALID_INPUT: unknown argument';
   }
@@ -124,6 +159,35 @@ function validate(name, args) {
       (!Number.isInteger(args.depth) || args.depth < 1 || args.depth > 10)
     ) {
       return 'INVALID_INPUT: depth must be an integer from 1 to 10';
+    }
+    return null;
+  }
+  if (name === 'ei_changes') {
+    if (args.base !== undefined) {
+      if (
+        typeof args.base !== 'string' ||
+        args.base.trim() === '' ||
+        args.base.length > 256 ||
+        args.base.trim().startsWith('-') ||
+        /[\0\r\n]/.test(args.base)
+      ) {
+        return 'INVALID_INPUT: base must be a safe non-empty git ref without leading "-"';
+      }
+    }
+    if (
+      args.depth !== undefined &&
+      (!Number.isInteger(args.depth) || args.depth < 1 || args.depth > 10)
+    ) {
+      return 'INVALID_INPUT: depth must be an integer from 1 to 10';
+    }
+    if (
+      args.planned !== undefined &&
+      (!Array.isArray(args.planned) ||
+        args.planned.some(
+          (target) => typeof target !== 'string' || target.trim() === '' || target.length > 1024,
+        ))
+    ) {
+      return 'INVALID_INPUT: planned must contain non-empty strings (max 1024 characters each)';
     }
     return null;
   }
@@ -184,6 +248,18 @@ export function createTools({ root, env = process.env }) {
           renderImpact(batch),
           batch.answers.some((answer) => answer.kind === 'failure'),
         );
+      }
+      if (name === 'ei_changes') {
+        const session = await impactSession();
+        const outcome = await runChanges(session, {
+          base: args.base,
+          depth: args.depth,
+          planned: args.planned,
+          signal,
+          onProgress: (message) => onProgress(message),
+        });
+        if (signal.aborted) return result('Cancelled', true);
+        return result(renderChangesOutcome(outcome), outcome.kind === 'failure');
       }
       const workflow = await prepareWorkflow({
         task: args.task,

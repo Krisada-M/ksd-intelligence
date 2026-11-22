@@ -10,5 +10,7 @@ export { PRECEDENCE_HEADER, renderWorkflow } from './workflow/render.js';
 export { hasRequirementComplianceSignal, routeTask } from './workflow/router.js';
 export { checkSources, defaultLockPath, formatReports, parseLock, readLock, reportStatus, writeLock, } from './workflow/sources.js';
 export { CATALOG_SKILL_NAMES, COMPLIANCE_DIMENSIONS, ORCHESTRATOR_SKILL_ID, PROVIDER_IDS, RISKS, SKILL_IDS, SKILL_PACK_IDS, STAGES, TASK_TYPES, WorkflowError, } from './workflow/types.js';
-export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig } from './core/kernel/config.js';
+export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig, resolveRiskZones, } from './core/kernel/config.js';
 export { computeRepoId, detectProjectLayout, discoverTsconfigs, findGitRoot, initProject, resolveCacheDir, } from './core/workspace/init.js';
+export { runChanges } from './core/changes/changes.js';
+export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';

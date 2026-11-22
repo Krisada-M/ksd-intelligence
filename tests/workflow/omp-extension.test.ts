@@ -55,7 +55,7 @@ function mockPi(): {
   return { pi, registered };
 }
 
-it('registers read-only ei_workflow, ei_status and ei_impact tools', () => {
+it('registers read-only ei_workflow, ei_status, ei_impact and ei_changes tools', () => {
   const { pi, registered } = mockPi();
   extension(pi, { env: {}, createPolicyExtension: noPolicy });
   assert.deepEqual(
@@ -64,6 +64,7 @@ it('registers read-only ei_workflow, ei_status and ei_impact tools', () => {
       ['ei_workflow', 'read'],
       ['ei_status', 'read'],
       ['ei_impact', 'read'],
+      ['ei_changes', 'read'],
     ],
   );
   const params = registered[1]?.parameters;
@@ -72,6 +73,9 @@ it('registers read-only ei_workflow, ei_status and ei_impact tools', () => {
   const impactParams = registered[2]?.parameters;
   assert.ok(impactParams && 'keys' in impactParams);
   assert.deepEqual(impactParams.keys, ['targets', 'depth']);
+  const changesParams = registered[3]?.parameters;
+  assert.ok(changesParams && 'keys' in changesParams);
+  assert.deepEqual(changesParams.keys, ['base', 'depth', 'planned']);
 });
 
 it('EI_DISABLED=1 skips the ei_* tools only', () => {
@@ -97,8 +101,36 @@ it('a failing policy module does not prevent the ei_* tools from registering', (
   });
   assert.deepEqual(
     registered.map((tool) => tool.name),
-    ['ei_workflow', 'ei_status', 'ei_impact'],
+    ['ei_workflow', 'ei_status', 'ei_impact', 'ei_changes'],
   );
+});
+
+it('ei_changes validates inputs and fails cleanly outside a git repo', async () => {
+  const { pi, registered } = mockPi();
+  const repo = await tempDir('changes-nogit');
+  try {
+    extension(pi, { env: process.env, createPolicyExtension: noPolicy });
+    const changesTool = registered[3]!;
+    const badBase = await changesTool.execute(
+      'c1',
+      { base: '--output=/tmp/x' },
+      undefined,
+      undefined,
+      {
+        cwd: repo,
+      },
+    );
+    assert.equal(badBase.isError, true);
+    assert.match(badBase.content[0]?.text ?? '', /^INVALID_INPUT:/);
+
+    const badDepth = await changesTool.execute('c2', { depth: 99 }, undefined, undefined, {
+      cwd: repo,
+    });
+    assert.equal(badDepth.isError, true);
+    assert.match(badDepth.content[0]?.text ?? '', /^INVALID_INPUT:/);
+  } finally {
+    await cleanup(repo);
+  }
 });
 
 it('ei_status reports a degraded state with its fix, success-shaped, for the session cwd', async () => {

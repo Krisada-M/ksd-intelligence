@@ -13,6 +13,8 @@
  * disables only policy injection and /engineering-review; EI_DISABLED=1 disables
  * only the ei_* tools.
  */
+import { runChanges } from '../../core/changes/changes.js';
+import { renderChangesOutcome } from '../../core/changes/render.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { loadWorkspace } from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
@@ -111,9 +113,8 @@ function registerEiStatus(pi, env) {
         },
     });
 }
-function registerEiImpact(pi, deps) {
+function registerEiImpact(pi, deps, sessions) {
     const z = pi.zod;
-    const sessions = new Map();
     const targetsSchema = (() => {
         const base = z.array ? z.array(z.string()) : z.string();
         const min = base.min ? base.min(1) : base;
@@ -188,6 +189,91 @@ function registerEiImpact(pi, deps) {
         },
     });
 }
+function registerEiChanges(pi, deps, sessions) {
+    const z = pi.zod;
+    const baseSchema = z
+        .string()
+        .optional()
+        .describe('Git ref to compare against (default: merge-base with the default branch)');
+    const depthSchema = (() => {
+        const base = z.number ? z.number() : z.string();
+        const int = base.int ? base.int() : base;
+        const min = int.min ? int.min(1) : int;
+        const max = min.max ? min.max(10) : min;
+        return max.optional().describe('Levels of callers to list (1–10, default 1)');
+    })();
+    const plannedSchema = (z.array ? z.array(z.string()) : z.string())
+        .optional()
+        .describe('Planned symbol targets or file paths; unmentioned changes appear under Not in plan');
+    pi.registerTool({
+        name: 'ei_changes',
+        label: 'KSD Changed Code Impact',
+        description: 'After you have edited code and before you report the work as done, call this with no arguments. It reads your uncommitted changes, lists which symbols changed, what they affect, which tests to run, and any changed files it cannot analyse. Read-only.',
+        parameters: z.object({
+            base: baseSchema,
+            depth: depthSchema,
+            planned: plannedSchema,
+        }),
+        approval: 'read',
+        async execute(_toolCallId, params, signal, onUpdate, ctx) {
+            if (signal?.aborted)
+                return errorResult('Cancelled');
+            try {
+                const rawBase = isRecord(params) ? params.base : undefined;
+                const rawDepth = isRecord(params) ? params.depth : undefined;
+                const rawPlanned = isRecord(params) ? params.planned : undefined;
+                if (rawBase !== undefined && typeof rawBase !== 'string') {
+                    return errorResult('INVALID_INPUT: base must be a string');
+                }
+                if (rawDepth !== undefined &&
+                    (typeof rawDepth !== 'number' ||
+                        !Number.isInteger(rawDepth) ||
+                        rawDepth < 1 ||
+                        rawDepth > 10)) {
+                    return errorResult('INVALID_INPUT: depth must be an integer 1–10');
+                }
+                if (rawPlanned !== undefined &&
+                    (!Array.isArray(rawPlanned) ||
+                        rawPlanned.some((target) => typeof target !== 'string' || target.trim() === ''))) {
+                    return errorResult('INVALID_INPUT: planned must be an array of non-empty strings');
+                }
+                const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+                let session = sessions.get(workspace.cacheDir);
+                if (session === undefined) {
+                    session = new ImpactSession(workspace, deps.impactSession);
+                    sessions.set(workspace.cacheDir, session);
+                }
+                const outcome = await runChanges(session, {
+                    base: rawBase,
+                    depth: rawDepth,
+                    planned: rawPlanned,
+                    signal,
+                    onProgress: (message, data) => {
+                        onUpdate?.({ content: [{ type: 'text', text: message }], details: data });
+                    },
+                });
+                if (signal?.aborted)
+                    return errorResult('Cancelled');
+                const text = renderChangesOutcome(outcome);
+                if (text === 'Cancelled')
+                    return errorResult('Cancelled');
+                if (outcome.kind === 'failure') {
+                    return { isError: true, content: [{ type: 'text', text }], details: outcome };
+                }
+                if (outcome.kind === 'guidance') {
+                    return { content: [{ type: 'text', text }], details: outcome };
+                }
+                return { content: [{ type: 'text', text }], details: outcome.value };
+            }
+            catch (error) {
+                if (signal?.aborted)
+                    return errorResult('Cancelled');
+                const message = error instanceof Error ? error.message : String(error);
+                return errorResult(`index-failed: ${message}. Retry once; if it fails again, continue without ei_changes and say so in your report.`);
+            }
+        },
+    });
+}
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(pi, deps = {}) {
     const env = deps.env ?? process.env;
@@ -200,6 +286,7 @@ export default function ksdIntelligenceExtension(pi, deps = {}) {
     }
     if (env.EI_DISABLED === '1')
         return;
+    const sessions = new Map();
     try {
         registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath(), deps.skillsDir);
     }
@@ -213,9 +300,15 @@ export default function ksdIntelligenceExtension(pi, deps = {}) {
         warnLoad('ei_status tool', error);
     }
     try {
-        registerEiImpact(pi, deps);
+        registerEiImpact(pi, deps, sessions);
     }
     catch (error) {
         warnLoad('ei_impact tool', error);
+    }
+    try {
+        registerEiChanges(pi, deps, sessions);
+    }
+    catch (error) {
+        warnLoad('ei_changes tool', error);
     }
 }

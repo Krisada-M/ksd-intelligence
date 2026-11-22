@@ -277,6 +277,13 @@ function parseSearch(section: unknown, fallback: SearchConfig, errors: string[])
   return { enabled, semantic };
 }
 
+export function resolveRiskZones(
+  riskZones: 'default' | readonly RiskZoneConfig[] | undefined,
+): readonly RiskZoneConfig[] {
+  if (riskZones === undefined) return [];
+  return riskZones === 'default' ? DEFAULT_RISK_ZONES : riskZones;
+}
+
 function parseRiskZones(
   section: unknown,
   fallback: 'default' | RiskZoneConfig[],
@@ -290,23 +297,29 @@ function parseRiskZones(
     return fallback;
   }
   const validZones: RiskZoneConfig[] = [];
-  for (const item of section) {
+  let hasInvalid = false;
+  for (let i = 0; i < section.length; i++) {
+    const item = section[i];
     if (
       isRecord(item) &&
       typeof item.zone === 'string' &&
+      item.zone.trim() !== '' &&
       (item.floor === 'high' || item.floor === 'critical') &&
-      isStringArray(item.match)
+      isStringArray(item.match) &&
+      item.match.length > 0 &&
+      item.match.every((pattern) => pattern.trim() !== '')
     ) {
       validZones.push({
-        zone: item.zone,
+        zone: item.zone.trim(),
         floor: item.floor,
         match: item.match,
       });
     } else {
-      errors.push('Invalid item in riskZones array');
+      hasInvalid = true;
+      errors.push(`Invalid item in riskZones[${i}]`);
     }
   }
-  return validZones;
+  return hasInvalid ? fallback : validZones;
 }
 
 function parseGitlab(section: unknown, fallback: GitlabConfig, errors: string[]): GitlabConfig {

@@ -2,6 +2,7 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { repositoryLimits } from '../graph/limits.js';
+import { resolveRiskZones } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { probe } from '../workspace/probe.js';
@@ -186,11 +187,12 @@ export async function workspaceStatus(start, options = {}) {
         indexError = error instanceof Error ? error.message : String(error);
     }
     const holder = readLockHolder(workspace.cacheDir);
+    const zones = resolveRiskZones(workspace.config.riskZones).map((zone) => zone.zone);
     const partial = {
         root: workspace.root,
         repoId: workspace.repoId,
         cacheDir: workspace.cacheDir,
-        config: { path: workspace.configPath, errors: workspace.configErrors },
+        config: { path: workspace.configPath, errors: workspace.configErrors, zones },
         runtime,
         memoryLimitMb: memoryLimitMb(impact.maxMemoryMb),
         typescript,
@@ -337,14 +339,15 @@ export function renderStatus(status) {
         lines.push(`Drift       ${list([...drift.changed, ...drift.added, ...drift.deleted], 5)}`);
     }
     const config = status.config;
+    const zonesText = config.zones.length === 0 ? 'none' : list(config.zones, 8);
     if (config.path === null) {
-        lines.push('Config      no ei.config.json · detected defaults (run: ei init)');
+        lines.push(`Config      no ei.config.json · detected defaults (run: ei init) · zones: ${zonesText}`);
     }
     else if (config.errors.length === 0) {
-        lines.push('Config      ei.config.json ok');
+        lines.push(`Config      ei.config.json ok · zones: ${zonesText}`);
     }
     else {
-        lines.push(`Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)}`);
+        lines.push(`Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)} · zones: ${zonesText}`);
     }
     lines.push(`Runtime     ${status.runtime.kind} ${status.runtime.version} (${homeRelative(status.runtime.command)}) · memory limit ${status.memoryLimitMb.toLocaleString('en-US')} MB${peakNote(status.index?.meta.peak_rss_mb)}`);
     lines.push(`TypeScript  ${typescriptLine(status.typescript)}`);

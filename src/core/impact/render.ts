@@ -1,6 +1,8 @@
 import type { ImpactAnswer, FileImpactResult } from './query.js';
 import type { ImpactBatch } from './session.js';
+import type { RiskZoneConfig } from '../kernel/config.js';
 import type { ImpactLimits, ImpactNode, ImpactResult } from '../kernel/types.js';
+import { deriveVerdict } from '../kernel/verdict.js';
 
 /** TOOLS.md §4 per-target character budget. */
 export const TARGET_BUDGET = 4_000;
@@ -126,7 +128,16 @@ function formatFooter(
 function formatNext(result: ImpactResult, isStale: boolean, hasGapRows: boolean): string {
   const testCount = result.tests.length;
   let base: string;
-  if (isStale || result.verdict.action === 'check-gaps') {
+  if (result.verdict.action === 'ask-owner') {
+    const hasGaps = isStale || result.completeness.status !== 'complete';
+    const subject = hasGaps
+      ? 'present the listed gap sites and planned change to the owner before editing'
+      : 'present the planned change to the owner before editing';
+    base =
+      result.verdict.level === 'critical'
+        ? `${subject}, and do not batch with other changes; call ei_changes before you report done.`
+        : `${subject}; call ei_changes before you report done.`;
+  } else if (isStale || result.verdict.action === 'check-gaps') {
     base =
       testCount > 0
         ? `check the listed gap sites before relying on the caller list, then run ${testCount === 1 ? 'the test above' : 'the tests above'} and call ei_changes before you report done.`
@@ -294,7 +305,7 @@ function renderSymbolBlock(
       ? ` (${result.verdict.zones.length === 1 ? 'zone' : 'zones'} ${result.verdict.zones.join(', ')})`
       : '';
   const line2 = isStale
-    ? `ACTION check-gaps · level unknown${zoneText} · picture partial (stale index)`
+    ? `ACTION ${result.verdict.action} · level ${result.verdict.level}${zoneText} · picture partial (stale index)`
     : result.completeness.status !== 'complete'
       ? `ACTION ${result.verdict.action} · level ${result.verdict.level}${zoneText} · picture ${result.completeness.status} (${plural(result.completeness.reasons.length, 'gap', 'gaps')})`
       : `ACTION ${result.verdict.action} · level ${result.verdict.level}${zoneText} · picture complete`;
@@ -468,6 +479,16 @@ function renderFileBlock(
   const tests = [...new Set(results.flatMap((r) => r.tests))].sort();
   const incomplete =
     reasons.length > 0 || results.some((r) => r.completeness.status !== 'complete');
+  const matchedZoneMap = new Map<string, RiskZoneConfig>();
+  for (const r of results) {
+    const floor: RiskZoneConfig['floor'] = r.verdict.level === 'critical' ? 'critical' : 'high';
+    for (const zone of r.verdict.zones) {
+      const existing = matchedZoneMap.get(zone);
+      if (existing === undefined || (existing.floor === 'high' && floor === 'critical')) {
+        matchedZoneMap.set(zone, { zone, floor, match: [] });
+      }
+    }
+  }
   const combined: ImpactResult = {
     target: `${file}#<module>`,
     span: { file, startLine: 1, endLine: 1 },
@@ -496,13 +517,12 @@ function renderFileBlock(
     factors,
     limits: first.limits,
     scannedFiles: first.scannedFiles,
-    verdict: {
-      level: incomplete ? 'unknown' : factors.length > 0 ? 'medium' : 'low',
-      action: incomplete ? 'check-gaps' : factors.length > 0 ? 'run-tests' : 'proceed',
-      zones: [...new Set(results.flatMap((r) => r.verdict.zones))],
-      requiredActions: [...new Set(results.flatMap((r) => r.verdict.requiredActions))],
+    verdict: deriveVerdict({
+      incomplete,
+      hasFactors: factors.length > 0,
       basis: [...new Set(results.flatMap((r) => r.verdict.basis))],
-    },
+      matchedZones: [...matchedZoneMap.values()],
+    }),
     freshness: first.freshness,
     engine: first.engine,
   };

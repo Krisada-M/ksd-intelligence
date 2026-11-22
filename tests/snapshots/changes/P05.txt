@@ -1,0 +1,11 @@
+CHANGES vs main (merge-base 3e1d5b3) — 1 file, 0 symbols
+ACTION ask-owner · level critical (zone migrations) · picture partial (1 gap)
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Not analysed (1)
+  packages/api/migrations/001.sql — non-TS/JS file; not analysed
+Tests to run: none
+Gaps (1)
+  outside-index-scope: packages/api/migrations/001.sql — non-TS/JS file; not analysed
+Next: include this verdict and the "Not analysed" list in your report; ask the owner before proceeding; do not batch with other changes.
+— index updated (full hash) · 27 files · ts 5.9.3 · engine 0.2.0

@@ -165,3 +165,76 @@ export type Outcome<T> =
       /** Malfunctions tell the agent to retry once. */
       retry?: boolean;
     };
+
+export type ChangeFileStatus = 'A' | 'M' | 'D' | 'R';
+export type SymbolChangeKind = 'added' | 'modified' | 'removed' | 'signature-changed';
+
+export interface ChangedFile {
+  path: string;
+  status: ChangeFileStatus;
+  indexed: boolean;
+  oldPath?: string;
+}
+
+export interface ChangedSymbolLiveUser {
+  file: string;
+  line: number;
+  source: string;
+  reason:
+    'caller' | 'unresolved-import' | 'unresolved-name-match' | 'string-name-match' | 're-export';
+}
+
+export interface ChangedSymbol {
+  symbol: string;
+  change: SymbolChangeKind;
+  span?: Span;
+  callers?: number;
+  directCallers?: ImpactNode[];
+  liveUsers?: ChangedSymbolLiveUser[];
+}
+
+export interface UnindexedChangeDetail {
+  path: string;
+  reason: string;
+  status: ChangeFileStatus;
+}
+
+export interface ChangesPlanSummary {
+  provided: boolean;
+  plannedCount: number;
+  notInPlan: {
+    symbol: string;
+    change: SymbolChangeKind;
+    callers: number;
+    liveUsers: ChangedSymbolLiveUser[];
+  }[];
+  unchanged: string[];
+  ambiguous: { target: string; candidates: string[] }[];
+}
+
+export interface ChangesTimings {
+  updateMs: number;
+  baseParseMs: number;
+  traverseMs: number;
+  renderMs: number;
+}
+
+export interface ChangesResult {
+  base: string;
+  mergeBase?: string;
+  changedFiles: ChangedFile[];
+  changedSymbols: ChangedSymbol[];
+  unindexedChanges: string[];
+  unindexedDetails?: UnindexedChangeDetail[];
+  impact: Pick<ImpactResult, 'byDepth' | 'tests' | 'completeness' | 'reach' | 'factors'>;
+  verdict: Verdict;
+  freshness: ImpactResult['freshness'];
+  engine: EngineStamp;
+  limits: ImpactLimits;
+  scannedFiles?: number;
+  indexState?: 'fresh' | 'updated' | 'stale';
+  updatedFiles?: number;
+  nothingChanged?: boolean;
+  plan?: ChangesPlanSummary;
+  timings?: ChangesTimings;
+}

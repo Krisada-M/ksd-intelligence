@@ -131,10 +131,11 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const list = await c.request(3, 'tools/list', {});
     assert.deepEqual(
       list.result.tools.map((tool) => tool.name),
-      ['ei_status', 'ei_impact'],
+      ['ei_status', 'ei_impact', 'ei_changes'],
     );
     assert.ok(list.result.tools.every((tool) => tool.annotations.readOnlyHint === true));
     assert.equal(list.result.tools[1].inputSchema.additionalProperties, false);
+    assert.equal(list.result.tools[2].inputSchema.additionalProperties, false);
     const status = await c.request(4, 'tools/call', { name: 'ei_status', arguments: {} });
     assert.match(status.result.content[0].text, /^STATUS degraded/);
     assert.equal(status.result.resultType, undefined);
@@ -155,7 +156,7 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const list = await c.request(2, 'tools/list', meta);
     assert.equal(list.result.resultType, 'complete');
     assert.equal(list.result.ttlMs, 0);
-    assert.equal(list.result.tools.length, 2);
+    assert.equal(list.result.tools.length, 3);
     const status = await c.request(3, 'tools/call', { ...meta, name: 'ei_status', arguments: {} });
     assert.match(status.result.content[0].text, /^STATUS degraded/);
     assert.equal(status.result.resultType, 'complete');
@@ -178,6 +179,20 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
       arguments: { targets: ['a'], depth: 11 },
     });
     assert.equal(badDepth.result.isError, true);
+    const badBase = await c.request(21, 'tools/call', {
+      ...meta,
+      name: 'ei_changes',
+      arguments: { base: '--output=/tmp/pwn' },
+    });
+    assert.equal(badBase.result.isError, true);
+    assert.match(badBase.result.content[0].text, /^INVALID_INPUT:/);
+    const changesNoGit = await c.request(22, 'tools/call', {
+      ...meta,
+      name: 'ei_changes',
+      arguments: {},
+    });
+    assert.equal(changesNoGit.result.isError, true);
+    assert.match(changesNoGit.result.content[0].text, /^INVALID_INPUT: not a git repository/);
     const unknown = await c.request(3, 'tools/call', {
       ...meta,
       name: 'shell_exec',
@@ -198,7 +213,7 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const list = await c.request(1, 'tools/list', meta);
     assert.deepEqual(
       list.result.tools.map((tool) => tool.name),
-      ['ei_status', 'ei_impact', 'ei_workflow'],
+      ['ei_status', 'ei_impact', 'ei_changes', 'ei_workflow'],
     );
     const workflowTool = list.result.tools.find((tool) => tool.name === 'ei_workflow');
     assert.equal(workflowTool.inputSchema.properties.potetoMode.type, 'boolean');
@@ -290,7 +305,7 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const list = await c.request(1, 'tools/list', meta);
     assert.deepEqual(
       list.result.tools.map((tool) => tool.name),
-      ['ei_status', 'ei_impact', 'ei_workflow'],
+      ['ei_status', 'ei_impact', 'ei_changes', 'ei_workflow'],
     );
     const workflowTool = list.result.tools.find((tool) => tool.name === 'ei_workflow');
     assert.equal(workflowTool.inputSchema.properties.potetoMode.type, 'boolean');

@@ -1,0 +1,11 @@
+IMPACT StripeProcessor.charge — packages/payments/src/stripe.ts:4
+ACTION ask-owner · level high (zone payments) · picture partial (1 gap)
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Callers, depth 1 (1)
+  packages/payments/src/checkout-flow.ts:4  runCheckout  CALLS  heuristic
+Tests: none
+Gaps (1)
+  interface-dispatch packages/payments/src/checkout-flow.ts:5 — call via interface packages/payments/src/processor.ts#PaymentProcessor.charge; check whether runtime receiver is this implementation
+Next: present the listed gap sites and planned change to the owner before editing; call ei_changes before you report done.
+— index fresh · 26 files · ts 5.9.3 · engine 0.2.0

@@ -70,7 +70,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
     const opened = openPublished(cache);
     assert.ok(opened);
     db = opened;
-    query = new ImpactQuery(db, impactOf(repo));
+    query = new ImpactQuery(db, impactOf(repo), { riskZones: [] });
   });
 
   after(async () => {
@@ -128,7 +128,9 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       const c26Db = openPublished(c26Cache)!;
       try {
         const rendered = renderAnswer(
-          new ImpactQuery(c26Db, impactOf(c26Repo)).query('packages/shared/src/many.ts#tiny'),
+          new ImpactQuery(c26Db, impactOf(c26Repo), { riskZones: [] }).query(
+            'packages/shared/src/many.ts#tiny',
+          ),
         );
         const expected = (await readFile(join(SNAP_DIR, 'C26.txt'), 'utf8')).trimEnd();
         assert.equal(rendered, expected, 'C26.txt');
@@ -156,7 +158,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       const d51Db = openPublished(d51Cache)!;
       try {
         const rendered = renderAnswer(
-          new ImpactQuery(d51Db, impactOf(d51Repo)).query('Usage.cost.input'),
+          new ImpactQuery(d51Db, impactOf(d51Repo), { riskZones: [] }).query('Usage.cost.input'),
         );
         const expected = (await readFile(join(SNAP_DIR, 'd51-parent.txt'), 'utf8')).trimEnd();
         assert.equal(rendered, expected, 'd51-parent.txt');
@@ -198,7 +200,10 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       const overDb = openPublished(overCache)!;
       try {
         const rendered = renderAnswer(
-          new ImpactQuery(overDb, impactOf(overRepo)).query('packages/shared/src/budget.ts#hub', 3),
+          new ImpactQuery(overDb, impactOf(overRepo), { riskZones: [] }).query(
+            'packages/shared/src/budget.ts#hub',
+            3,
+          ),
         );
         const expected = (await readFile(join(SNAP_DIR, 'over-budget.txt'), 'utf8')).trimEnd();
         assert.equal(rendered, expected, 'over-budget.txt');
@@ -249,7 +254,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       `import { ImpactQuery } from './dist/core/impact/query.js';`,
       `import { renderAnswer } from './dist/core/impact/render.js';`,
       `const db = openPublished(${JSON.stringify(cache)});`,
-      `const q = new ImpactQuery(db, ${JSON.stringify(impactOf(repo))});`,
+      `const q = new ImpactQuery(db, ${JSON.stringify(impactOf(repo))}, { riskZones: [] });`,
       `process.stdout.write(renderAnswer(q.query('packages/payments/src/fee.ts#calculateFee', 2)));`,
       `db.close();`,
     ].join(' ');
