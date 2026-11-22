@@ -861,8 +861,11 @@ describe('M2c Round 2 — ei_changes', () => {
       await writeFile(nlEnvPath, 'TOP_SECRET=never-read\n');
       await chmod(nlEnvPath, 0o000);
 
-      // 4. Non-UTF-8 byte path (0xff). On filesystems rejecting raw non-UTF-8 names (e.g. APFS), stage a raw git tree entry.
-      let expectedInvalidUtf8Path: string;
+      // 4. Non-UTF-8 byte path (0xff). Filesystems that reject raw non-UTF-8 names
+      // (macOS runners) cannot host the file at all, and a staged index entry is
+      // invisible to both git diff <base> and ls-files --others, so the invariant
+      // has nothing to observe there — skip the expectations instead.
+      let invalidUtf8Path: string | null = null;
       const rawNameBuf = Buffer.concat([
         Buffer.from('packages/shared/src/bad'),
         Buffer.from([0xff]),
@@ -876,21 +879,9 @@ describe('M2c Round 2 — ei_changes', () => {
           ]),
           'export const bad = 1;\n',
         );
-        expectedInvalidUtf8Path = rawNameBuf.toString('utf8');
+        invalidUtf8Path = rawNameBuf.toString('utf8');
       } catch {
-        const blobSha = execFileSync('git', ['-C', repo, 'hash-object', '-w', '--stdin'], {
-          input: 'export const bad = 1;\n',
-          encoding: 'utf8',
-        }).trim();
-        execFileSync('git', [
-          '-C',
-          repo,
-          'update-index',
-          '--add',
-          '--cacheinfo',
-          `100644,${blobSha},${rawNameBuf.toString('latin1')}`,
-        ]);
-        expectedInvalidUtf8Path = rawNameBuf.toString('utf8');
+        invalidUtf8Path = null;
       }
 
       const expectedAll = [
@@ -899,7 +890,7 @@ describe('M2c Round 2 — ei_changes', () => {
         'packages/payments/src/space file.ts',
         'packages/payments/src/nl\nfile.ts',
         'dir\n/.env',
-        expectedInvalidUtf8Path,
+        ...(invalidUtf8Path === null ? [] : [invalidUtf8Path]),
       ];
       const { result, text } = await runOnRepo(repo, cacheHome);
       assertX03(result, expectedAll);
@@ -919,7 +910,9 @@ describe('M2c Round 2 — ei_changes', () => {
       // Submodules (160000 & nested git repo) and invalid-UTF-8 path must be in unindexedChanges safely
       assert.ok(result.unindexedChanges.includes('packages/gitlink-sub'));
       assert.ok(result.unindexedChanges.includes('packages/nested-sub'));
-      assert.ok(result.unindexedChanges.includes(expectedInvalidUtf8Path));
+      if (invalidUtf8Path !== null) {
+        assert.ok(result.unindexedChanges.includes(invalidUtf8Path));
+      }
       assert.ok(!text.includes('SUBMODULE_SECRET_DO_NOT_READ'));
       assert.match(text, /git submodule; not analysed/);
     } finally {
