@@ -91,3 +91,18 @@ Write a small throwaway script in `/tmp/m3-audit.mjs` (never commit it) that:
 - NEVER edit the owner's real work repo during Step 3 latency edits — always benchmark edits on a `/tmp` copy and delete the copy afterwards.
 - NEVER paste proprietary code snippets, env values, or private file contents into `docs/research/m3-*.md` or `docs/dogfood-log.md`.
 - Do NOT tune or optimize performance during setup — report raw numbers first; optimization uses Contingency E only after owner approval.
+
+---
+
+## Comments
+
+### 2026-11-22 — Supplemental Setup Round on `ksd-intelligence` (Linux WSL2 x86_64) (`VERIFIED`)
+- Completed Setup Round on `ksd-intelligence` at commit `633f478` (`engine 0.2.0`, Node `v24.21.0`, TS `5.9.3`) without modifying product code: [`docs/research/m3-ksd-intelligence-linux.md`](../../../docs/research/m3-ksd-intelligence-linux.md).
+- Key verified figures:
+  - Cold build median `2,956.9 ms` (range `2,823.4–3,014.9 ms`), peak RSS `463 MB`, `93` indexable files (`27,051` lines), `1,950` declarations, `5,558` edges.
+  - No-drift impact (20 targets, warm `ImpactSession`): p50 median `11.2 ms`, p95 median `12.8 ms`.
+  - Body edit median `1,258.6 ms` (`1` resolved); widely-used export signature edit (`isRecord`) median `2,444.0 ms` (`49` resolved); add file median `1,755.2 ms` (`22` resolved).
+  - `ei doctor --deep --differential 300`: `0` differences, `0` counter differences, `1,624 / 1,624` references covered, `0` misses.
+  - 200-target seeded distribution: `32` `low` (`16.0%`), `80` `medium` (`40.0%`), `88` `unknown` (`44.0%`).
+  - 10 `low` hand-checks vs `ts.LanguageService.findReferences`: `0` missed callers / `0` wrong-`low` (Contingency D not triggered).
+- **Still open / blocked on owner:** Name the real work repository clone path + sanitized alias, approve its `ei init --dry-run` config, set daily-use limits in `docs/DESIGN.md §14`, and log Task #1 in `docs/dogfood-log.md`.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Start M3 dogfood on real repositories (setup + daily-use limits + dogfood start recorded).
 
-**Status:** ready-for-agent (MUST start with **Round 0 — reconcile ONLY**; do NOT write code until owner approves Round 0)
+**Status:** round-0-submitted (read-only reconciliation complete in [`evidence/05/round-0-reconcile.md`](../evidence/05/round-0-reconcile.md); awaiting owner approval of Round 0 + Ticket 03 start gate before Round 1)
 
 **Requirement:** REQ-05 in the [spec](../spec.md).
 
@@ -115,3 +115,13 @@
 - **Trap 3:** Using `probe()` (stat) instead of full content hash in `ei_changes`.
 - **Trap 4:** Importing `src/core/changes` inside `src/workflow/render.ts` (violates `DESIGN §5.1`).
 - **Trap 5:** Reading `.env*` or excluded files when computing `unindexedChanges` (list by path ONLY!).
+
+---
+
+## Comments
+
+### 2026-11-22 — Round 0 Reconcile Complete (Read-Only, `PROPOSED`)
+- Completed full read-only reconciliation in [`evidence/05/round-0-reconcile.md`](../evidence/05/round-0-reconcile.md) with **zero edits** to `src/`, `tests/`, or `docs/briefs/M2c-changes.md`.
+- Identified 9 verified mismatches/gaps (with exact `file:line` citations), including: `parseRiskZones` dropping invalid array items instead of falling back to `'default'`; `render.ts`/`session.ts` `staleResult` hardcoding `unknown`/`check-gaps` over zone floors and missing `ask-owner` in `formatNext()`; `declarations.sig_hash` stripping bodies vs `surface.ts` inferred-return semantics; missing `ei cache clear` CLI command; AGY MCP parity in `scripts/mcp/tools.mjs`; and PR `#33` header lines in `src/workflow/render.ts`.
+- Confirmed SQLite schema 4 requires no migration for M2c, and all 8 golden cases (`P01–P05`, `X01–X03`) await Round 1–2 tests.
+- **STOP GATE:** Awaiting owner approval of Round 0 + Ticket 03 start gate before opening branch `m2c-changes` for Round 1.

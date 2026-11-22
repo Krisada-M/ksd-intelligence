@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Accept M2b on final evidence.
 
-**Status:** partial (Linux/WSL2 live OMP 19.0.1 extension + `ei_workflow`/`ei_status` verified 2026-11-22; macOS live OMP smoke & manual TUI status checks still `NOT VERIFIED`)
+**Status:** partial (Linux/WSL2 live OMP `19.1.0` extension + `ei_workflow`/`ei_status`/`ei_impact` + `before_agent_start` single-injection guard verified 2026-11-22 in [`evidence/04/linux-x64.md`](../evidence/04/linux-x64.md); Linux manual TUI, live `omp -p` LLM turn, and ALL macOS live OMP checks still `NOT VERIFIED`)
 
 **Requirement:** REQ-04 in the [spec](../spec.md).
 
@@ -79,3 +79,4 @@ Write `.scratch/ksd-v1-readiness/evidence/04/<os>-<arch>.md` with:
 
 ## Comments
 - 2026-11-22 (Linux WSL2 x86_64, Node v24.21.0, Bun 1.4.2, OMP 19.0.1, branch `release/0.2.0-unified-skills` `71e30ba`): `npm run verify:skills -- --detect-host` VERIFIED `loadExtensions` (`tools=[ei_workflow,ei_status,ei_impact]`, `commands=[engineering-proxy,engineering-review]`), 5/5 `ei_workflow` scenarios + `potetoMode: true`, and `omp-discovery` (`131 skills`, `poteto-mode opt-in=true`, `0 issues`). Manual TUI checks on Linux and ALL live checks on macOS remain `NOT VERIFIED`.
+- 2026-11-22 (Linux WSL2 x86_64, Node v24.21.0, Bun 1.4.2, OMP `19.1.0`, commit `633f478`): Recorded full Linux non-interactive evidence in [`evidence/04/linux-x64.md`](../evidence/04/linux-x64.md): `npm run verify:skills -- --detect-host --json` 5/5 `VERIFIED`, plus direct OMP `19.1.0` `loadExtensions` execution of `ei_status`, `ei_impact`, `ei_workflow`, and `before_agent_start` single-injection guard (`1st pass: true`, `2nd pass changed: false`). Linux manual TUI checks, live `omp -p` LLM turn, and ALL macOS live checks remain `NOT VERIFIED`; ticket stays open.
