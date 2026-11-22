@@ -16,4 +16,4 @@ Callers, depth 1 (10)
 Tests: none
 Gaps: none
 Next: after your change, run the package tests; call ei_changes before you report done.
-— index fresh · 27 files · ts 5.9.3 · engine 0.1.0
+— index fresh · 27 files · ts 5.9.3 · engine 0.2.0

@@ -45,11 +45,12 @@ import {
   type FileRows,
   type TableCounts,
 } from '../../storage/records.js';
-import { fileDeclarations, type FileDeclarations, type Ts } from './declarations.js';
+import { fileDeclarations, signatureText, type FileDeclarations, type Ts } from './declarations.js';
 import { readPackages } from './packages.js';
 import { createAnalysisHost, groupPrograms, splitBy, type ProgramGroup } from './program.js';
 import { Resolver, isGlobalFile, type FileResolution, type ResolveScope } from './resolve.js';
 import { scanLexically } from './lexical.js';
+import { extractSearchRows } from '../search/segments.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
 import { verifyIndex } from './verify.js';
 
@@ -195,6 +196,7 @@ function diffCensus(before: readonly FileRecord[], now: readonly CensusRecord[])
 }
 
 function rowsOf(
+  ts: Ts,
   file: string,
   sf: TS.SourceFile | undefined,
   declarations: FileDeclarations | undefined,
@@ -226,6 +228,7 @@ function rowsOf(
       externalImports: [],
       exports: [],
       markers: [],
+      search: [],
     };
   }
   const parseError = resolution.gaps.some((gap) => gap.code === 'parse-error');
@@ -246,6 +249,11 @@ function rowsOf(
     externalImports: resolution.externalImports,
     exports: resolution.exports,
     markers: resolution.markers,
+    search: parseError
+      ? []
+      : extractSearchRows(ts, file, declarations.declarations, declarations.nodesOf, (node) =>
+          signatureText(ts, sf, node),
+        ),
   };
 }
 
@@ -578,7 +586,7 @@ export class Indexer {
       transaction(db, () => {
         for (const path of indexable) {
           if (sourceFile(path) === undefined)
-            writer.write(rowsOf(path, undefined, undefined, undefined));
+            writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
         }
         for (const group of programs.groups) {
           const resolver = new Resolver(this.ts, group.program, scope);
@@ -586,7 +594,9 @@ export class Indexer {
             if (ownerGroup.get(path) !== group) continue;
             const sf = sourceFile(path);
             if (sf === undefined) continue;
-            writer.write(rowsOf(path, sf, declarations.get(path), resolver.resolveFile(sf)));
+            writer.write(
+              rowsOf(this.ts, path, sf, declarations.get(path), resolver.resolveFile(sf)),
+            );
           }
           this.lighten(group);
         }
@@ -773,7 +783,13 @@ export class Indexer {
             const resolution = source?.resolver.resolveFile(source.sf);
             resolved.set(
               path,
-              rowsOf(path, source?.sf, source?.resolver.declarationsOf(source.sf), resolution),
+              rowsOf(
+                this.ts,
+                path,
+                source?.sf,
+                source?.resolver.declarationsOf(source.sf),
+                resolution,
+              ),
             );
             if (resolution === undefined) continue;
             observableKeysOf.set(path, resolution.observableKeys);

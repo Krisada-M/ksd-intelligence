@@ -194,6 +194,11 @@ function parseSearch(section, fallback, errors) {
     }
     return { enabled, semantic };
 }
+export function resolveRiskZones(riskZones) {
+    if (riskZones === undefined)
+        return [];
+    return riskZones === 'default' ? DEFAULT_RISK_ZONES : riskZones;
+}
 function parseRiskZones(section, fallback, errors) {
     if (section === undefined || section === 'default') {
         return 'default';
@@ -203,22 +208,28 @@ function parseRiskZones(section, fallback, errors) {
         return fallback;
     }
     const validZones = [];
-    for (const item of section) {
+    let hasInvalid = false;
+    for (let i = 0; i < section.length; i++) {
+        const item = section[i];
         if (isRecord(item) &&
             typeof item.zone === 'string' &&
+            item.zone.trim() !== '' &&
             (item.floor === 'high' || item.floor === 'critical') &&
-            isStringArray(item.match)) {
+            isStringArray(item.match) &&
+            item.match.length > 0 &&
+            item.match.every((pattern) => pattern.trim() !== '')) {
             validZones.push({
-                zone: item.zone,
+                zone: item.zone.trim(),
                 floor: item.floor,
                 match: item.match,
             });
         }
         else {
-            errors.push('Invalid item in riskZones array');
+            hasInvalid = true;
+            errors.push(`Invalid item in riskZones[${i}]`);
         }
     }
-    return validZones;
+    return hasInvalid ? fallback : validZones;
 }
 function parseGitlab(section, fallback, errors) {
     if (section === undefined)

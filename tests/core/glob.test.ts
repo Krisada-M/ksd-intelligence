@@ -106,6 +106,13 @@ describe('matchGlob', () => {
     assert.equal(matchGlob('!a.ts', 'a.ts'), false);
     assert.equal(matchGlob('!a.ts', '!a.ts'), true);
   });
+
+  it('matches ** across path segments containing newline characters', () => {
+    assert.equal(matchGlob('**/payments/**', 'packages/payments/src/nl\nfile.ts'), true);
+    assert.equal(matchGlob('**/.env*', 'dir\n/.env'), true);
+    assert.equal(matchGlob('packages/**', 'packages/payments/src/nl\nfile.ts'), true);
+    assert.equal(matchGlob('**', 'a\nb/c.ts'), true);
+  });
 });
 
 describe('matchAny', () => {
@@ -124,6 +131,34 @@ describe('matchAny', () => {
   for (const [name, patterns, path, expected] of rows) {
     it(name, () => {
       assert.equal(matchAny(patterns, path), expected);
+    });
+  }
+});
+
+describe('malformed and edge-case globs never throw', () => {
+  const malformed = [
+    '',
+    '[',
+    '[unclosed',
+    '(a|b',
+    'a\\b',
+    '\\',
+    'a{b',
+    'a{b,c',
+    '{a,{b}',
+    'a}b',
+    '***',
+    '!',
+    '![',
+    'a[b-c',
+    'a(b)c\\d',
+  ];
+
+  for (const pattern of malformed) {
+    it(`does not throw for ${JSON.stringify(pattern)}`, () => {
+      assert.doesNotThrow(() => matchGlob(pattern, 'packages/payments/src/fee.ts'));
+      assert.doesNotThrow(() => matchAny([pattern], 'packages/payments/src/fee.ts'));
+      assert.equal(typeof matchGlob(pattern, 'packages/payments/src/fee.ts'), 'boolean');
     });
   }
 });

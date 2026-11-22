@@ -6,6 +6,8 @@ import type { ImpactConfig } from '../kernel/config.js';
 const INDEXING_DIR = fileURLToPath(new URL('.', import.meta.url));
 // The census classification decides what is indexable, so it is part of the extractor too.
 const SCAN_MODULE = fileURLToPath(new URL('../workspace/scan.js', import.meta.url));
+// Search segmentation and doc/signature extraction determine declarations_fts content.
+const SEARCH_SEGMENTS_MODULE = fileURLToPath(new URL('../search/segments.js', import.meta.url));
 
 let moduleHash: string | undefined;
 
@@ -16,7 +18,9 @@ function hashOfExtractorModules(): string {
       .filter((name) => name.endsWith('.js'))
       .sort()
       .map((name) => `${INDEXING_DIR}/${name}`);
-    for (const file of [...files, SCAN_MODULE]) hash.update(readFileSync(file));
+    for (const file of [...files, SCAN_MODULE, SEARCH_SEGMENTS_MODULE]) {
+      hash.update(readFileSync(file));
+    }
     moduleHash = hash.digest('hex');
   }
   return moduleHash;

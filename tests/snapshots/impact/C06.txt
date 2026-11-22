@@ -8,4 +8,4 @@ Tests: none
 Gaps (1)
   interface-dispatch packages/payments/src/checkout-flow.ts:5 — call via interface packages/payments/src/processor.ts#PaymentProcessor.charge; check whether runtime receiver is this implementation
 Next: check the listed gap sites before relying on the caller list, and call ei_changes before you report done.
-— index fresh · 26 files · ts 5.9.3 · engine 0.1.0
+— index fresh · 26 files · ts 5.9.3 · engine 0.2.0

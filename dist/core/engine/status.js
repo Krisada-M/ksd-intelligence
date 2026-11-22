@@ -2,10 +2,12 @@ import { readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { repositoryLimits } from '../graph/limits.js';
+import { resolveRiskZones } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
 import { probe } from '../workspace/probe.js';
 import { FAILURE_FILE, SCHEMA_VERSION, indexPath, openPublished, readFiles, readMeta, readSchemaVersion, } from '../../storage/sqlite.js';
+import { consumeAuditWarning } from '../audit/log.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
 import { chooseRuntime, memoryLimitMb } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript } from './typescript.js';
@@ -186,11 +188,12 @@ export async function workspaceStatus(start, options = {}) {
         indexError = error instanceof Error ? error.message : String(error);
     }
     const holder = readLockHolder(workspace.cacheDir);
+    const zones = resolveRiskZones(workspace.config.riskZones).map((zone) => zone.zone);
     const partial = {
         root: workspace.root,
         repoId: workspace.repoId,
         cacheDir: workspace.cacheDir,
-        config: { path: workspace.configPath, errors: workspace.configErrors },
+        config: { path: workspace.configPath, errors: workspace.configErrors, zones },
         runtime,
         memoryLimitMb: memoryLimitMb(impact.maxMemoryMb),
         typescript,
@@ -201,11 +204,13 @@ export async function workspaceStatus(start, options = {}) {
         lock: holder && { pid: holder.pid, startedAt: holder.startedAt, alive: isHolderAlive(holder) },
     };
     const degraded = degradation(partial, impactConfigHash(impact));
+    const auditWarning = consumeAuditWarning(workspace.cacheDir);
     return {
         state: degraded === null ? 'ready' : 'degraded',
         reason: degraded?.[0] ?? null,
         fix: degraded?.[1] ?? null,
         ...partial,
+        ...(auditWarning !== null ? { auditWarning } : {}),
     };
 }
 /** DESIGN §14: the engine's peak memory, as of the last build. */
@@ -337,14 +342,15 @@ export function renderStatus(status) {
         lines.push(`Drift       ${list([...drift.changed, ...drift.added, ...drift.deleted], 5)}`);
     }
     const config = status.config;
+    const zonesText = config.zones.length === 0 ? 'none' : list(config.zones, 8);
     if (config.path === null) {
-        lines.push('Config      no ei.config.json · detected defaults (run: ei init)');
+        lines.push(`Config      no ei.config.json · detected defaults (run: ei init) · zones: ${zonesText}`);
     }
     else if (config.errors.length === 0) {
-        lines.push('Config      ei.config.json ok');
+        lines.push(`Config      ei.config.json ok · zones: ${zonesText}`);
     }
     else {
-        lines.push(`Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)}`);
+        lines.push(`Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)} · zones: ${zonesText}`);
     }
     lines.push(`Runtime     ${status.runtime.kind} ${status.runtime.version} (${homeRelative(status.runtime.command)}) · memory limit ${status.memoryLimitMb.toLocaleString('en-US')} MB${peakNote(status.index?.meta.peak_rss_mb)}`);
     lines.push(`TypeScript  ${typescriptLine(status.typescript)}`);
@@ -363,6 +369,9 @@ export function renderStatus(status) {
         const useTotal = Object.values(index.graph.uses).reduce((sum, count) => sum + count, 0);
         lines.push(`Uses        approximate · indexed ${indexed.toLocaleString('en-US')} · skipped ${counted(skippedUses)} · ` +
             `indexed share ${useTotal === 0 ? 'n/a' : `${((indexed / useTotal) * 100).toFixed(1)}%`}`);
+    }
+    if (status.auditWarning) {
+        lines.push(`Audit       write failed (${status.auditWarning}); non-blocking`);
     }
     const text = lines.join('\n');
     // Budget guard: lists above are already capped with "+N more"; this only fires on huge paths.

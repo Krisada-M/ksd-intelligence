@@ -28,7 +28,7 @@ function result(indexer: Indexer, repo: string, target: string, depth?: number):
   const db = openPublished(indexer.cacheDir);
   assert.ok(db);
   try {
-    const answer = new ImpactQuery(db, impactOf(repo)).query(target, depth);
+    const answer = new ImpactQuery(db, impactOf(repo), { riskZones: [] }).query(target, depth);
     assert.ok(answer.kind === 'result', JSON.stringify(answer));
     assert.ok('target' in answer.value, `symbol result for ${target}`);
     return answer.value;
@@ -230,7 +230,7 @@ describe('M2b owner-confirmed query oracle', () => {
     const db = openPublished(indexer.cacheDir);
     assert.ok(db);
     try {
-      const r = new ImpactQuery(db, impactOf(repo)).query('charge');
+      const r = new ImpactQuery(db, impactOf(repo), { riskZones: [] }).query('charge');
       assert.equal(r.kind, 'guidance');
       assert.equal(r.code, 'ambiguous-target');
       assert.deepEqual(

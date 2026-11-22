@@ -20,7 +20,7 @@ In scope, in order:
 | 3b | M1c ✅ | Merge KSD Engineering Proxy as `src/policy/`; one plugin; marketplace packaging | `docs/briefs/M1c-ksd-merge.md` |
 | 3c | M1d | macOS + Linux CI baseline and platform compatibility gates (no engine code) | `docs/briefs/M1d-platform-baseline.md` |
 | 4 | M2a ✅ | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
-| 5 | M2b | `ei_impact` passing the engine golden cases | `docs/briefs/M2b-impact.md` |
+| 5 | M2b ✅ | `ei_impact` passing the engine golden cases (merged #32) | `docs/briefs/M2b-impact.md` |
 | 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | `docs/briefs/M3-dogfood.md` |
 | 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | `docs/briefs/M2c-changes.md` (draft; Round 0 first) |
 | 8 | M6a | `ei_search`, lexical (no embedding dependency) | `docs/briefs/M6a-search.md` (draft; Round 0 first) |

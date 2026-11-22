@@ -83,6 +83,16 @@ export interface MarkerRow {
   kind: string;
 }
 
+export interface SearchRow {
+  key: string;
+  nameTokens: string;
+  ownerTokens: string;
+  kind: string;
+  signature: string;
+  doc: string;
+  pathTokens: string;
+}
+
 /** Everything one indexed file contributes. */
 export interface FileRows {
   index: FileIndexRow;
@@ -94,6 +104,7 @@ export interface FileRows {
   externalImports: readonly ExternalImportRow[];
   exports: readonly ExportRow[];
   markers: readonly MarkerRow[];
+  search: readonly SearchRow[];
 }
 
 export const RECORD_TABLES = [
@@ -106,6 +117,7 @@ export const RECORD_TABLES = [
   'external_imports',
   'exports',
   'markers',
+  'declarations_fts',
 ] as const;
 export type RecordTable = (typeof RECORD_TABLES)[number];
 export type TableCounts = Record<RecordTable | 'files', number>;
@@ -122,15 +134,19 @@ export function emptyCounts(): TableCounts {
     external_imports: 0,
     exports: 0,
     markers: 0,
+    declarations_fts: 0,
   };
 }
 
 /** Deletes every record these files contributed; returns rows deleted per table. */
 export function deleteFileRecords(db: DatabaseSync, files: Iterable<string>): TableCounts {
   const deleted = emptyCounts();
-  // Edges first: they are found through their source declaration's file.
+  // Edges and FTS search rows first: they are keyed via `declarations.id` for `file`.
   const edges = db.prepare(
     'DELETE FROM edges WHERE source IN (SELECT id FROM declarations WHERE file = ?)',
+  );
+  const searchFts = db.prepare(
+    'DELETE FROM declarations_fts WHERE rowid IN (SELECT id FROM declarations WHERE file = ?)',
   );
   const byFile = (
     [
@@ -146,6 +162,7 @@ export function deleteFileRecords(db: DatabaseSync, files: Iterable<string>): Ta
   ).map((table) => [table, db.prepare(`DELETE FROM ${table} WHERE file = ?`)] as const);
   for (const file of files) {
     deleted.edges += Number(edges.run(file).changes);
+    deleted.declarations_fts += Number(searchFts.run(file).changes);
     for (const [table, statement] of byFile) deleted[table] += Number(statement.run(file).changes);
   }
   return deleted;
@@ -199,6 +216,10 @@ export function recordWriter(db: DatabaseSync): RecordWriter {
   );
   const exported = db.prepare('INSERT INTO exports (file, name, target) VALUES (?, ?, ?)');
   const marker = db.prepare('INSERT INTO markers (file, line, kind) VALUES (?, ?, ?)');
+  const search = db.prepare(
+    `INSERT INTO declarations_fts (rowid, stable_key, name_tokens, owner_tokens, kind, signature,
+       doc, path_tokens) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  );
   const inserted = emptyCounts();
   return {
     inserted,
@@ -249,6 +270,19 @@ export function recordWriter(db: DatabaseSync): RecordWriter {
       inserted.exports += rows.exports.length;
       for (const m of rows.markers) marker.run(m.file, m.line, m.kind);
       inserted.markers += rows.markers.length;
+      for (const s of rows.search) {
+        search.run(
+          idOf(s.key),
+          s.key,
+          s.nameTokens,
+          s.ownerTokens,
+          s.kind,
+          s.signature,
+          s.doc,
+          s.pathTokens,
+        );
+      }
+      inserted.declarations_fts += rows.search.length;
     },
   };
 }
@@ -381,6 +415,8 @@ const CANONICAL: Record<'files' | RecordTable, string> = {
   external_imports: 'SELECT * FROM external_imports ORDER BY file, line, specifier',
   exports: 'SELECT * FROM exports ORDER BY file, name, target',
   markers: 'SELECT * FROM markers ORDER BY file, line, kind',
+  declarations_fts: `SELECT stable_key, name_tokens, owner_tokens, kind, signature, doc, path_tokens
+                     FROM declarations_fts ORDER BY stable_key`,
 };
 
 /** The use counters of every file, as sorted text lines (statistics only; never graph content). */

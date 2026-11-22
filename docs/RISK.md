@@ -91,7 +91,7 @@ The workflow header gains one line per stage telling the agent which evidence to
 |---|---|
 | investigate / implement | "Before changing a symbol, call `ei_impact` on it and follow the verdict's action." |
 | verify | "Run the tests listed by `ei_impact` / `ei_changes`; report real output." |
-| review / ship | "Call `ei_changes` and include its `policy` verdict and `unindexedChanges` in your report." |
+| review / ship | "Call `ei_changes` and include its verdict and `unindexedChanges` in your report." |
 
 ## 3. Limiting the library's own wrong answers
 
@@ -171,7 +171,7 @@ Append-only JSON Lines at `~/.cache/ksd-intelligence/<repo-id>/audit.jsonl`, dir
   - **Excluded by name only when the file is not code:** `**/*credentials*`, `**/secrets/**`. Code kinds (`ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `d.ts`) are never excluded by these name patterns. Reason: on oh-my-pi the name patterns removed 17 real source files (credential and secret handling code), which is a blind spot exactly where a wrong impact answer costs most. Files of kind `json` and `other` matching these names stay excluded and their content is never read.
   - The owner can still exclude any path, code included, with `impact.exclude`.
   - Excluded files still count for zone matching by path, never by content. The scan summary and `ei_status` report the number of files excluded by the secret rules.
-- Cache holds symbol tables and edges, not file contents (beyond what TypeScript keeps in memory).
+- Cache holds symbol tables and edges, not file contents (beyond what TypeScript keeps in memory). **PROPOSED exception (M6a, `D60`):** For **indexable code files that parse cleanly (`extraction = 'ok'`) only**, the FTS5 search table (`declarations_fts`) stores each non-module declaration's whitespace-collapsed signature text (capped at `400` characters) and the first paragraph of its JSDoc comment (capped at `400` characters). Full file contents, function/class bodies beyond those caps, `.env*`/`*.pem`/`*.key`, excluded directories, non-code secret files, and `parse-error`/`lexical`/`not-in-program` files are never stored. The cache directory and SQLite file remain `0700`/`0600`.
 - Cache and audit directories are created `0700`. `ei cache clear` removes everything for a repo.
 - GitLab token: env only, never logged, never cached; responses cached only as verification reports with status, not bodies.
 - No telemetry, no network from library code except the GitLab adapter when enabled.

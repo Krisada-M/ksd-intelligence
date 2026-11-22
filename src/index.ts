@@ -86,7 +86,7 @@ export type {
   StagedSkillUpdate,
   UpstreamUpdateCheck,
 } from './workflow/updates.js';
-export { PRECEDENCE_HEADER, renderWorkflow } from './workflow/render.js';
+export { PRECEDENCE_HEADER, renderWorkflow, stageProtocolLine } from './workflow/render.js';
 export { hasRequirementComplianceSignal, routeTask } from './workflow/router.js';
 export type { RouteInput } from './workflow/router.js';
 export {
@@ -136,7 +136,12 @@ export type {
   Workflow,
   WorkflowErrorCode,
 } from './workflow/types.js';
-export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig } from './core/kernel/config.js';
+export {
+  DEFAULT_RISK_ZONES,
+  defaultConfig,
+  parseProjectConfig,
+  resolveRiskZones,
+} from './core/kernel/config.js';
 export type {
   GitlabConfig,
   ImpactConfig,
@@ -154,3 +159,59 @@ export {
   resolveCacheDir,
 } from './core/workspace/init.js';
 export type { InitProjectOptions, InitProjectResult } from './core/workspace/init.js';
+export { loadWorkspace, resolveWorkspaceCache } from './core/engine/workspace.js';
+export type { Workspace, WorkspaceCacheInfo } from './core/engine/workspace.js';
+export {
+  AUDIT_FILE,
+  MAX_AUDIT_BYTES,
+  MAX_QUERY_CHARS,
+  MAX_ROTATIONS,
+  MAX_TASK_CHARS,
+  auditFieldsForSearch,
+  clearAuditState,
+  consumeAuditWarning,
+  parseSince,
+  recordAudit,
+  renderAuditSummary,
+  sanitizeAuditText,
+  summarizeAudit,
+} from './core/audit/index.js';
+export type {
+  AuditEntry,
+  AuditOutcome,
+  AuditSummary,
+  AuditTool,
+  RecordAuditOptions,
+  SlowCallSummary,
+  SummarizeAuditOptions,
+} from './core/audit/index.js';
+export { runChanges } from './core/changes/changes.js';
+export type { ChangesOptions } from './core/changes/changes.js';
+export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';
+export {
+  DEFAULT_SEARCH_LIMIT,
+  MAX_SEARCH_LIMIT,
+  MAX_SEARCH_QUERY_CHARS,
+  MIN_SEARCH_LIMIT,
+  buildFtsQuery,
+  querySearch,
+  quoteFtsLiteral,
+  runSearch,
+  validateSearchInput,
+} from './core/search/lexical.js';
+export type { BuiltFtsQuery, SearchOptions, ValidatedSearchInput } from './core/search/lexical.js';
+export { SEARCH_BUDGET, renderSearch, renderSearchOutcome } from './core/search/render.js';
+export type {
+  ChangeFileStatus,
+  ChangedFile,
+  ChangedSymbol,
+  ChangedSymbolLiveUser,
+  ChangesPlanSummary,
+  ChangesResult,
+  ChangesTimings,
+  SearchHit,
+  SearchMatchKind,
+  SearchResult,
+  SymbolChangeKind,
+  UnindexedChangeDetail,
+} from './core/kernel/types.js';

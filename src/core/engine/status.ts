@@ -3,6 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 import { repositoryLimits } from '../graph/limits.js';
+import { resolveRiskZones } from '../kernel/config.js';
 import type { ImpactLimits } from '../kernel/types.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
@@ -17,6 +18,7 @@ import {
   readSchemaVersion,
   type FileRecord,
 } from '../../storage/sqlite.js';
+import { consumeAuditWarning } from '../audit/log.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
 import { chooseRuntime, memoryLimitMb, type EngineRuntime } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript, type TypescriptCheck } from './typescript.js';
@@ -77,7 +79,7 @@ export interface WorkspaceStatus {
   root: string;
   repoId: string;
   cacheDir: string;
-  config: { path: string | null; errors: string[] };
+  config: { path: string | null; errors: string[]; zones: string[] };
   runtime: EngineRuntime;
   memoryLimitMb: number;
   typescript: TypescriptCheck;
@@ -87,6 +89,7 @@ export interface WorkspaceStatus {
   failure: BuildFailure | null;
   drift: ProbeResult | null;
   lock: { pid: number; startedAt: string; alive: boolean } | null;
+  auditWarning?: string | null;
 }
 
 function stringList(raw: string | undefined): string[] {
@@ -268,11 +271,12 @@ export async function workspaceStatus(
   }
 
   const holder = readLockHolder(workspace.cacheDir);
+  const zones = resolveRiskZones(workspace.config.riskZones).map((zone) => zone.zone);
   const partial = {
     root: workspace.root,
     repoId: workspace.repoId,
     cacheDir: workspace.cacheDir,
-    config: { path: workspace.configPath, errors: workspace.configErrors },
+    config: { path: workspace.configPath, errors: workspace.configErrors, zones },
     runtime,
     memoryLimitMb: memoryLimitMb(impact.maxMemoryMb),
     typescript,
@@ -283,11 +287,13 @@ export async function workspaceStatus(
     lock: holder && { pid: holder.pid, startedAt: holder.startedAt, alive: isHolderAlive(holder) },
   };
   const degraded = degradation(partial, impactConfigHash(impact));
+  const auditWarning = consumeAuditWarning(workspace.cacheDir);
   return {
     state: degraded === null ? 'ready' : 'degraded',
     reason: degraded?.[0] ?? null,
     fix: degraded?.[1] ?? null,
     ...partial,
+    ...(auditWarning !== null ? { auditWarning } : {}),
   };
 }
 
@@ -441,13 +447,16 @@ export function renderStatus(status: WorkspaceStatus): string {
     lines.push(`Drift       ${list([...drift.changed, ...drift.added, ...drift.deleted], 5)}`);
   }
   const config = status.config;
+  const zonesText = config.zones.length === 0 ? 'none' : list(config.zones, 8);
   if (config.path === null) {
-    lines.push('Config      no ei.config.json · detected defaults (run: ei init)');
+    lines.push(
+      `Config      no ei.config.json · detected defaults (run: ei init) · zones: ${zonesText}`,
+    );
   } else if (config.errors.length === 0) {
-    lines.push('Config      ei.config.json ok');
+    lines.push(`Config      ei.config.json ok · zones: ${zonesText}`);
   } else {
     lines.push(
-      `Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)}`,
+      `Config      ei.config.json: ${config.errors.length} problems, defaults used for those sections: ${list(config.errors, 3)} · zones: ${zonesText}`,
     );
   }
   lines.push(
@@ -470,6 +479,9 @@ export function renderStatus(status: WorkspaceStatus): string {
       `Uses        approximate · indexed ${indexed.toLocaleString('en-US')} · skipped ${counted(skippedUses)} · ` +
         `indexed share ${useTotal === 0 ? 'n/a' : `${((indexed / useTotal) * 100).toFixed(1)}%`}`,
     );
+  }
+  if (status.auditWarning) {
+    lines.push(`Audit       write failed (${status.auditWarning}); non-blocking`);
   }
 
   const text = lines.join('\n');

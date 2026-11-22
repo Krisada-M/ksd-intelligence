@@ -5,11 +5,12 @@ import { isRecord } from '../kernel/guards.js';
 import { isCodeKind, scan, } from '../workspace/scan.js';
 import { FAILURE_FILE, SCHEMA_VERSION, beginBuild, beginUpdate, discardBuild, openPublished, publishBuild, readFiles, readMeta, readSchemaVersion, transaction, writeFiles, writeMeta, } from '../../storage/sqlite.js';
 import { RECORD_TABLES, declarationNamesOf, deleteFileRecords, deleteOrphanSymbols, emptyCounts, filesImportingPrefix, filesReferencingNames, filesWithEdgesInto, filesWithUnresolvedImports, readFileIndex, recordWriter, simpleNameCounts, tableCounts, } from '../../storage/records.js';
-import { fileDeclarations } from './declarations.js';
+import { fileDeclarations, signatureText } from './declarations.js';
 import { readPackages } from './packages.js';
 import { createAnalysisHost, groupPrograms, splitBy } from './program.js';
 import { Resolver, isGlobalFile } from './resolve.js';
 import { scanLexically } from './lexical.js';
+import { extractSearchRows } from '../search/segments.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
 import { verifyIndex } from './verify.js';
 const LOCKFILES = new Set([
@@ -73,7 +74,7 @@ function diffCensus(before, now) {
         drift.deleted.add(path);
     return drift;
 }
-function rowsOf(file, sf, declarations, resolution) {
+function rowsOf(ts, file, sf, declarations, resolution) {
     if (sf === undefined || declarations === undefined || resolution === undefined) {
         // Owned by a tsconfig that could not be read: listed with a reason, never dropped.
         return {
@@ -100,6 +101,7 @@ function rowsOf(file, sf, declarations, resolution) {
             externalImports: [],
             exports: [],
             markers: [],
+            search: [],
         };
     }
     const parseError = resolution.gaps.some((gap) => gap.code === 'parse-error');
@@ -120,6 +122,9 @@ function rowsOf(file, sf, declarations, resolution) {
         externalImports: resolution.externalImports,
         exports: resolution.exports,
         markers: resolution.markers,
+        search: parseError
+            ? []
+            : extractSearchRows(ts, file, declarations.declarations, declarations.nodesOf, (node) => signatureText(ts, sf, node)),
     };
 }
 function roundPhases(phases) {
@@ -428,7 +433,7 @@ export class Indexer {
             transaction(db, () => {
                 for (const path of indexable) {
                     if (sourceFile(path) === undefined)
-                        writer.write(rowsOf(path, undefined, undefined, undefined));
+                        writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
                 }
                 for (const group of programs.groups) {
                     const resolver = new Resolver(this.ts, group.program, scope);
@@ -438,7 +443,7 @@ export class Indexer {
                         const sf = sourceFile(path);
                         if (sf === undefined)
                             continue;
-                        writer.write(rowsOf(path, sf, declarations.get(path), resolver.resolveFile(sf)));
+                        writer.write(rowsOf(this.ts, path, sf, declarations.get(path), resolver.resolveFile(sf)));
                     }
                     this.lighten(group);
                 }
@@ -607,7 +612,7 @@ export class Indexer {
                     for (const path of paths) {
                         const source = sourceOf(path);
                         const resolution = source?.resolver.resolveFile(source.sf);
-                        resolved.set(path, rowsOf(path, source?.sf, source?.resolver.declarationsOf(source.sf), resolution));
+                        resolved.set(path, rowsOf(this.ts, path, source?.sf, source?.resolver.declarationsOf(source.sf), resolution));
                         if (resolution === undefined)
                             continue;
                         observableKeysOf.set(path, resolution.observableKeys);

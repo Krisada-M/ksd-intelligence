@@ -36,7 +36,7 @@ const MODERN = '2026-07-28';
 const LEGACY = '2025-11-25';
 const MAX_FRAME_BYTES = 1024 * 1024;
 const MAX_INFLIGHT = 8;
-const SERVER_INFO = { name: 'ksd-intelligence', version: '0.1.0' };
+const SERVER_INFO = { name: 'ksd-intelligence', version: '0.2.0' };
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const validId = (value) =>

@@ -66,6 +66,11 @@ export function impactOf(repo: string): ImpactConfig {
   return { ...config.impact, freshness: 'hash' };
 }
 
+export function riskZonesOf(repo: string) {
+  const { config } = parseProjectConfig(readFileSync(join(repo, 'ei.config.json'), 'utf8'));
+  return config.riskZones;
+}
+
 export function publishedLines(cacheDir: string): string[] {
   const db = openPublished(cacheDir);
   assert.ok(db, `a published index in ${cacheDir}`);

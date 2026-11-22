@@ -1,0 +1,10 @@
+IMPACT localOnly — packages/payments/src/fee.ts:19
+ACTION run-tests · level high (zone payments) · picture complete
+REACH 0 direct · 0 total · 0 files · 0 packages · 0 routes · factors: none
+
+Callers: none
+Tests (1)
+  packages/payments/src/fee.test.ts
+Gaps: none
+Next: after your change, run the test above; call ei_changes before you report done.
+— index fresh · 26 files · ts 5.9.3 · engine 0.2.0

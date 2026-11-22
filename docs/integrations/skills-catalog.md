@@ -122,8 +122,30 @@ ei skills rollback [--release <release-id>]
 - **Fail Closed on Trust, Fail Open on Advice**: Symlink escapes, oversize files (> 64 KiB), missing frontmatter, SHA-256 mismatches, or `poteto-mode` missing `disable-model-invocation: true` are rejected.
 - **No Unapproved Side Effects**: Skills are instructions only; KSD never executes skill scripts, bypasses approvals, pushes, merges, or deploys.
 
-## 6. Known Gaps & Limitations
+## 6. Verification & Known Gaps
 
-- **Live AGY / OMP Host UI Smoke**: Automated tests verify the TypeScript catalog, router, discovery adapters, CLI subprocesses, and AGY MCP stdio protocol directly, while OMP extension tool execution is `MOCK-ONLY` until re-run inside a live OMP 19.0.1 session (`omp -p --no-extensions -e dist/adapters/omp/extension.js`). Live AGY IDE/CLI host discovery remains `NOT VERIFIED` until exercised in a real AGY workspace session.
+### Repeatable Dual-Runtime Verification (`npm run verify:skills`)
+
+Run the dual-runtime smoke script to verify registry/lock consistency, AGY & OMP native discovery, live AGY MCP stdio framing, and (when installed locally) live OMP extension loading + skill scanning:
+
+```bash
+# Portable check (CI-safe, no user-home assumptions)
+npm run verify:skills
+
+# Full live host verification with pinned upstream checkouts
+EI_MATT_ROOT="<MATT_CHECKOUT>" \
+EI_POTETO_ROOT="<PSTACK_CHECKOUT>" \
+EI_OSMANI_ROOT="<OSMANI_CHECKOUT>" \
+npm run verify:skills -- --detect-host
+```
+
+### Observed Live Verification Matrix (`0.2.0`, 2026-11-22, WSL2 x86_64, Node v24.21.0, Bun 1.4.2)
+
+- **OMP 19.0.1 (`VERIFIED`):** `loadExtensions` loaded `dist/adapters/omp/extension.js` with 0 errors (`ei_workflow`, `ei_status`, `ei_impact`, `/engineering-proxy`, `/engineering-review`); all 5 routing scenarios + `potetoMode: true` executed live against pinned checkouts; `scanSkillsFromDir` & `loadSkills` verified `poteto-mode` as `hide: true`; `ei skills check --platform omp --detect-host` passed with 0 issues (`RULES.md` + `config.yml` + `engineering-proxy.json` preserved).
+- **AGY 1.4.12 (`VERIFIED` stdio + discovery):** Fresh `scripts/agy-mcp.mjs --root <repo> --workflow` executed `ei_status` + all 5 routing scenarios + `potetoMode: true` with output identical to OMP; `ei skills check --platform agy --detect-host` detected Snap/global/shared/catalog paths with 0 issues and `poteto-mode` in `explicitOnly`.
+- **Remaining manual/external items (`NOT VERIFIED`):** Live GitLab CI runner execution against a remote GitLab API, and interactive AGY IDE/CLI UI reload after restarting the MCP server process.
+
+### Known Limitations
+
 - **Pinned Leaf Subset**: `skills.lock.json` currently pins 15 upstream leaf skills (4 Matt, 3 pstack, 8 Osmani). Additional upstream playbooks listed as references inside each pack (such as `matt:grill-with-docs`, `pstack:architect`, or `osmani:accessibility-engineering`) are documented references, not yet individually hash-pinned in `skills.lock.json` (and `accessibility-engineering` requires a newer upstream Osmani checkout than pinned commit `301b02b1`).
-- **AGY `disable-model-invocation` Enforcement**: OMP enforces `disable-model-invocation: true` natively in `src/capability/skill.ts`; in AGY, `ei_workflow` enforces opt-in programmatically via `potetoMode: true`, while native AGY slash-skill hiding depends on AGY host support (users can also add `"exclude": ["poteto-mode"]` in `.agents/skills.json` if they want `poteto-mode` hidden from AGY's passive skill index).
+- **AGY `disable-model-invocation` Enforcement**: OMP enforces `disable-model-invocation: true` natively in `src/capability/skill.ts`; in AGY, `ei_workflow` enforces opt-in programmatically via `potetoMode: true`, while passive directory hiding depends on AGY host support (users can also add `"exclude": ["poteto-mode"]` in `.agents/skills.json` if desired).

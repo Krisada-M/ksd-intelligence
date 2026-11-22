@@ -19,6 +19,12 @@ export interface Workspace {
   configErrors: string[];
 }
 
+export interface WorkspaceCacheInfo {
+  root: string;
+  repoId: string;
+  cacheDir: string;
+}
+
 // Searched upward from `start`, but never above the git work-tree root that contains it.
 function findConfigRoot(start: string, gitRoot: string | null): string | null {
   let dir = start;
@@ -30,21 +36,34 @@ function findConfigRoot(start: string, gitRoot: string | null): string | null {
   }
 }
 
+/** Lightweight repository root + cache directory lookup (no config read or layout detection). */
+export async function resolveWorkspaceCache(
+  start: string,
+  cacheHome?: string,
+): Promise<WorkspaceCacheInfo> {
+  const real = await realpath(start);
+  const gitRoot = findGitRoot(real);
+  const root = findConfigRoot(real, gitRoot) ?? gitRoot ?? real;
+  const repoId = computeRepoId(root);
+  return {
+    root,
+    repoId,
+    cacheDir: resolveCacheDir(repoId, cacheHome),
+  };
+}
+
 /**
  * The repository a session or CLI call is about: the nearest directory holding `ei.config.json`,
  * else the git work-tree root, else `start` itself. Same repo id and cache dir as `ei init`.
  */
 export async function loadWorkspace(start: string, cacheHome?: string): Promise<Workspace> {
-  const real = await realpath(start);
-  const gitRoot = findGitRoot(real);
-  const root = findConfigRoot(real, gitRoot) ?? gitRoot ?? real;
-  const repoId = computeRepoId(root);
+  const { root, repoId, cacheDir } = await resolveWorkspaceCache(start, cacheHome);
   const configPath = join(root, 'ei.config.json');
   if (!existsSync(configPath)) {
     return {
       root,
       repoId,
-      cacheDir: resolveCacheDir(repoId, cacheHome),
+      cacheDir,
       configPath: null,
       config: defaultConfig(detectProjectLayout(root)),
       configErrors: [],
@@ -54,7 +73,7 @@ export async function loadWorkspace(start: string, cacheHome?: string): Promise<
   return {
     root,
     repoId,
-    cacheDir: resolveCacheDir(repoId, cacheHome),
+    cacheDir,
     configPath,
     config,
     configErrors: errors,

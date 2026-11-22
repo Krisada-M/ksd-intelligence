@@ -104,6 +104,22 @@ export function verifyIndex(db: DatabaseSync, expected: TableCounts): string[] {
           + (SELECT COUNT(*) FROM markers m LEFT JOIN file_index i ON i.file = m.file WHERE i.file IS NULL)
        AS n`,
   );
+  check(
+    'search rows without a matching declaration',
+    'SELECT COUNT(*) AS n FROM declarations_fts f LEFT JOIN declarations d ON d.id = f.rowid WHERE d.id IS NULL',
+  );
+  check(
+    'search rows on non-ok files or module declarations',
+    `SELECT COUNT(*) AS n FROM declarations_fts f
+     JOIN declarations d ON d.id = f.rowid JOIN file_index i ON i.file = d.file
+     WHERE i.extraction != 'ok' OR d.kind = 'module'`,
+  );
+  check(
+    'ok declarations missing search rows',
+    `SELECT COUNT(*) AS n FROM declarations d JOIN file_index i ON i.file = d.file
+     LEFT JOIN declarations_fts f ON f.rowid = d.id
+     WHERE i.extraction = 'ok' AND d.kind != 'module' AND f.rowid IS NULL`,
+  );
 
   const actual = tableCounts(db);
   for (const [table, n] of Object.entries(expected) as [keyof TableCounts, number][]) {
