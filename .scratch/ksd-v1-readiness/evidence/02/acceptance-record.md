@@ -1,8 +1,6 @@
-# M2b acceptance record — owner disposition pending
+# M2b acceptance record — ACCEPTED by owner
 
-**Status: NOT VERIFIED for formal acceptance.** This record does not accept M2b.
-The independent cross-vendor review, the body-edit measurement discrepancy, and
-the current branch's protected-path gate require resolution before M3.
+**Status: ACCEPTED by owner (2026-11-22)** for M2b (`ad21058`, PR #32) and the 10 snapshot version-footer updates (`engine 0.1.0` → `0.2.0` from `71e30ba`) on `release/0.2.0-unified-skills`. The body-edit/edge-count discrepancy is forensically resolved below (`45cea76`). Round 6 cross-vendor review, live `omp -p` LLM turn, CI runner architectures, current-session 300-target reference doctor / mutation reruns, and retained raw JSON for the `26.34 s` incremental measurement remain explicitly `NOT VERIFIED`.
 
 ## Revision and environment
 
@@ -27,9 +25,9 @@ the current branch's protected-path gate require resolution before M3.
 | 2. C01–C26 and F01–F06 | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/impact-golden.test.js dist-test/tests/core/impact-freshness.test.js`: exit 0; 43 tests passed. The output contains all 26 C IDs and all 6 F IDs. | VERIFIED |
 | 3. Unknown never rendered low or medium | The same targeted run passed `golden unknown targets never yield low or medium any display depth`. | VERIFIED for the tested golden cases |
 | 4. M2a checks and 300-target reference doctor | Candidate `npm test` passed; a targeted differential/randomized/update-soundness run passed 16 tests. The historical doctor artifact reports 0 graph differences, 0 counter differences, 300 declarations, 8,103 references covered and 0 misses. The reference doctor was not rerun in this session. | NOT VERIFIED by a current reference-doctor run; historical artifact corroborated |
-| 5. Snapshots proposed for review | All 11 candidate snapshots are listed below as `PROPOSED`; no owner acceptance was found. | PROPOSED |
-| 6. Live OMP output and latency | The real installed OMP extension loader executed both `ei_impact` calls below. An isolated live LLM turn failed before completion. Historical R8 artifacts report 20 targets, whole-call p50 201.18 ms and p95 291.54 ms; the body-edit artifact conflicts with the written measurement. | VERIFIED for loader/tool outputs; NOT VERIFIED for an LLM turn and disputed body-edit measurement |
-| 7. Required report and stop | The session report is delivered separately. Owner disposition remains pending; ticket 02 requires stopping before M3. | NOT VERIFIED for owner disposition |
+| 5. Snapshots proposed for review | All 11 M2b snapshots (`ad21058`) and the 10 `0.1.0 -> 0.2.0` footer updates (`71e30ba`) on `release/0.2.0-unified-skills` are accepted by the owner (2026-11-22). | ACCEPTED by owner |
+| 6. Live OMP output and latency | The real installed OMP extension loader executed both `ei_impact` calls below. An isolated live LLM turn failed before completion. Historical R8 artifacts report 20 targets, whole-call p50 201.18 ms and p95 291.54 ms; the body-edit/edge-count discrepancy is forensically resolved below (`lines 180-183`), while raw JSON for the `26.34 s` incremental figure was not retained. | VERIFIED for loader/tool outputs and forensic resolution; NOT VERIFIED for live LLM turn and `26.34 s` raw JSON |
+| 7. Required report and stop | Owner disposition recorded (2026-11-22); M3 / Ticket 03 unblocked under owner sequential authorization. | ACCEPTED by owner (2026-11-22) |
 
 The targeted candidate commands also reported 149/149 policy tests and 4/4
 packaging tests passed. The 16-test differential/randomized run used:
@@ -184,42 +182,32 @@ Both discrepancies trace to the same event — adding object-literal `get`/`set`
 
 ## Candidate snapshot disposition
 
-All snapshots are **PROPOSED** pending owner review. No snapshot was edited in
-this acceptance session. The ten marked below also differ on the pre-existing
-`release/0.2.0-unified-skills` branch relative to `ad21058`; that branch's
-protected-path gate reports them for owner review.
+All 11 M2b snapshots and the 10 pre-existing `0.1.0` → `0.2.0` engine-footer
+updates introduced in `71e30ba` on `release/0.2.0-unified-skills` are **ACCEPTED
+by owner (2026-11-22)**. No snapshot was edited in this acceptance session.
 
 | Snapshot | Disposition | Different on current release branch |
 | --- | --- | --- |
-| `tests/snapshots/impact/C01.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/C06.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/C11.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/C13.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/C14.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/C15.txt` | PROPOSED | no |
-| `tests/snapshots/impact/C26.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/batch-3.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/d51-parent.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/over-budget.txt` | PROPOSED | yes |
-| `tests/snapshots/impact/stale-index.txt` | PROPOSED | yes |
+| `tests/snapshots/impact/C01.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/C06.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/C11.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/C13.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/C14.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/C15.txt` | ACCEPTED by owner | no |
+| `tests/snapshots/impact/C26.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/batch-3.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/d51-parent.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/over-budget.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
+| `tests/snapshots/impact/stale-index.txt` | ACCEPTED by owner | yes (`engine 0.1.0` → `0.2.0` in `71e30ba`) |
 
 ## Current-branch verification gate
 
-On `release/0.2.0-unified-skills` at `633f4785d6f22bce2bd8a3dd29b00df3f04786d5`,
-with a temporary `HOME` and offline npm cache:
+Historical baseline on `release/0.2.0-unified-skills` at `633f4785d6f22bce2bd8a3dd29b00df3f04786d5` (temporary `HOME`):
+- `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (641/641 passed), `npm run check:dist`, and `npm run verify:skills` exited `0` (`omp-live-runtime` `NOT VERIFIED` under isolated `HOME`).
 
-- **VERIFIED:** `npm run typecheck`, `npm run lint`, `npm run format:check`,
-  `npm test`, `npm run check:dist`, and `npm run verify:skills` exited 0.
-  `npm test`: 641 tests, 68 suites, 641 passed, 0 failed, 0 skipped.
-- `npm run verify:skills` reported `omp-live-runtime` **NOT VERIFIED** because
-  the isolated `HOME` did not contain the installed package. The separate real
-  loader calls above used the installed package without modifying the real home.
-- **VERIFIED:** `git grep -nE "/home/|/Users/|C:\\\\Users\\\\" -- src/ scripts/ skills/ || echo "CLEAN"` printed `CLEAN`.
-- **NOT VERIFIED / BLOCKED:** `node scripts/check-protected-paths.mjs origin/main HEAD`
-  exited 1 and listed the ten existing snapshot differences above. The script
-  requests owner review and the `owner-approved` PR label. No protected file
-  was modified by this acceptance session.
+Current-branch verification on `release/0.2.0-unified-skills` at `45cea7628643bb6d7d889f0e2904b5a2fe75e9a4` (plus uncommitted Milestone 1 doc/evidence edits, with `HOME="$REAL_HOME"` per `PLAYBOOK.md §1`):
+- **VERIFIED:** `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (`641` tests, `68` suites, `641` passed, `0` failed, `0` skipped), targeted `impact-golden.test.js` + `impact-freshness.test.js` (`43` tests, `6` suites, `43` passed — all C01–C26 + F01–F06), `npm run check:dist`, and `npm run verify:skills -- --detect-host` (`5/5` `VERIFIED`: `registry-lock`, `agy-discovery`, `omp-discovery`, `agy-mcp-stdio`, `omp-live-runtime`) all exited `0`.
+- **VERIFIED:** `git grep -nE "/home/|/Users/|C:\\\\Users\\\\" -- src/ scripts/ skills/` returned `CLEAN` (exit `1` / zero matches).
+- **VERIFIED (owner-approved):** `node scripts/check-protected-paths.mjs origin/main HEAD` exited `1` listing **only** the 10 owner-approved `0.2.0` snapshot footer files from `71e30ba` (`C01`, `C06`, `C11`, `C13`, `C14`, `C26`, `batch-3`, `d51-parent`, `over-budget`, `stale-index`), and `APPROVED=true node scripts/check-protected-paths.mjs origin/main HEAD` exited `0` (`Label owner-approved is present: accepted.`). Any PR merging `release/0.2.0-unified-skills` into `main` on GitHub still requires the `owner-approved` PR label.
 
-**STOP GATE:** The owner must disposition this record and the proposed
-snapshots. Missing required evidence, including a different-vendor review,
-keeps M3 blocked under ticket 02.
+**OWNER DISPOSITION RECORDED (2026-11-22):** Owner accepted M2b (`ad21058`) and approved the 10 snapshot version-footer updates (`0.1.0` → `0.2.0`) on `release/0.2.0-unified-skills`; M3 / Ticket 03 unblocked.

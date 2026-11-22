@@ -696,6 +696,12 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 - Gates: an `ei_impact` query with a clean probe p95 < 300 ms (no child process; status read measured 187 ms p95 on oh-my-pi); `ei_workflow` < 50 ms excluding file I/O; peak engine memory reported by `ei_status`.
 - Reference, not a gate — oh-my-pi (6,761 indexable files, 2.27M lines, Linux, Node 24, new process per command, median of 3): cold build 145 s; one-file body edit 25 s; signature edit 124 s (4,837 files re-resolved); add file 58 s; peak RSS 7.1 GB. The resolve phase dominates because TypeScript checks lazily while symbols are resolved. A repository of this size needs Node ≥ 22.5; no Bun build completed within the memory limit.
 - Build and update targets for daily use are set from the owner's own repositories during M3. The earlier figures (cold < 60 s, update < 3 s, first query with drift < 15 s) came from M1b measurements that did not include full resolution, and are withdrawn.
+- **PROPOSED daily-use limits (Linux WSL2 `x86_64`, Node 24, pending owner confirmation in M3 exit):** derived from real Setup Round medians on `work-sure` (8,435 scanned, 5 indexable TS files: cold `2.14 s`, body edit `2.34 s`, signature edit `2.11 s`, add file `2.21 s`, warm no-drift `ei_impact` p50 `66.1 ms` / p95 `75.5 ms`, peak RSS `243 MB`) and `ksd-intelligence` (436 scanned, 93 indexable TS files: cold `2.96 s`, body edit `1.26 s`, signature edit `2.44 s`, add file `1.76 s`, warm no-drift `ei_impact` p50 `11.2 ms` / p95 `12.8 ms`, peak RSS `463 MB`):
+  - **Cold build (`index --full`):** `< 10 s` (median across small-to-medium daily TS repos; observed `2.14 s` on `work-sure`, `2.96 s` on `ksd-intelligence`).
+  - **One-file body edit update:** `< 5 s` (observed `2.34 s` on `work-sure` due to `8.4k`-file `scan`, `1.26 s` on `ksd-intelligence`).
+  - **Export signature edit update:** `< 6 s` (observed `2.11 s` on `work-sure`, `2.44 s` on `ksd-intelligence`).
+  - **Add new `.ts` file update:** `< 5 s` (observed `2.21 s` on `work-sure`, `1.76 s` on `ksd-intelligence`).
+  - **Clean-probe `ei_impact` p95 / `ei_workflow`:** retain `< 300 ms` p95 (`ei_impact`, observed `75.5 ms` on `work-sure` and `12.8 ms` on `ksd-intelligence`) and `< 50 ms` (`ei_workflow` excluding file I/O).
 
 ## 15. Decision log
 

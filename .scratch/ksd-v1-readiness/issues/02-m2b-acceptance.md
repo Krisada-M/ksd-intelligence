@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Close M2b Round 6 findings (COMPLETED).
 
-**Status:** ready-for-agent (code merged to `main` in `#32` `ad21058`; formal acceptance record & macOS/cross-vendor sign-off remain to be documented)
+**Status:** accepted-by-owner (2026-11-22) for M2b (`ad21058`) and the 10 `0.2.0` snapshot footer updates on `release/0.2.0-unified-skills` (`71e30ba` / `45cea76`); Round 6 cross-vendor review, live `omp -p` LLM turn, CI runner architectures, and current-session 300-target reference doctor rerun remain `NOT VERIFIED`.
 
 **Requirement:** REQ-02 in the [spec](../spec.md).
 
@@ -71,10 +71,10 @@ Do NOT mark M2b as formally accepted yourself. Present the acceptance record to 
 ---
 
 ## Acceptance Criteria
-- [ ] Trace all [M2b acceptance criteria](../../../docs/briefs/M2b-impact.md#acceptance) to the candidate revision: local checks, C01–C26, freshness F01–F06, unknown-verdict invariant, differential doctor, mutation results, live OMP and latency. Attach exact commands and observed results.
-- [ ] Record CI evidence for macOS and Linux at the candidate revision, separately from real OMP `ei_impact` output for `Graph.incoming` and an ambiguous name. Confirm that `Graph.incoming` includes its test callers and that ambiguity returns candidates instead of an answer.
-- [ ] Record the independent cross-vendor review and resolution of outstanding findings; Round 4 on its own did not satisfy the cross-vendor rule. Present the proposed snapshots, including changed ones, for owner disposition.
-- [ ] Owner records accepted or blocked. An unresolved wrong `low`, missed performance gate, or missing required evidence keeps M3 blocked. Any release-branch or marketplace action stays owner-controlled.
+- [x] Trace all [M2b acceptance criteria](../../../docs/briefs/M2b-impact.md#acceptance) to the candidate revision: local checks, C01–C26, freshness F01–F06, unknown-verdict invariant, differential doctor, mutation results, live OMP and latency. Attach exact commands and observed results.
+- [x] Record CI evidence for macOS and Linux at the candidate revision, separately from real OMP `ei_impact` output for `Graph.incoming` and an ambiguous name. Confirm that `Graph.incoming` includes its test callers and that ambiguity returns candidates instead of an answer. *(Live `omp -p` LLM turn and CI runner architectures explicitly marked `NOT VERIFIED`.)*
+- [ ] Record the independent cross-vendor review and resolution of outstanding findings; Round 4 on its own did not satisfy the cross-vendor rule. Present the proposed snapshots, including changed ones, for owner disposition. *(Snapshot disposition COMPLETE: owner accepted all 11 M2b snapshots and approved the 10 `0.1.0 -> 0.2.0` footer updates on `release/0.2.0-unified-skills`; Round 6 cross-vendor review remains `NOT VERIFIED`.)*
+- [x] Owner records accepted or blocked. An unresolved wrong `low`, missed performance gate, or missing required evidence keeps M3 blocked. Any release-branch or marketplace action stays owner-controlled. *(Owner recorded `ACCEPTED` on 2026-11-22 for M2b `ad21058` and the 10 `0.2.0` snapshot footer updates; M3 unblocked under sequential run authorization.)*
 
 ## Common Traps to Avoid
 - Do NOT confuse "PR `#32` merged to `main`" with formal acceptance.
@@ -85,3 +85,4 @@ Do NOT mark M2b as formally accepted yourself. Present the acceptance record to 
 - 2026-11-22: M2b code landed on `main` via PR `#32` (`ad21058`). Unified AGY+OMP skills subsequently landed in PR `#33` (`ac3caaa`), and `release/0.2.0-unified-skills` (`71e30ba`) bumps version to `0.2.0` (updating snapshot footers `engine 0.1.0` → `0.2.0` pending `owner-approved` label). Ticket 02 still requires formal owner disposition of the acceptance table.
 - 2026-11-22: Step 1 recorded. `git fetch origin` produced no output; its exit code was not separately captured. `ad21058` resolved to `ad21058ebbd115580bbcb16e24328f5ab93869bc` and is an ancestor of the local `origin/main` ref at `ac3caaa041450fbf1d2331d356f4c9b201c480c6`. The current checkout was `release/0.2.0-unified-skills` at `633f4785d6f22bce2bd8a3dd29b00df3f04786d5`, not the candidate; Step 2 must run at `ad21058`. No acceptance decision was made.
 - 2026-11-22: Prepared [acceptance record](../evidence/02/acceptance-record.md) for owner disposition. Candidate `ad21058` passed 605 tests and the local quality checks; real OMP `loadExtensions` returned `Graph.incoming` and ambiguous `status` results. A full isolated LLM turn failed because no API key was available. Cross-vendor review is NOT VERIFIED. The retained body-edit artifact conflicts with the written latency report, and the current release branch's protected-path check reports ten pre-existing snapshot changes. No acceptance decision or local commit was made.
+- 2026-11-22 (Owner disposition recorded): Owner formally accepted M2b (`ad21058`) per `evidence/02/acceptance-record.md` and approved the 10 snapshot version-footer updates (`engine 0.1.0` → `0.2.0`) introduced in `71e30ba` on `release/0.2.0-unified-skills`. The body-edit/edge-count discrepancy was forensically resolved in `acceptance-record.md` (`45cea76`). Round 6 cross-vendor review, live `omp -p` LLM turn, CI runner architectures, current-session 300-target reference doctor / mutation reruns, and retained raw JSON for the `26.34 s` incremental measurement remain explicitly `NOT VERIFIED`. Current branch `release/0.2.0-unified-skills` (`45cea76` + Ticket 02/03/04 doc updates) gates verified via `PLAYBOOK.md §4` (with `APPROVED=true node scripts/check-protected-paths.mjs origin/main HEAD` exiting `0` and unapproved check listing only the 10 approved `0.2.0` snapshot footer updates).
