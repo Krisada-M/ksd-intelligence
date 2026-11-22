@@ -83,11 +83,11 @@ export function sanitizeAuditText(raw, options = {}) {
     }
     return options.maxLen !== undefined ? out.slice(0, options.maxLen) : out;
 }
-export function stripCodeDetail(raw) {
+export function stripCodeDetail(raw, options) {
     const match = /^([a-z0-9-]+):\s/i.exec(raw);
     if (match?.[1])
         return match[1];
-    return sanitizeAuditText(raw, { maxLen: 80 });
+    return sanitizeAuditText(raw, { env: options?.env, root: options?.root, maxLen: 80 });
 }
 function sanitizeStringList(items, options) {
     if (items === undefined || items.length === 0)
@@ -95,7 +95,7 @@ function sanitizeStringList(items, options) {
     const seen = new Set();
     for (const item of items) {
         const clean = options.stripDetail
-            ? stripCodeDetail(item)
+            ? stripCodeDetail(item, { env: options.env, root: options.root })
             : sanitizeAuditText(item, { env: options.env, root: options.root, maxLen: options.maxLen });
         if (clean !== '')
             seen.add(clean);

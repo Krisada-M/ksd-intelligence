@@ -106,6 +106,13 @@ describe('matchGlob', () => {
     assert.equal(matchGlob('!a.ts', 'a.ts'), false);
     assert.equal(matchGlob('!a.ts', '!a.ts'), true);
   });
+
+  it('matches ** across path segments containing newline characters', () => {
+    assert.equal(matchGlob('**/payments/**', 'packages/payments/src/nl\nfile.ts'), true);
+    assert.equal(matchGlob('**/.env*', 'dir\n/.env'), true);
+    assert.equal(matchGlob('packages/**', 'packages/payments/src/nl\nfile.ts'), true);
+    assert.equal(matchGlob('**', 'a\nb/c.ts'), true);
+  });
 });
 
 describe('matchAny', () => {

@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Start M3 dogfood on real repositories (setup + daily-use limits + dogfood start recorded).
 
-**Status:** round-0-submitted (read-only reconciliation complete in [`evidence/05/round-0-reconcile.md`](../evidence/05/round-0-reconcile.md); awaiting owner approval of Round 0 + Ticket 03 start gate before Round 1)
+**Status:** round-6-verified (Rounds 1–6 implemented and verified on `m2c-changes` in [`docs/reviews/m2c-review.md`](../../../docs/reviews/m2c-review.md) and [`docs/research/m2c-measurements.md`](../../../docs/research/m2c-measurements.md); awaiting owner acceptance, cross-vendor review if desired, and merge/CI on macOS)
 
 **Requirement:** REQ-05 in the [spec](../spec.md).
 
@@ -125,3 +125,8 @@
 - Identified 9 verified mismatches/gaps (with exact `file:line` citations), including: `parseRiskZones` dropping invalid array items instead of falling back to `'default'`; `render.ts`/`session.ts` `staleResult` hardcoding `unknown`/`check-gaps` over zone floors and missing `ask-owner` in `formatNext()`; `declarations.sig_hash` stripping bodies vs `surface.ts` inferred-return semantics; missing `ei cache clear` CLI command; AGY MCP parity in `scripts/mcp/tools.mjs`; and PR `#33` header lines in `src/workflow/render.ts`.
 - Confirmed SQLite schema 4 requires no migration for M2c, and all 8 golden cases (`P01–P05`, `X01–X03`) await Round 1–2 tests.
 - **STOP GATE:** Awaiting owner approval of Round 0 + Ticket 03 start gate before opening branch `m2c-changes` for Round 1.
+
+### 2026-11-22 — Rounds 1–6 Complete on `m2c-changes` (`PROPOSED` snapshots & macOS/cross-vendor caveats)
+- Implemented Round 1 (risk zones + `C01–C26` `riskZones: []` pinning), Round 2 (`ei_changes` across CLI/OMP/AGY MCP), Round 3 (audit log + `ei audit` + `ei cache clear` + `stageProtocolLine` + `RISK.md §2.5` `"verdict"` update), and Round 4 (`docs/research/m2c-measurements.md` + mutation smoke).
+- Round 5 independent review/challenge/audit (`docs/reviews/m2c-review.md`) flagged Major Finding 1 (`src/core/kernel/glob.ts:91` missing `'s'` flag for `\n` paths), Minor Finding 2 (Focus #5 regression tests), M6 test config-hash mismatch (`tests/core/changes.test.ts:707`), and `stripCodeDetail` `env`/`root` forwarding (`src/core/audit/log.ts:154-158`).
+- Round 6 fixed all 4 items test-first, re-verified M6 kill (`EXIT=1`, `'fresh' !== 'updated'`), and passed `PLAYBOOK.md §4` on Linux WSL2 `x86_64`. Live `omp -p` LLM turn, macOS CI/OMP, and independent cross-vendor model review remain `NOT VERIFIED`; the 4 `PROPOSED` snapshots (`P01.txt`, `P02.txt`, `P05.txt`, `X02.txt`) await owner approval.

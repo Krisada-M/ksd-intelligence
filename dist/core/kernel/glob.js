@@ -79,7 +79,7 @@ function compile(pattern) {
     const cached = cache.get(pattern);
     if (cached)
         return cached;
-    const regex = new RegExp(`^${translate(pattern, 0, false).src}$`);
+    const regex = new RegExp(`^${translate(pattern, 0, false).src}$`, 's');
     cache.set(pattern, regex);
     return regex;
 }

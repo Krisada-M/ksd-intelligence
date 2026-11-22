@@ -9,7 +9,7 @@ import { ImpactQuery } from '../../src/core/impact/query.js';
 import { renderAnswer, renderImpact } from '../../src/core/impact/render.js';
 import { ImpactSession } from '../../src/core/impact/session.js';
 import { Indexer } from '../../src/core/indexing/indexer.js';
-import type { RiskZoneConfig } from '../../src/core/kernel/config.js';
+import { defaultConfig, type RiskZoneConfig } from '../../src/core/kernel/config.js';
 import type { Action, ImpactResult, Level, Verdict } from '../../src/core/kernel/types.js';
 import {
   ACTION_RANK,
@@ -18,6 +18,7 @@ import {
   deriveVerdict,
   matchedRiskZones,
 } from '../../src/core/kernel/verdict.js';
+import { kindOf, neverReadOf } from '../../src/core/workspace/scan.js';
 import { openPublished } from '../../src/storage/sqlite.js';
 import { ensureRuntime, fixtureRepo, impactOf, riskZonesOf } from './index-helpers.js';
 
@@ -480,5 +481,20 @@ describe('M2c Round 1 — risk zones and verdict escalation', () => {
     });
     assert.equal(p01, (await readFile(join(SNAP_DIR, 'P01.txt'), 'utf8')).trimEnd());
     assert.equal(p02, (await readFile(join(SNAP_DIR, 'P02.txt'), 'utf8')).trimEnd());
+  });
+
+  it('matchedRiskZones and neverReadOf handle paths containing newline characters', () => {
+    const matched = matchedRiskZones(
+      ['packages/payments/src/nl\nfile.ts', 'dir\n/.env'],
+      'default',
+    );
+    assert.deepEqual(
+      matched.map(({ zone, floor }) => ({ zone, floor })),
+      [
+        { zone: 'payments', floor: 'high' },
+        { zone: 'prod-config', floor: 'critical' },
+      ],
+    );
+    assert.equal(neverReadOf('dir\n/.env', kindOf('dir\n/.env'), defaultConfig().impact), 'secret');
   });
 });

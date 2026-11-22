@@ -12,6 +12,7 @@ import {
   clearAuditState,
   parseSince,
   recordAudit,
+  stripCodeDetail,
   summarizeAudit,
 } from '../../src/core/audit/index.js';
 import { renderStatus, workspaceStatus } from '../../src/core/engine/status.js';
@@ -140,6 +141,43 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
       assert.ok(!raw.includes(repo), 'absolute repo root leaked');
       const realHome = homedir();
       if (realHome.length > 1) assert.ok(!raw.includes(realHome), 'process homedir leaked');
+    } finally {
+      await rm(work, { recursive: true, force: true });
+    }
+  });
+
+  it('stripCodeDetail forwards env and root on fallback sanitization', async () => {
+    const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-audit-strip-')));
+    try {
+      const repo = join(work, 'repo');
+      const cacheDir = join(work, 'cache', 'repo1');
+      const customSecret = 'custom_strip_secret_12345';
+      const rawNonPrefixed = `${repo}/src/secret.ts failed with ${customSecret}`;
+
+      const stripped = stripCodeDetail(rawNonPrefixed, {
+        env: { CUSTOM_SECRET: customSecret },
+        root: repo,
+      });
+      assert.ok(!stripped.includes(repo), 'direct stripCodeDetail leaked root');
+      assert.ok(!stripped.includes(customSecret), 'direct stripCodeDetail leaked env secret');
+      assert.ok(stripped.includes('src/secret.ts'));
+      assert.ok(stripped.includes('[REDACTED]'));
+
+      recordAudit(
+        cacheDir,
+        {
+          ts: '2026-11-22T10:00:00.000Z',
+          tool: 'ei_impact',
+          outcome: 'result',
+          ms: 5,
+          engine: '0.2.0',
+          codes: [rawNonPrefixed],
+        },
+        { env: { CUSTOM_SECRET: customSecret }, root: repo },
+      );
+      const raw = await readFile(join(cacheDir, AUDIT_FILE), 'utf8');
+      assert.ok(!raw.includes(repo), 'recordAudit codes leaked root');
+      assert.ok(!raw.includes(customSecret), 'recordAudit codes leaked env secret');
     } finally {
       await rm(work, { recursive: true, force: true });
     }

@@ -17,7 +17,7 @@ import { loadWorkspace } from '../../src/core/engine/workspace.js';
 import { ImpactSession } from '../../src/core/impact/session.js';
 import { Indexer } from '../../src/core/indexing/indexer.js';
 import type { ChangesResult } from '../../src/core/kernel/types.js';
-import { ensureRuntime, FIXTURE, impactOf } from './index-helpers.js';
+import { ensureRuntime, FIXTURE } from './index-helpers.js';
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = join(process.cwd(), 'dist/adapters/cli/main.js');
@@ -606,7 +606,7 @@ describe('M2c Round 2 — ei_changes', () => {
     try {
       const workspace = await loadWorkspace(repo, cacheHome);
       await new Indexer(ts, workspace.root, workspace.cacheDir).index({
-        impact: impactOf(repo),
+        impact: workspace.config.impact,
         full: true,
         freshness: 'hash',
       });
@@ -617,7 +617,7 @@ describe('M2c Round 2 — ei_changes', () => {
         replaceExact(orig, 'roundMoney(amount);', 'roundMoney(amount + 1);'),
       );
       await new Indexer(ts, workspace.root, workspace.cacheDir).index({
-        impact: impactOf(repo),
+        impact: workspace.config.impact,
         freshness: 'hash',
       });
       await writeFile(feePath, orig);
@@ -704,7 +704,7 @@ describe('M2c Round 2 — ei_changes', () => {
       const fixed = 1_700_000_000;
       utimesSync(feePath, fixed, fixed);
       await new Indexer(ts, workspace.root, workspace.cacheDir).index({
-        impact: impactOf(repo),
+        impact: workspace.config.impact,
         full: true,
         freshness: 'hash',
       });
@@ -808,5 +808,123 @@ describe('M2c Round 2 — ei_changes', () => {
       }),
       /^index-failed: boom\. Retry once/,
     );
+  });
+
+  it('Focus #5: handles changed paths with spaces, newlines, non-UTF-8 bytes, and submodules under X03', async () => {
+    const { work, repo, cacheHome } = await createGitMonoRepo('focus5', { riskZones: 'default' });
+    const nlEnvDir = join(repo, 'dir\n');
+    const nlEnvPath = join(nlEnvDir, '.env');
+    try {
+      // 1. Committed gitlink submodule (160000) updated in working tree
+      const subUpstream = join(work, 'sub-upstream');
+      await mkdir(subUpstream, { recursive: true });
+      gitSync(subUpstream, 'init', '-q', '-b', 'main');
+      await writeFile(join(subUpstream, 'lib.ts'), 'export const sub = 1;\n');
+      gitSync(subUpstream, 'add', '-A');
+      gitSync(subUpstream, 'commit', '-qm', 'sub init');
+      gitSync(
+        repo,
+        '-c',
+        'protocol.file.allow=always',
+        'submodule',
+        'add',
+        '-q',
+        subUpstream,
+        'packages/gitlink-sub',
+      );
+      gitSync(repo, 'commit', '-qm', 'add gitlink submodule');
+
+      // Advance submodule HEAD so git diff --raw -z sees :160000 160000 ... M
+      const subWork = join(repo, 'packages/gitlink-sub');
+      await writeFile(join(subWork, 'lib.ts'), 'export const sub = 2;\n');
+      gitSync(subWork, 'add', 'lib.ts');
+      gitSync(subWork, 'commit', '-qm', 'sub advance');
+
+      // 2. Untracked nested git repo directory (never walked/indexed into)
+      const nestedRepo = join(repo, 'packages/nested-sub');
+      await mkdir(nestedRepo, { recursive: true });
+      gitSync(nestedRepo, 'init', '-q', '-b', 'main');
+      await writeFile(join(nestedRepo, 'secret.env'), 'SUBMODULE_SECRET_DO_NOT_READ=1\n');
+      gitSync(nestedRepo, 'add', 'secret.env');
+      gitSync(nestedRepo, 'commit', '-qm', 'nested');
+
+      // 3. Space and newline filenames in indexed payments zone + newline secret file (chmod 000)
+      await writeFile(
+        join(repo, 'packages/payments/src/space file.ts'),
+        'export function spaceFn(): number { return 1; }\n',
+      );
+      await writeFile(
+        join(repo, 'packages/payments/src/nl\nfile.ts'),
+        'export function nlFn(): number { return 2; }\n',
+      );
+      await mkdir(nlEnvDir, { recursive: true });
+      await writeFile(nlEnvPath, 'TOP_SECRET=never-read\n');
+      await chmod(nlEnvPath, 0o000);
+
+      // 4. Non-UTF-8 byte path (0xff). On filesystems rejecting raw non-UTF-8 names (e.g. APFS), stage a raw git tree entry.
+      let expectedInvalidUtf8Path: string;
+      const rawNameBuf = Buffer.concat([
+        Buffer.from('packages/shared/src/bad'),
+        Buffer.from([0xff]),
+        Buffer.from('.ts'),
+      ]);
+      try {
+        await writeFile(
+          Buffer.concat([
+            Buffer.from(join(repo, 'packages/shared/src/') + ''),
+            Buffer.from([0x62, 0x61, 0x64, 0xff, 0x2e, 0x74, 0x73]),
+          ]),
+          'export const bad = 1;\n',
+        );
+        expectedInvalidUtf8Path = rawNameBuf.toString('utf8');
+      } catch {
+        const blobSha = execFileSync('git', ['-C', repo, 'hash-object', '-w', '--stdin'], {
+          input: 'export const bad = 1;\n',
+          encoding: 'utf8',
+        }).trim();
+        execFileSync('git', [
+          '-C',
+          repo,
+          'update-index',
+          '--add',
+          '--cacheinfo',
+          `100644,${blobSha},${rawNameBuf.toString('latin1')}`,
+        ]);
+        expectedInvalidUtf8Path = rawNameBuf.toString('utf8');
+      }
+
+      const expectedAll = [
+        'packages/gitlink-sub',
+        'packages/nested-sub',
+        'packages/payments/src/space file.ts',
+        'packages/payments/src/nl\nfile.ts',
+        'dir\n/.env',
+        expectedInvalidUtf8Path,
+      ];
+      const { result, text } = await runOnRepo(repo, cacheHome);
+      assertX03(result, expectedAll);
+
+      // Space and newline .ts files inside packages/payments/ must be indexed and trigger payments zone
+      const indexedPaths = new Set(result.changedFiles.filter((f) => f.indexed).map((f) => f.path));
+      assert.ok(indexedPaths.has('packages/payments/src/space file.ts'));
+      assert.ok(indexedPaths.has('packages/payments/src/nl\nfile.ts'));
+      assert.ok(result.verdict.zones.includes('payments'));
+
+      // Newline secret .env must be unindexed as secret (never read) and trigger prod-config critical floor
+      assert.ok(result.unindexedChanges.includes('dir\n/.env'));
+      assert.ok(result.verdict.zones.includes('prod-config'));
+      assert.equal(result.verdict.level, 'critical');
+      assert.equal(result.verdict.action, 'ask-owner');
+
+      // Submodules (160000 & nested git repo) and invalid-UTF-8 path must be in unindexedChanges safely
+      assert.ok(result.unindexedChanges.includes('packages/gitlink-sub'));
+      assert.ok(result.unindexedChanges.includes('packages/nested-sub'));
+      assert.ok(result.unindexedChanges.includes(expectedInvalidUtf8Path));
+      assert.ok(!text.includes('SUBMODULE_SECRET_DO_NOT_READ'));
+      assert.match(text, /git submodule; not analysed/);
+    } finally {
+      await chmod(nlEnvPath, 0o644).catch(() => {});
+      await rm(work, { recursive: true, force: true });
+    }
   });
 });
