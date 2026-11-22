@@ -16,4 +16,4 @@ Tests (1)
 Gaps (1)
   stale-index — drifted: packages/api/src/charge.ts; re-run after the index update
 Next: check the listed gap sites before relying on the caller list, then run the test above and call ei_changes before you report done. Rows marked gap may have users the index cannot see; call ei_impact on them if you change what they receive.
-— index stale · 26 files · ts 5.9.3 · engine 0.1.0
+— index stale · 26 files · ts 5.9.3 · engine 0.2.0

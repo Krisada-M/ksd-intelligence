@@ -8,4 +8,4 @@ Tests: none
 Gaps (1)
   outside-index-scope packages/shared/src/anonymous.ts:1 — member of an anonymous object type is not indexed; reads through an alias of the parent type or a generic key may be missing
 Next: check the listed gap sites before relying on the caller list, and call ei_changes before you report done.
-— index fresh · 27 files · ts 5.9.3 · engine 0.1.0
+— index fresh · 27 files · ts 5.9.3 · engine 0.2.0

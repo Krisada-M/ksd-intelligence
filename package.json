@@ -1,6 +1,6 @@
 {
   "name": "ksd-intelligence",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tests/tsconfig.json --noEmit",
     "test": "npm run build && tsc -p tests/tsconfig.json && node scripts/copy-policy-to-dist.mjs --test-tree && node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/*.test.js dist-test/tests/workflow/*.test.js tests/policy/*.test.js tests/packaging/*.test.js",
     "check:dist": "npm run build && git diff --exit-code dist/ && node scripts/check-dist-untracked.mjs",
+    "verify:skills": "node scripts/verify-unified-skills.mjs",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",

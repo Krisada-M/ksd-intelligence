@@ -12,8 +12,8 @@ For a fix round or a contingency, paste the findings or the log after that line.
 
 | # | Milestone | Brief | Rounds | State |
 |---|---|---|---|---|
-| 1 | M2b `ei_impact` | `M2b-impact.md` + `M2b-prompts.md` | 1–5 | ready |
-| 2 | M3 dogfood (owner-led, runs alongside everything after it) | `M3-dogfood.md` | setup, weekly review, exit | starts when M2b is accepted |
+| 1 | M2b `ei_impact` | `M2b-impact.md` + `M2b-prompts.md` | 1–5 | done (#32) |
+| 2 | M3 dogfood (owner-led, runs alongside everything after it) | `M3-dogfood.md` | setup, weekly review, exit | ready (M2b accepted) |
 | 3 | M2c risk zones, `ei_changes`, audit log, stage protocol | `M2c-changes.md` | 0–6 | draft |
 | 4 | M6a `ei_search`, lexical | `M6a-search.md` | 0–4 | draft |
 | 5 | M4a route detection | `M4a-routes.md` | 0–4 | draft, gated per detector |

@@ -7,4 +7,4 @@ Tests (1)
   packages/payments/src/fee.test.ts
 Gaps: none
 Next: after your change, run the test above; call ei_changes before you report done.
-— index fresh · 26 files · ts 5.9.3 · engine 0.1.0
+— index fresh · 26 files · ts 5.9.3 · engine 0.2.0

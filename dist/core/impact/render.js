@@ -362,7 +362,7 @@ function renderFileBlock(fileResult, index, budget, inBatch) {
                 }
                 : { level: 'low', action: 'proceed', zones: [], requiredActions: [], basis: [] },
             freshness: { workingTreeHash: '', includesUntracked: true },
-            engine: fileResult.engine ?? { version: '0.1.0', typescript: 'n/a', extractor: '' },
+            engine: fileResult.engine ?? { version: '0.2.0', typescript: 'n/a', extractor: '' },
         };
         const line1 = `IMPACT ${file}:1 — 0 exported declarations with callers outside file (${plural(remainder, 'other declaration', 'other declarations')} in file)`;
         return renderSymbolBlock(line1, emptyResult, index, budget, inBatch);
