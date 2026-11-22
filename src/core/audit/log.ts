@@ -14,15 +14,23 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Workflow } from '../../workflow/types.js';
 import type { ImpactBatch } from '../impact/session.js';
-import type { Action, ChangesResult, CompletenessStatus, Level, Outcome } from '../kernel/types.js';
+import type {
+  Action,
+  ChangesResult,
+  CompletenessStatus,
+  Level,
+  Outcome,
+  SearchResult,
+} from '../kernel/types.js';
 import { ACTION_RANK, LEVEL_RANK } from '../kernel/verdict.js';
 
 export const AUDIT_FILE = 'audit.jsonl';
 export const MAX_AUDIT_BYTES = 5 * 1024 * 1024;
 export const MAX_ROTATIONS = 3;
 export const MAX_TASK_CHARS = 200;
+export const MAX_QUERY_CHARS = 200;
 
-export type AuditTool = 'ei_workflow' | 'ei_status' | 'ei_impact' | 'ei_changes';
+export type AuditTool = 'ei_workflow' | 'ei_status' | 'ei_impact' | 'ei_changes' | 'ei_search';
 export type AuditOutcome = 'result' | 'guidance' | 'failure' | 'error';
 
 export interface AuditEntry {
@@ -36,6 +44,11 @@ export interface AuditEntry {
   target?: string;
   targets?: string[];
   task?: string;
+  query?: string;
+  limit?: number;
+  hitsCount?: number;
+  totalMatches?: number;
+  indexState?: 'fresh' | 'updated' | 'stale';
   stage?: string;
   type?: string;
   workflowRisk?: string;
@@ -210,6 +223,17 @@ function sanitizeEntry(
       maxLen: MAX_TASK_CHARS,
     });
   }
+  if (entry.query !== undefined) {
+    clean.query = sanitizeAuditText(entry.query, {
+      env: options.env,
+      root: options.root,
+      maxLen: MAX_QUERY_CHARS,
+    });
+  }
+  if (entry.limit !== undefined) clean.limit = entry.limit;
+  if (entry.hitsCount !== undefined) clean.hitsCount = entry.hitsCount;
+  if (entry.totalMatches !== undefined) clean.totalMatches = entry.totalMatches;
+  if (entry.indexState !== undefined) clean.indexState = entry.indexState;
   if (entry.stage !== undefined) clean.stage = entry.stage;
   if (entry.type !== undefined) clean.type = entry.type;
   if (entry.workflowRisk !== undefined) clean.workflowRisk = entry.workflowRisk;
@@ -510,5 +534,49 @@ export function auditFieldsForChanges(
           plannedUnchangedCount: v.plan.unchanged.length,
         }
       : {}),
+  };
+}
+
+export function auditFieldsForSearch(
+  outcome: Outcome<SearchResult>,
+  fallbackEngine: string,
+  rawQuery?: string,
+  rawLimit?: number,
+): Partial<AuditEntry> {
+  const safeLimit =
+    typeof rawLimit === 'number' && Number.isInteger(rawLimit) ? rawLimit : undefined;
+  if (outcome.kind === 'failure') {
+    return {
+      outcome: 'failure',
+      engine: fallbackEngine,
+      ...(rawQuery !== undefined ? { query: rawQuery } : {}),
+      ...(safeLimit !== undefined ? { limit: safeLimit } : {}),
+      code: outcome.code,
+      codes: [outcome.code],
+    };
+  }
+  if (outcome.kind === 'guidance') {
+    return {
+      outcome: 'guidance',
+      engine: fallbackEngine,
+      ...(rawQuery !== undefined ? { query: rawQuery } : {}),
+      ...(safeLimit !== undefined ? { limit: safeLimit } : {}),
+      code: outcome.code,
+      codes: [outcome.code],
+    };
+  }
+  const v = outcome.value;
+  return {
+    outcome: 'result',
+    engine: v.engine.version || fallbackEngine,
+    ...(v.engine.typescript && v.engine.typescript !== 'unknown'
+      ? { ts_version: v.engine.typescript }
+      : {}),
+    query: v.query,
+    limit: v.limit,
+    hitsCount: v.hits.length,
+    totalMatches: v.totalMatches,
+    indexState: v.indexState,
+    ...(v.indexState === 'stale' ? { codes: ['stale-index'] } : {}),
   };
 }

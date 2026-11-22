@@ -13,6 +13,8 @@ export { CATALOG_SKILL_NAMES, COMPLIANCE_DIMENSIONS, ORCHESTRATOR_SKILL_ID, PROV
 export { DEFAULT_RISK_ZONES, defaultConfig, parseProjectConfig, resolveRiskZones, } from './core/kernel/config.js';
 export { computeRepoId, detectProjectLayout, discoverTsconfigs, findGitRoot, initProject, resolveCacheDir, } from './core/workspace/init.js';
 export { loadWorkspace, resolveWorkspaceCache } from './core/engine/workspace.js';
-export { AUDIT_FILE, MAX_AUDIT_BYTES, MAX_ROTATIONS, MAX_TASK_CHARS, clearAuditState, consumeAuditWarning, parseSince, recordAudit, renderAuditSummary, sanitizeAuditText, summarizeAudit, } from './core/audit/index.js';
+export { AUDIT_FILE, MAX_AUDIT_BYTES, MAX_QUERY_CHARS, MAX_ROTATIONS, MAX_TASK_CHARS, auditFieldsForSearch, clearAuditState, consumeAuditWarning, parseSince, recordAudit, renderAuditSummary, sanitizeAuditText, summarizeAudit, } from './core/audit/index.js';
 export { runChanges } from './core/changes/changes.js';
 export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';
+export { DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT, MAX_SEARCH_QUERY_CHARS, MIN_SEARCH_LIMIT, buildFtsQuery, querySearch, quoteFtsLiteral, runSearch, validateSearchInput, } from './core/search/lexical.js';
+export { SEARCH_BUDGET, renderSearch, renderSearchOutcome } from './core/search/render.js';

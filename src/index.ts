@@ -164,8 +164,10 @@ export type { Workspace, WorkspaceCacheInfo } from './core/engine/workspace.js';
 export {
   AUDIT_FILE,
   MAX_AUDIT_BYTES,
+  MAX_QUERY_CHARS,
   MAX_ROTATIONS,
   MAX_TASK_CHARS,
+  auditFieldsForSearch,
   clearAuditState,
   consumeAuditWarning,
   parseSince,
@@ -186,6 +188,19 @@ export type {
 export { runChanges } from './core/changes/changes.js';
 export type { ChangesOptions } from './core/changes/changes.js';
 export { CHANGES_BUDGET, renderChanges, renderChangesOutcome } from './core/changes/render.js';
+export {
+  DEFAULT_SEARCH_LIMIT,
+  MAX_SEARCH_LIMIT,
+  MAX_SEARCH_QUERY_CHARS,
+  MIN_SEARCH_LIMIT,
+  buildFtsQuery,
+  querySearch,
+  quoteFtsLiteral,
+  runSearch,
+  validateSearchInput,
+} from './core/search/lexical.js';
+export type { BuiltFtsQuery, SearchOptions, ValidatedSearchInput } from './core/search/lexical.js';
+export { SEARCH_BUDGET, renderSearch, renderSearchOutcome } from './core/search/render.js';
 export type {
   ChangeFileStatus,
   ChangedFile,
@@ -194,6 +209,9 @@ export type {
   ChangesPlanSummary,
   ChangesResult,
   ChangesTimings,
+  SearchHit,
+  SearchMatchKind,
+  SearchResult,
   SymbolChangeKind,
   UnindexedChangeDetail,
 } from './core/kernel/types.js';

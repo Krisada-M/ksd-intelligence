@@ -1,6 +1,7 @@
 import {
   auditFieldsForChanges,
   auditFieldsForImpact,
+  auditFieldsForSearch,
   auditFieldsForWorkflow,
   consumeAuditWarning,
   recordAudit,
@@ -12,6 +13,8 @@ import { runChanges } from '../../dist/core/changes/changes.js';
 import { renderChangesOutcome } from '../../dist/core/changes/render.js';
 import { ImpactSession } from '../../dist/core/impact/session.js';
 import { renderImpact } from '../../dist/core/impact/render.js';
+import { runSearch, validateSearchInput } from '../../dist/core/search/lexical.js';
+import { renderSearchOutcome } from '../../dist/core/search/render.js';
 import { prepareWorkflow } from '../../dist/workflow/loader.js';
 import { renderWorkflow } from '../../dist/workflow/render.js';
 import { rootsFromEnv } from '../../dist/workflow/catalog.js';
@@ -98,6 +101,34 @@ export const BASE_TOOLS = Object.freeze([
       openWorldHint: false,
     },
   },
+  {
+    name: 'ei_search',
+    description:
+      'Find where something is implemented when you do not know the symbol name. Give a few words or identifiers ("retry payment webhook", "session cookie parse"). Returns ranked declarations with file:line. For a symbol you can already name, call ei_impact directly.',
+    inputSchema: objectSchema(
+      {
+        query: {
+          type: 'string',
+          minLength: 1,
+          maxLength: 200,
+          description: '1-200 characters of words or identifiers to search for',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: 20,
+          description: 'Maximum matches to return (1-20, default 8)',
+        },
+      },
+      ['query'],
+    ),
+    annotations: {
+      title: 'KSD Code Search',
+      readOnlyHint: true,
+      destructiveHint: false,
+      openWorldHint: false,
+    },
+  },
 ]);
 
 const WORKFLOW_TOOL = {
@@ -147,11 +178,17 @@ function validate(name, args) {
         ? ['targets', 'depth']
         : name === 'ei_changes'
           ? ['base', 'depth', 'planned']
-          : ['task', 'stage', 'risk', 'type', 'potetoMode'];
+          : name === 'ei_search'
+            ? ['query', 'limit']
+            : ['task', 'stage', 'risk', 'type', 'potetoMode'];
   if (Object.keys(args).some((key) => !allowed.includes(key))) {
     return 'INVALID_INPUT: unknown argument';
   }
   if (name === 'ei_status') return null;
+  if (name === 'ei_search') {
+    const valid = validateSearchInput(args.query, args.limit);
+    return valid.ok ? null : `INVALID_INPUT: ${valid.message}`;
+  }
   if (name === 'ei_impact') {
     if (
       !Array.isArray(args.targets) ||
@@ -272,6 +309,9 @@ export function createTools({ root, env = process.env }) {
         ms: performance.now() - started,
         code: 'INVALID_INPUT',
         codes: ['INVALID_INPUT'],
+        ...(name === 'ei_search' && isObject(args) && typeof args.query === 'string'
+          ? { query: args.query }
+          : {}),
         ...(name === 'ei_workflow' && isObject(args) && typeof args.task === 'string'
           ? { task: args.task }
           : {}),
@@ -340,6 +380,27 @@ export function createTools({ root, env = process.env }) {
           { root: ws.root, cacheDir: ws.cacheDir },
         );
         return result(renderChangesOutcome(outcome), outcome.kind === 'failure');
+      }
+      if (name === 'ei_search') {
+        const session = await impactSession();
+        const outcome = await runSearch(session, {
+          query: args.query,
+          limit: args.limit,
+          signal,
+          onProgress: (message) => onProgress(message),
+        });
+        if (signal.aborted) return result('Cancelled', true);
+        const ws = session.getWorkspace();
+        await writeAudit(
+          {
+            tool: 'ei_search',
+            outcome: outcome.kind,
+            ms: performance.now() - started,
+            ...auditFieldsForSearch(outcome, engineVersion(), args.query, args.limit),
+          },
+          { root: ws.root, cacheDir: ws.cacheDir },
+        );
+        return result(renderSearchOutcome(outcome), outcome.kind === 'failure');
       }
       const workflow = await prepareWorkflow({
         task: args.task,

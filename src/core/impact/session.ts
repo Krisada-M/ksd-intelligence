@@ -587,6 +587,36 @@ export class ImpactSession {
   async prepareForChanges(
     callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] } = {},
   ): Promise<ChangesSessionContext> {
+    return this.prepareSessionDb('hash', callOptions, true);
+  }
+
+  /**
+   * Ensure the published index is ready for lexical search using configured freshness (`'stat'`
+   * by default). Caller owns closing the returned `db` when non-null.
+   */
+  async prepareForSearch(
+    callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] } = {},
+  ): Promise<SearchSessionContext> {
+    const ctx = await this.prepareSessionDb(
+      this.workspace.config.impact.freshness,
+      callOptions,
+      false,
+    );
+    return {
+      db: ctx.db,
+      indexState: ctx.indexState,
+      updatedFiles: ctx.updatedFiles,
+      driftedFiles: ctx.driftedFiles,
+      staleReason: ctx.staleReason,
+      failureMessage: ctx.failureMessage,
+    };
+  }
+
+  private async prepareSessionDb(
+    freshness: 'stat' | 'hash',
+    callOptions: { signal?: AbortSignal; onProgress?: BuildOptions['onProgress'] } = {},
+    capturePreUpdate = false,
+  ): Promise<ChangesSessionContext> {
     if (callOptions.signal?.aborted) {
       return {
         db: null,
@@ -619,14 +649,16 @@ export class ImpactSession {
           const persistedFailure = lastFailure(this.workspace.cacheDir, meta.built_at);
           if (persistedFailure !== null) staleReason = `update failed: ${persistedFailure}`;
           const files = readFiles(db);
-          preUpdateIndexable = new Set(
-            files.filter((f) => f.status === 'indexable').map((f) => f.path),
-          );
+          if (capturePreUpdate) {
+            preUpdateIndexable = new Set(
+              files.filter((f) => f.status === 'indexable').map((f) => f.path),
+            );
+          }
           const drift = await probe(
             this.workspace.root,
             this.workspace.config.impact,
             files,
-            'hash',
+            freshness,
           );
           driftedFiles = [...new Set([...drift.added, ...drift.changed, ...drift.deleted])].sort();
           if (meta.config_hash !== configHash) {
@@ -796,12 +828,15 @@ export class ImpactSession {
   }
 }
 
-export interface ChangesSessionContext {
+export interface SearchSessionContext {
   db: DatabaseSync | null;
   indexState: 'fresh' | 'updated' | 'stale' | 'building' | 'failed';
   updatedFiles: number;
   driftedFiles: string[];
   staleReason: string | null;
   failureMessage: string | null;
+}
+
+export interface ChangesSessionContext extends SearchSessionContext {
   preUpdateIndexable: Set<string> | null;
 }

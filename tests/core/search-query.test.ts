@@ -1,0 +1,858 @@
+import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { cpSync, existsSync, statSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { afterEach, before, describe, it } from 'node:test';
+import { promisify } from 'node:util';
+import ts from 'typescript';
+import extension, { type OmpExtensionApi } from '../../src/adapters/omp/extension.js';
+import { AUDIT_FILE } from '../../src/core/audit/index.js';
+import { buildIndex, type EngineOutcome } from '../../src/core/engine/build.js';
+import { acquireBuildLock } from '../../src/core/engine/lock.js';
+import { loadWorkspace, type Workspace } from '../../src/core/engine/workspace.js';
+import { ImpactSession } from '../../src/core/impact/session.js';
+import { Indexer } from '../../src/core/indexing/indexer.js';
+import { impactConfigHash } from '../../src/core/indexing/stamp.js';
+import {
+  SEARCH_BUDGET,
+  buildFtsQuery,
+  querySearch,
+  renderSearch,
+  renderSearchOutcome,
+  runSearch,
+} from '../../src/index.js';
+import {
+  SCHEMA_VERSION,
+  beginBuild,
+  publishBuild,
+  writeFiles,
+  writeMeta,
+  type FileRecord,
+} from '../../src/storage/sqlite.js';
+import { ensureRuntime, FIXTURE } from './index-helpers.js';
+
+const execFileAsync = promisify(execFile);
+
+function findRepoRoot(startUrl: string): string {
+  let dir = new URL('.', startUrl).pathname;
+  while (true) {
+    if (existsSync(join(dir, 'package.json'))) return dir;
+    const parent = join(dir, '..');
+    if (parent === dir) throw new Error('package.json not found');
+    dir = parent;
+  }
+}
+
+const REPO_ROOT = findRepoRoot(import.meta.url);
+const CLI_ENTRY = join(REPO_ROOT, 'dist/adapters/cli/main.js');
+const MCP_TOOLS_URL = new URL('../../../scripts/mcp/tools.mjs', import.meta.url).href;
+
+before(ensureRuntime);
+
+function mockPi(): {
+  pi: OmpExtensionApi;
+  registered: Parameters<OmpExtensionApi['registerTool']>[0][];
+} {
+  const registered: Parameters<OmpExtensionApi['registerTool']>[0][] = [];
+  const makeSchema = (): ReturnType<OmpExtensionApi['zod']['string']> => {
+    const self = {
+      optional: () => self,
+      describe: () => self,
+      int: () => self,
+      min: () => self,
+      max: () => self,
+    };
+    return self;
+  };
+  const pi: OmpExtensionApi = {
+    zod: {
+      string: makeSchema,
+      boolean: makeSchema,
+      number: makeSchema,
+      array: makeSchema,
+      enum: makeSchema,
+      object: makeSchema,
+    },
+    registerTool: (tool) => {
+      registered.push(tool);
+    },
+  };
+  return { pi, registered };
+}
+
+function gatedBuild(): {
+  build: (work: Workspace, options: Parameters<typeof buildIndex>[1]) => Promise<EngineOutcome>;
+  release: () => void;
+  settled: () => Promise<void>;
+} {
+  let open: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  const running: Promise<EngineOutcome>[] = [];
+  return {
+    build: (work, options) => {
+      const task = gate.then(() => buildIndex(work, options));
+      running.push(task);
+      return task;
+    },
+    release: () => open(),
+    settled: async () => {
+      await Promise.allSettled(running);
+    },
+  };
+}
+
+async function createRepo(
+  workDir: string,
+  files: Record<string, string>,
+  extraConfig: Record<string, unknown> = {},
+): Promise<{ repo: string; cacheHome: string; workspace: Workspace }> {
+  const repo = join(workDir, 'repo');
+  const cacheHome = join(workDir, 'home');
+  await mkdir(join(repo, 'src'), { recursive: true });
+  await mkdir(cacheHome, { recursive: true });
+  await writeFile(
+    join(repo, 'tsconfig.json'),
+    JSON.stringify({
+      compilerOptions: {
+        target: 'ES2022',
+        module: 'NodeNext',
+        moduleResolution: 'NodeNext',
+        strict: true,
+      },
+      include: ['src/**/*.ts'],
+    }),
+  );
+  await writeFile(
+    join(repo, 'ei.config.json'),
+    JSON.stringify({
+      impact: { include: ['src/**'], exclude: ['**/dist/**'], freshness: 'stat' },
+      search: { enabled: true, semantic: false },
+      ...extraConfig,
+    }),
+  );
+  for (const [rel, content] of Object.entries(files)) {
+    const abs = join(repo, rel);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, content);
+  }
+  const workspace = await loadWorkspace(repo, cacheHome);
+  return { repo, cacheHome, workspace };
+}
+
+describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit', () => {
+  const tempDirs: string[] = [];
+
+  afterEach(async () => {
+    for (const dir of tempDirs.splice(0)) {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  async function makeTempDir(prefix: string): Promise<string> {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), prefix)));
+    tempDirs.push(dir);
+    return dir;
+  }
+
+  it('1. neutralizes FTS5 operators and punctuation fuzzing without SQL/FTS errors', async () => {
+    const work = await makeTempDir('ei-search-fuzz-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/ops.ts': [
+        'export function alphaBeta() { return 1; }',
+        'export function alphabet() { return 2; }',
+        'export function fooTarget() { return 3; }',
+        'export function barOnly() { return 4; }',
+        'export function fooOrBar() { return 5; }',
+        'export function fooBar() { return 6; }',
+        'export function foobar() { return 7; }',
+      ].join('\n'),
+    });
+    const report = await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    assert.deepEqual(report.problems, []);
+
+    const session = new ImpactSession(workspace);
+    const fuzzQueries = [
+      '"',
+      '*',
+      '-',
+      '(',
+      ':',
+      'NEAR',
+      'OR',
+      'AND',
+      'NOT',
+      'name_tokens:foo',
+      'bogus_col:foo',
+      'foo\\',
+      '"foo" NEAR/3 bar*',
+      'foo -bar',
+      '"*-(:)\\!@#$%^&=[]{}|;,.<>?/'.repeat(8).slice(0, 200),
+    ];
+    for (const q of fuzzQueries) {
+      const outcome = await runSearch(session, { query: q });
+      assert.equal(
+        outcome.kind,
+        'result',
+        `query ${JSON.stringify(q)} failed: ${JSON.stringify(outcome)}`,
+      );
+    }
+
+    const notRes = await runSearch(session, { query: 'alpha NOT beta' });
+    assert.equal(notRes.kind, 'result');
+    assert.ok(notRes.value.hits.some((h) => h.symbol === 'src/ops.ts#alphaBeta'));
+
+    const starRes = await runSearch(session, { query: 'alpha*' });
+    assert.equal(starRes.kind, 'result');
+    assert.equal(
+      starRes.value.hits.some((h) => h.symbol === 'src/ops.ts#alphabet'),
+      false,
+      'alpha* must never prefix-match alphabet',
+    );
+
+    const orRes = await runSearch(session, { query: 'foo OR bar' });
+    assert.equal(orRes.kind, 'result');
+    assert.equal(orRes.value.hits[0]?.symbol, 'src/ops.ts#fooOrBar');
+
+    const built = buildFtsQuery('foo -bar');
+    assert.equal(built.matchExpr, '"foo" OR "bar" OR "-bar"');
+  });
+
+  it('2. validates empty, boundary, and disabled inputs cleanly without throwing', async () => {
+    const work = await makeTempDir('ei-search-bounds-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/sample.ts':
+        'export function a() { return 1; }\nexport function validSymbol() { return 2; }\n',
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    const session = new ImpactSession(workspace);
+
+    const invalidCases: Array<{ query: unknown; limit?: unknown }> = [
+      { query: '' },
+      { query: '   ' },
+      { query: '\t\n' },
+      { query: 'x'.repeat(201) },
+      { query: 'a\0b' },
+      { query: 123 },
+      { query: 'validSymbol', limit: 0 },
+      { query: 'validSymbol', limit: 21 },
+      { query: 'validSymbol', limit: 1.5 },
+    ];
+    for (const c of invalidCases) {
+      const out = await runSearch(session, c);
+      assert.equal(out.kind, 'failure');
+      assert.equal(out.code, 'INVALID_INPUT');
+      assert.match(renderSearchOutcome(out), /^INVALID_INPUT:/);
+    }
+
+    const oneChar = await runSearch(session, { query: 'a', limit: 1 });
+    assert.equal(oneChar.kind, 'result');
+    assert.equal(oneChar.value.hits.length, 1);
+    assert.equal(oneChar.value.hits[0]?.symbol, 'src/sample.ts#a');
+
+    const noMatch = await runSearch(session, { query: 'xylophoneQuasarUnmatched', limit: 20 });
+    assert.equal(noMatch.kind, 'result');
+    assert.equal(noMatch.value.hits.length, 0);
+    const renderedNoMatch = renderSearchOutcome(noMatch);
+    assert.match(
+      renderedNoMatch,
+      /^SEARCH "xylophoneQuasarUnmatched" — no matches\. Try identifiers that would appear in the code\./,
+    );
+    assert.match(renderedNoMatch, /search: lexical only/);
+
+    const disabledWork = await makeTempDir('ei-search-disabled-cfg-');
+    const disabled = await createRepo(
+      disabledWork,
+      { 'src/a.ts': 'export function a() { return 1; }\n' },
+      { search: { enabled: false, semantic: false } },
+    );
+    const disabledRes = await runSearch(new ImpactSession(disabled.workspace), { query: 'a' });
+    assert.equal(disabledRes.kind, 'failure');
+    assert.equal(disabledRes.code, 'index-failed');
+  });
+
+  it('3. ranks exact whole-name matches first (exact) over higher-caller/doc-heavy lexical hits', async () => {
+    const work = await makeTempDir('ei-search-exact-');
+    const callerLines = Array.from(
+      { length: 15 },
+      (_, i) => `export function caller${i}() { return retryHelper(); }`,
+    ).join('\n');
+    const { repo, workspace } = await createRepo(work, {
+      'src/a.ts': [
+        '/** retry retry retry helper retry retry */',
+        'export function retryHelper() { return 1; }',
+        callerLines,
+      ].join('\n'),
+      'src/b.ts': 'function retry() { return 2; }\n',
+      'src/service.ts': [
+        'export class PaymentService {',
+        '  charge(amount: number) { return amount; }',
+        '}',
+        'export class StripeService {',
+        '  /** charge charge charge */',
+        '  charge(amount: number) { return amount; }',
+        '}',
+        'export function calculateFee(x: number) { return x; }',
+        'export function calculateFeeExtra(x: number) { return x; }',
+      ].join('\n'),
+    });
+    const report = await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    assert.deepEqual(report.problems, []);
+    const session = new ImpactSession(workspace);
+
+    const retryOut = await runSearch(session, { query: 'retry' });
+    assert.equal(retryOut.kind, 'result');
+    assert.equal(retryOut.value.hits[0]?.symbol, 'src/b.ts#retry');
+    assert.equal(retryOut.value.hits[0]?.kind, 'exact');
+    assert.equal(retryOut.value.hits[1]?.symbol, 'src/a.ts#retryHelper');
+    assert.equal(retryOut.value.hits[1]?.kind, 'lexical');
+
+    const qualifiedOut = await runSearch(session, { query: 'PaymentService.charge' });
+    assert.equal(qualifiedOut.kind, 'result');
+    assert.equal(qualifiedOut.value.hits[0]?.symbol, 'src/service.ts#PaymentService.charge');
+    assert.equal(qualifiedOut.value.hits[0]?.kind, 'exact');
+
+    const multiWordExact = await runSearch(session, { query: 'find calculateFee implementation' });
+    assert.equal(multiWordExact.kind, 'result');
+    assert.equal(multiWordExact.value.hits[0]?.symbol, 'src/service.ts#calculateFee');
+    assert.equal(multiWordExact.value.hits[0]?.kind, 'exact');
+  });
+
+  it('4. applies BM25 field weights (name > owner > signature > doc > path), exported, and caller boosts', async () => {
+    const work = await makeTempDir('ei-search-weights-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/fields.ts': [
+        '/** Primary symbol declaration in fixture. */',
+        'function beacon() { return 1; }',
+        '/** Service container class in fixture. */',
+        'export class Beacon {',
+        '  /** Member method inside container class. */',
+        '  memberFn() { return 2; }',
+        '}',
+        '/** Value interface definition in fixture. */',
+        'export interface BeaconType { value: string; }',
+        '/** Signature parameter test helper function. */',
+        'function sigMatch(beacon: string) { return beacon; }',
+        '/** Mentions beacon in first paragraph. */',
+        'function docMatch() { return 3; }',
+      ].join('\n'),
+      'src/beacon/pathOnly.ts':
+        '/** Path segment test helper function. */\nfunction pathMatch() { return 4; }\n',
+      'src/boosts.ts': [
+        'export function exportedZero() { return 1; }',
+        'function unexportedZero() { return 2; }',
+        'export function popularFn() { return 3; }',
+        'export function unpopularFn() { return 4; }',
+        'export function use1() { return popularFn(); }',
+        'export function use2() { return popularFn(); }',
+        'export function use3() { return popularFn(); }',
+      ].join('\n'),
+    });
+    const report = await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    assert.deepEqual(report.problems, []);
+    const session = new ImpactSession(workspace);
+
+    const fieldOut = await runSearch(session, { query: 'beacon', limit: 20 });
+    assert.equal(fieldOut.kind, 'result');
+    const symbols = fieldOut.value.hits.map((h) => h.symbol);
+    const rankOf = (s: string) => symbols.indexOf(s);
+    assert.ok(rankOf('src/fields.ts#beacon') >= 0);
+    assert.ok(rankOf('src/fields.ts#Beacon.memberFn') > rankOf('src/fields.ts#beacon'));
+    assert.ok(rankOf('src/fields.ts#sigMatch') > rankOf('src/fields.ts#Beacon.memberFn'));
+    assert.ok(rankOf('src/fields.ts#docMatch') > rankOf('src/fields.ts#sigMatch'));
+    assert.ok(rankOf('src/beacon/pathOnly.ts#pathMatch') > rankOf('src/fields.ts#docMatch'));
+
+    const exportOut = await runSearch(session, { query: 'zero' });
+    assert.equal(exportOut.kind, 'result');
+    assert.equal(exportOut.value.hits[0]?.symbol, 'src/boosts.ts#exportedZero');
+    assert.equal(exportOut.value.hits[1]?.symbol, 'src/boosts.ts#unexportedZero');
+
+    const callerOut = await runSearch(session, { query: 'popularFn unpopularFn' });
+    assert.equal(callerOut.kind, 'result');
+    assert.equal(callerOut.value.hits[0]?.symbol, 'src/boosts.ts#popularFn');
+  });
+
+  it('5. produces deterministic byte-identical results across repeated queries and cold vs incremental builds', async () => {
+    const work = await makeTempDir('ei-search-det-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/alpha.ts': 'export function handleEvent() { return 1; }\n',
+      'src/zeta.ts': 'export function handleEvent() { return 2; }\n',
+    });
+    const indexer = new Indexer(ts, repo, workspace.cacheDir);
+    await indexer.index({ impact: workspace.config.impact, full: true });
+    const session = new ImpactSession(workspace);
+
+    const r1 = await runSearch(session, { query: 'handleEvent' });
+    const r2 = await runSearch(session, { query: 'handleEvent' });
+    assert.equal(r1.kind, 'result');
+    assert.equal(r2.kind, 'result');
+    assert.equal(renderSearchOutcome(r1), renderSearchOutcome(r2));
+    assert.deepEqual(
+      r1.value.hits.map((h) => h.symbol),
+      ['src/alpha.ts#handleEvent', 'src/zeta.ts#handleEvent'],
+    );
+
+    // Reverse rowid insertion order incrementally by deleting alpha.ts, indexing, recreating, indexing
+    const alphaContent = await readFile(join(repo, 'src/alpha.ts'), 'utf8');
+    await rm(join(repo, 'src/alpha.ts'));
+    await indexer.index({ impact: workspace.config.impact, freshness: 'hash' });
+    await writeFile(join(repo, 'src/alpha.ts'), alphaContent);
+    await indexer.index({ impact: workspace.config.impact, freshness: 'hash' });
+
+    const rAfter = await runSearch(session, { query: 'handleEvent' });
+    assert.equal(rAfter.kind, 'result');
+    assert.deepEqual(
+      rAfter.value.hits.map((h) => h.symbol),
+      ['src/alpha.ts#handleEvent', 'src/zeta.ts#handleEvent'],
+    );
+    assert.equal(renderSearchOutcome(rAfter), renderSearchOutcome(r1));
+  });
+
+  it('6. searches 50,000 declarations with stat probe at p95 < 300 ms', async () => {
+    const work = await makeTempDir('ei-search-50k-');
+    const repo = join(work, 'repo');
+    const cacheHome = join(work, 'home');
+    await mkdir(join(repo, 'src'), { recursive: true });
+    await mkdir(cacheHome, { recursive: true });
+    await writeFile(
+      join(repo, 'ei.config.json'),
+      JSON.stringify({ impact: { include: ['src/**'], exclude: [], freshness: 'stat' } }),
+    );
+    const workspace = await loadWorkspace(repo, cacheHome);
+
+    const fileCount = 500;
+    const perFile = 100;
+    const cfgStat = statSync(join(repo, 'ei.config.json'));
+    const fileRecords: FileRecord[] = [
+      {
+        path: 'ei.config.json',
+        size: cfgStat.size,
+        mtimeMs: cfgStat.mtimeMs,
+        hash: null,
+        kind: 'json',
+        package: null,
+        tsconfig: null,
+        status: 'other',
+        reason: 'json',
+      },
+    ];
+    for (let f = 0; f < fileCount; f++) {
+      const rel = `src/mod${f}.ts`;
+      const abs = join(repo, rel);
+      await writeFile(abs, `export function stub${f}() { return ${f}; }\n`);
+      const st = statSync(abs);
+      fileRecords.push({
+        path: rel,
+        size: st.size,
+        mtimeMs: st.mtimeMs,
+        hash: `h${f}`,
+        kind: 'ts',
+        package: null,
+        tsconfig: 'tsconfig.json',
+        status: 'indexable',
+        reason: null,
+      });
+    }
+
+    const db = beginBuild(workspace.cacheDir);
+    writeMeta(db, {
+      schema_version: String(SCHEMA_VERSION),
+      config_hash: impactConfigHash(workspace.config.impact),
+      typescript_version: '5.9.3',
+      extractor_stamp: 'test',
+      build_id: 'scale50k',
+      built_at: new Date().toISOString(),
+    });
+    writeFiles(db, fileRecords);
+    db.exec('BEGIN');
+    const insSym = db.prepare('INSERT INTO symbols (id, key) VALUES (?, ?)');
+    const insDecl = db.prepare(
+      `INSERT INTO declarations (id, file, name, simple, kind, exported, start_line, end_line, other_spans, sig_hash)
+       VALUES (?, ?, ?, ?, 'function', 1, ?, ?, '[]', 's')`,
+    );
+    const insFts = db.prepare(
+      `INSERT INTO declarations_fts (rowid, stable_key, name_tokens, owner_tokens, kind, signature, doc, path_tokens)
+       VALUES (?, ?, ?, '', 'function', ?, ?, ?)`,
+    );
+    const insEdge = db.prepare(
+      `INSERT INTO edges (source, target, kind, strength, lines) VALUES (?, ?, 'CALLS', 'compiler', '[1]')`,
+    );
+    let id = 1;
+    for (let f = 0; f < fileCount; f++) {
+      const file = `src/mod${f}.ts`;
+      const pTokens = `src mod ${f} ts`;
+      for (let k = 0; k < perFile; k++) {
+        const tag = k % 10 === 0 ? 'retryPaymentWebhook' : `computeValue${k}`;
+        const name = `${tag}_${id}`;
+        const key = `${file}#${name}`;
+        insSym.run(id, key);
+        insDecl.run(id, file, name, name, k + 1, k + 1);
+        insFts.run(
+          id,
+          key,
+          `${name} retry payment webhook compute value ${k}`,
+          `export function ${name}(amount: number): number`,
+          'Handles payment webhook retries and value calculation.',
+          pTokens,
+        );
+        if (id > 1 && id % 5 === 0) {
+          insEdge.run(id - 1, id);
+        }
+        id++;
+      }
+    }
+    db.exec('COMMIT');
+    publishBuild(db, workspace.cacheDir);
+
+    const session = new ImpactSession(workspace);
+    const queries = [
+      'retry payment webhook',
+      'computeValue5',
+      'mod120',
+      'retryPaymentWebhook_1001',
+      'payment webhook',
+      'value calculation',
+      'amount number',
+      'retry',
+      'webhook',
+      'compute',
+      'mod42 computeValue3',
+      'retryPaymentWebhook_49991',
+      'unknownIdentifier999',
+      'payment calculation',
+      'retry value',
+      'mod300 webhook',
+      'computeValue9',
+      'retryPaymentWebhook_25001',
+      'webhook retries',
+      'computeValue1',
+      'mod10 retry',
+      'payment',
+      'calculation',
+      'computeValue7',
+      'retryPaymentWebhook_11',
+    ];
+    const timings: number[] = [];
+    for (const q of queries) {
+      const t0 = performance.now();
+      const res = await runSearch(session, { query: q });
+      timings.push(performance.now() - t0);
+      assert.equal(res.kind, 'result');
+      assert.equal(res.value.indexState, 'fresh');
+    }
+    timings.sort((a, b) => a - b);
+    const p95 = timings[Math.min(timings.length - 1, Math.ceil(timings.length * 0.95) - 1)]!;
+    assert.ok(p95 < 300, `50k search p95 was ${p95.toFixed(2)} ms (>= 300 ms)`);
+  });
+
+  it('7. never emits semantic labels or install hints even when search.semantic is true', async () => {
+    const work = await makeTempDir('ei-search-nosem-');
+    const { repo, workspace } = await createRepo(
+      work,
+      { 'src/a.ts': 'export function processOrder() { return 1; }\n' },
+      { search: { enabled: true, semantic: true } },
+    );
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    const session = new ImpactSession(workspace);
+
+    const hitRes = await runSearch(session, { query: 'processOrder' });
+    assert.equal(hitRes.kind, 'result');
+    assert.ok(hitRes.value.hits.every((h) => h.kind === 'exact' || h.kind === 'lexical'));
+    const hitText = renderSearchOutcome(hitRes);
+    assert.match(hitText, /search: lexical only/);
+    assert.doesNotMatch(hitText, /semantic|install|embeddings/i);
+
+    const missRes = await runSearch(session, { query: 'nothingMatchesHere' });
+    assert.equal(missRes.kind, 'result');
+    const missText = renderSearchOutcome(missRes);
+    assert.match(missText, /search: lexical only/);
+    assert.doesNotMatch(missText, /semantic|install|embeddings/i);
+  });
+
+  it('8. builds cold index on first query with progress and returns INDEX BUILDING guidance on timeout', async () => {
+    const work = await makeTempDir('ei-search-cold-');
+    const repo = join(work, 'mono');
+    const cacheHome = join(work, 'home');
+    cpSync(FIXTURE, repo, { recursive: true });
+    await mkdir(cacheHome, { recursive: true });
+    const workspace = await loadWorkspace(repo, cacheHome);
+
+    const progress: string[] = [];
+    const session = new ImpactSession(workspace);
+    const first = await runSearch(session, {
+      query: 'calculateFee',
+      onProgress: (msg) => progress.push(msg),
+    });
+    assert.equal(first.kind, 'result');
+    assert.equal(first.value.indexState, 'updated');
+    assert.ok(first.value.hits.some((h) => h.symbol.endsWith('#calculateFee')));
+    assert.ok(progress.length > 0);
+
+    // Timeout guidance (waitMs: 1 with gated build on unindexed repo)
+    const work2 = await makeTempDir('ei-search-timeout-');
+    const repo2 = join(work2, 'mono');
+    const cacheHome2 = join(work2, 'home');
+    cpSync(FIXTURE, repo2, { recursive: true });
+    await mkdir(cacheHome2, { recursive: true });
+
+    const gate = gatedBuild();
+    const { pi, registered } = mockPi();
+    extension(pi, {
+      env: process.env,
+      cacheHome: cacheHome2,
+      impactSession: { build: gate.build, waitMs: 1 },
+      createPolicyExtension: () => {},
+    });
+    try {
+      const srchTool = registered.find((t) => t.name === 'ei_search')!;
+      const res = await srchTool.execute('t1', { query: 'calculateFee' }, undefined, undefined, {
+        cwd: repo2,
+      });
+      assert.equal(res.isError, undefined, 'INDEX BUILDING must be guidance (no isError)');
+      assert.match(res.content[0]?.text ?? '', /^INDEX BUILDING —/);
+    } finally {
+      gate.release();
+      await gate.settled();
+    }
+  });
+
+  it('9. falls back to published index with STALE INDEX on drift when build lock or failing update blocks', async () => {
+    const work = await makeTempDir('ei-search-stale-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/a.ts': 'export function stableSymbol() { return 1; }\n',
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+
+    // Edit file on disk so stat probe detects drift
+    await writeFile(
+      join(repo, 'src/a.ts'),
+      'export function stableSymbol() { return 2; }\nexport function completelyDifferentToken() { return 3; }\n',
+    );
+    const lock = acquireBuildLock(workspace.cacheDir);
+    assert.equal(lock.ok, true);
+    const gate = gatedBuild();
+    try {
+      const session = new ImpactSession(workspace, { build: gate.build, waitMs: 1 });
+      const hitRes = await runSearch(session, { query: 'stableSymbol' });
+      assert.equal(hitRes.kind, 'result');
+      assert.equal(hitRes.value.indexState, 'stale');
+      assert.equal(hitRes.value.hits[0]?.symbol, 'src/a.ts#stableSymbol');
+      const hitText = renderSearchOutcome(hitRes);
+      assert.match(hitText, /STALE INDEX/);
+      assert.doesNotMatch(hitText, /index fresh/);
+
+      const missRes = await runSearch(session, { query: 'completelyDifferentToken' });
+      assert.equal(missRes.kind, 'result');
+      assert.equal(missRes.value.indexState, 'stale');
+      assert.equal(missRes.value.hits.length, 0);
+      assert.match(renderSearchOutcome(missRes), /STALE INDEX/);
+    } finally {
+      if (lock.ok) lock.release();
+      gate.release();
+      await gate.settled();
+    }
+  });
+
+  it('10. enforces EI_DISABLED=1 across CLI, OMP, and AGY MCP with zero audit entries', async () => {
+    const work = await makeTempDir('ei-search-disabled-');
+    const { repo, cacheHome, workspace } = await createRepo(work, {
+      'src/a.ts': 'export function alpha() { return 1; }\n',
+    });
+
+    const cli = await execFileAsync(
+      process.execPath,
+      [CLI_ENTRY, 'search', 'alpha', '--root', repo],
+      { env: { ...process.env, HOME: cacheHome, EI_DISABLED: '1' } },
+    );
+    assert.match(cli.stdout, /^SEARCH disabled \(EI_DISABLED\)/);
+
+    const { pi, registered } = mockPi();
+    extension(pi, { env: { EI_DISABLED: '1' }, createPolicyExtension: () => {} });
+    assert.equal(registered.length, 0);
+
+    const { createTools } = (await import(MCP_TOOLS_URL)) as {
+      createTools: (opts: { root: string; env?: NodeJS.ProcessEnv }) => {
+        definitions: unknown[];
+        call: (
+          name: string,
+          args: unknown,
+          signal: AbortSignal,
+        ) => Promise<{ isError?: boolean; content: { text: string }[] }>;
+      };
+    };
+    const mcp = createTools({
+      root: repo,
+      env: { ...process.env, HOME: cacheHome, EI_DISABLED: '1' },
+    });
+    assert.deepEqual(mcp.definitions, []);
+    const mcpRes = await mcp.call('ei_search', { query: 'alpha' }, new AbortController().signal);
+    assert.equal(mcpRes.isError, true);
+
+    assert.equal(existsSync(join(workspace.cacheDir, AUDIT_FILE)), false);
+  });
+
+  it('11. records truncated and redacted ei_search audit lines with zero result text', async () => {
+    const work = await makeTempDir('ei-search-audit-');
+    const { repo, cacheHome, workspace } = await createRepo(work, {
+      'src/a.ts':
+        '/** NEVER_LEAK_DOC_MARKER */\nexport function uniqueAuditTarget(secretParam: string) { return secretParam; }\n',
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+
+    const { pi, registered } = mockPi();
+    extension(pi, {
+      env: { ...process.env, HOME: cacheHome },
+      cacheHome,
+      createPolicyExtension: () => {},
+    });
+    const srchTool = registered.find((t) => t.name === 'ei_search')!;
+
+    await srchTool.execute('s1', { query: 'uniqueAuditTarget', limit: 5 }, undefined, undefined, {
+      cwd: repo,
+    });
+    // Invalid > 200 char query containing a token and home path triggers sanitized audit entry
+    const ghToken = 'ghp_1234567890abcdefghij';
+    const longInvalid = `find ${repo}/src/a.ts with ${ghToken} and /home/alice/work ${'z'.repeat(210)}`;
+    await srchTool.execute('s2', { query: longInvalid }, undefined, undefined, { cwd: repo });
+
+    const rawAudit = await readFile(join(workspace.cacheDir, AUDIT_FILE), 'utf8');
+    const entries = rawAudit
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(entries.length, 2);
+    assert.equal(entries[0]?.tool, 'ei_search');
+    assert.equal(entries[0]?.query, 'uniqueAuditTarget');
+    assert.equal(entries[0]?.limit, 5);
+    assert.equal(entries[0]?.hitsCount, 1);
+    assert.ok(!rawAudit.includes('NEVER_LEAK_DOC_MARKER'));
+    assert.ok(!rawAudit.includes('secretParam'));
+    assert.ok(entries.every((e) => !('hits' in e) && !('signature' in e) && !('doc' in e)));
+
+    const invalidQuery = String(entries[1]?.query ?? '');
+    assert.ok(invalidQuery.length <= 200);
+    assert.ok(!rawAudit.includes(ghToken));
+    assert.ok(!rawAudit.includes('/home/alice'));
+    assert.ok(!rawAudit.includes(repo));
+    const realHome = homedir();
+    if (realHome.length > 1) assert.ok(!rawAudit.includes(realHome));
+  });
+
+  it('12. maintains CLI/OMP/MCP output parity and enforces the 4,000-character budget', async () => {
+    const work = await makeTempDir('ei-search-parity-');
+    const longFile = 'src/' + 'nested_directory_segment/'.repeat(4) + 'very_long_module_name.ts';
+    const decls = Array.from({ length: 20 }, (_, i) => {
+      const params = Array.from({ length: 12 }, (__, j) => `longParameterName${j}: string`).join(
+        ', ',
+      );
+      return `export function parityTargetFn${i}(${params}): string { return longParameterName0; }`;
+    }).join('\n');
+    const { repo, cacheHome, workspace } = await createRepo(work, {
+      [longFile]: decls,
+      'src/use.ts': `import { parityTargetFn0 } from './${'nested_directory_segment/'.repeat(4)}very_long_module_name.js';\nexport function runUse() { return parityTargetFn0(${Array(12).fill('"x"').join(', ')}); }\n`,
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+
+    const { pi, registered } = mockPi();
+    extension(pi, {
+      env: { ...process.env, HOME: cacheHome },
+      cacheHome,
+      createPolicyExtension: () => {},
+    });
+    const srchTool = registered.find((t) => t.name === 'ei_search')!;
+    const ompRes = await srchTool.execute(
+      'p1',
+      { query: 'parityTargetFn0', limit: 8 },
+      undefined,
+      undefined,
+      { cwd: repo },
+    );
+    const ompText = ompRes.content[0]?.text ?? '';
+
+    const { createTools } = (await import(MCP_TOOLS_URL)) as {
+      createTools: (opts: { root: string; env?: NodeJS.ProcessEnv }) => {
+        call: (
+          name: string,
+          args: unknown,
+          signal: AbortSignal,
+        ) => Promise<{ content: { text: string }[] }>;
+      };
+    };
+    const mcp = createTools({ root: repo, env: { ...process.env, HOME: cacheHome } });
+    const mcpRes = await mcp.call(
+      'ei_search',
+      { query: 'parityTargetFn0', limit: 8 },
+      new AbortController().signal,
+    );
+    const mcpText = mcpRes.content[0]?.text ?? '';
+
+    const cli = await execFileAsync(
+      process.execPath,
+      [CLI_ENTRY, 'search', 'parityTargetFn0', '--limit', '8', '--root', repo],
+      { env: { ...process.env, HOME: cacheHome } },
+    );
+    const cliText = cli.stdout.trimEnd();
+
+    assert.equal(ompText, mcpText);
+    assert.equal(cliText, ompText);
+    assert.ok(cliText.length <= SEARCH_BUDGET);
+
+    // Budget enforcement with 20 very long hits
+    const session = new ImpactSession(workspace);
+    const all20 = await runSearch(session, { query: 'parity', limit: 20 });
+    assert.equal(all20.kind, 'result');
+    assert.equal(all20.value.hits.length, 20);
+    const rendered20 = renderSearch(all20.value);
+    assert.ok(
+      rendered20.length <= SEARCH_BUDGET,
+      `rendered length ${rendered20.length} > ${SEARCH_BUDGET}`,
+    );
+    assert.match(rendered20, /\(\+\d+ more matches\)/);
+  });
+
+  it('querySearch can run directly on an open DB and never introduces semantic hits', async () => {
+    const work = await makeTempDir('ei-search-direct-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/a.ts': 'export function directFn() { return 1; }\n',
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    const ctx = await new ImpactSession(workspace).prepareForSearch();
+    assert.ok(ctx.db !== null);
+    try {
+      const res = querySearch(ctx.db, workspace.config.impact, 'directFn', 8);
+      assert.equal(res.hits[0]?.kind, 'exact');
+    } finally {
+      ctx.db.close();
+    }
+  });
+});

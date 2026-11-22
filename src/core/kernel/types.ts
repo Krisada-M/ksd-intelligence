@@ -238,3 +238,30 @@ export interface ChangesResult {
   plan?: ChangesPlanSummary;
   timings?: ChangesTimings;
 }
+
+export type SearchMatchKind = 'exact' | 'lexical';
+
+export interface SearchHit {
+  kind: SearchMatchKind;
+  /** "<repo-relative path>#<qualified name>" (ADR 0002). */
+  symbol: string;
+  declarationKind: string;
+  span: Span;
+  signature: string;
+  exported: boolean;
+  callers: number;
+  route: boolean;
+  score: number;
+}
+
+export interface SearchResult {
+  query: string;
+  limit: number;
+  totalMatches: number;
+  hits: SearchHit[];
+  indexState: 'fresh' | 'updated' | 'stale';
+  updatedFiles?: number;
+  scannedFiles?: number;
+  staleReason?: string;
+  engine: EngineStamp;
+}

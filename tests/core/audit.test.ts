@@ -550,6 +550,7 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
       const stTool = registered.find((t) => t.name === 'ei_status')!;
       const impTool = registered.find((t) => t.name === 'ei_impact')!;
       const chgTool = registered.find((t) => t.name === 'ei_changes')!;
+      const srchTool = registered.find((t) => t.name === 'ei_search')!;
 
       const wfRes = await wfTool.execute(
         'w1',
@@ -571,6 +572,7 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
         cwd: repo,
       });
       await chgTool.execute('c1', {}, undefined, undefined, { cwd: repo });
+      await srchTool.execute('q1', { query: 'calculateFee' }, undefined, undefined, { cwd: repo });
 
       // 2) AGY MCP adapter
       const { createTools } = (await import(MCP_TOOLS_URL)) as {
@@ -581,9 +583,13 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
       const mcp = createTools({ root: repo, env: { ...process.env, HOME: cacheHome } });
       await mcp.call('ei_status', {}, new AbortController().signal);
       await mcp.call('ei_impact', { targets: ['roundMoney'] }, new AbortController().signal);
+      await mcp.call('ei_search', { query: 'roundMoney' }, new AbortController().signal);
 
       // 3) CLI adapter
       await execFileAsync(process.execPath, [CLI_ENTRY, 'status', '--root', repo], {
+        env: { ...process.env, HOME: cacheHome },
+      }).catch(() => {});
+      await execFileAsync(process.execPath, [CLI_ENTRY, 'search', 'calculateFee', '--root', repo], {
         env: { ...process.env, HOME: cacheHome },
       }).catch(() => {});
 
@@ -593,6 +599,7 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
       assert.equal(summary.callsByTool.ei_status, 3);
       assert.equal(summary.callsByTool.ei_impact, 2);
       assert.equal(summary.callsByTool.ei_changes, 1);
+      assert.equal(summary.callsByTool.ei_search, 3);
       assert.equal(summary.corruptLines, 0);
     } finally {
       await cleanup(work);

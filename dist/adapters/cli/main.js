@@ -2,7 +2,7 @@
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
-import { auditFieldsForChanges, auditFieldsForImpact, auditFieldsForWorkflow, clearAuditState, consumeAuditWarning, parseSince, recordAudit, renderAuditSummary, summarizeAudit, } from '../../core/audit/index.js';
+import { auditFieldsForChanges, auditFieldsForImpact, auditFieldsForSearch, auditFieldsForWorkflow, clearAuditState, consumeAuditWarning, parseSince, recordAudit, renderAuditSummary, summarizeAudit, } from '../../core/audit/index.js';
 import { buildIndex, doctorDeep } from '../../core/engine/build.js';
 import { isHolderAlive, readLockHolder } from '../../core/engine/lock.js';
 import { homeRelative, renderStatus, workspaceStatus } from '../../core/engine/status.js';
@@ -12,6 +12,8 @@ import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
+import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
+import { renderSearchOutcome } from '../../core/search/render.js';
 import { initProject } from '../../core/workspace/init.js';
 import { discoverAgySkills } from '../agy/skills.js';
 import { discoverOmpSkills } from '../omp/skills.js';
@@ -64,6 +66,7 @@ const USAGE = `usage:
   main.js index   [--root <path>] [--full] [--json] (update the index from the working tree; --full rebuilds cold)
   main.js impact  <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
   main.js changes [--base <ref>] [--depth <n>] [--planned <target>]... [--root <path>] [--json] (impact of uncommitted changes)
+  main.js search  <query> [--limit <n>] [--root <path>] [--json] (find declarations by words or identifier)
   main.js doctor  --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status  [--root <path>] [--json]        (index, coverage, runtime, TypeScript, store, lock)
   main.js audit   [--since <7d|24h|30m|ISO>] [--root <path>] [--json] (summarize audit.jsonl)
@@ -115,6 +118,7 @@ async function run(argv) {
             deep: { type: 'boolean' },
             differential: { type: 'string' },
             depth: { type: 'string' },
+            limit: { type: 'string' },
             base: { type: 'string' },
             planned: { type: 'string', multiple: true },
             since: { type: 'string' },
@@ -347,6 +351,73 @@ async function run(argv) {
             ...auditFieldsForChanges(outcome, engineVersion()),
         }, { root: workspace.root });
         const rendered = renderChangesOutcome(outcome);
+        if (values.json === true) {
+            console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
+        }
+        else {
+            console.log(rendered);
+        }
+        return outcome.kind === 'failure' ? 1 : 0;
+    }
+    if (command === 'search') {
+        if (process.env.EI_DISABLED === '1') {
+            console.log('SEARCH disabled (EI_DISABLED)');
+            return 0;
+        }
+        const started = performance.now();
+        const rawLimit = values.limit;
+        const parsedLimit = rawLimit === undefined
+            ? undefined
+            : /^\d+$/.test(rawLimit.trim())
+                ? Number.parseInt(rawLimit.trim(), 10)
+                : Number.NaN;
+        const query = positionals.slice(1).join(' ');
+        const valid = validateSearchInput(query, parsedLimit);
+        if (!valid.ok) {
+            const cache = await tryResolveCacheCli(values.root);
+            if (cache !== null) {
+                recordAudit(cache.cacheDir, {
+                    ts: new Date().toISOString(),
+                    tool: 'ei_search',
+                    adapter: 'cli',
+                    outcome: 'failure',
+                    ms: performance.now() - started,
+                    engine: engineVersion(),
+                    code: 'INVALID_INPUT',
+                    codes: ['INVALID_INPUT'],
+                    ...(query !== '' ? { query } : {}),
+                    ...(parsedLimit !== undefined && Number.isInteger(parsedLimit)
+                        ? { limit: parsedLimit }
+                        : {}),
+                }, { root: cache.root });
+            }
+            const outcome = {
+                kind: 'failure',
+                code: 'INVALID_INPUT',
+                message: valid.message,
+            };
+            console.log(values.json === true ? JSON.stringify(outcome, null, 2) : renderSearchOutcome(outcome));
+            return 2;
+        }
+        const workspace = await loadWorkspace(values.root ?? process.cwd());
+        const session = new ImpactSession(workspace, {
+            waitAfterExpiry: true,
+            onProgress: (message) => console.error(`ei search: ${message}`),
+        });
+        const outcome = await runSearch(session, {
+            query: valid.query,
+            limit: valid.limit,
+        });
+        recordAudit(workspace.cacheDir, {
+            ts: new Date().toISOString(),
+            tool: 'ei_search',
+            adapter: 'cli',
+            outcome: outcome.kind,
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            ...auditFieldsForSearch(outcome, engineVersion(), valid.query, valid.limit),
+        }, { root: workspace.root });
+        const rendered = renderSearchOutcome(outcome);
         if (values.json === true) {
             console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
         }

@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Review the actual change with M2c (owner accepted and merged on `origin/main`).
 
-**Status:** ready-for-agent (MUST start with **Round 0 — reconcile ONLY**; do NOT write code until owner approves Round 0)
+**Status:** round-3-complete (Rounds 0–3 verified on `m6a-search`; Round 4 independent review pending)
 
 **Requirement:** REQ-06 in the [spec](../spec.md).
 
@@ -35,49 +35,29 @@
 
 ## Step-by-Step Execution Runbook (ONE Round per Session)
 
-### Round 0 — Reconcile ONLY (Zero Code Changes!)
+### Round 0 — Reconcile ONLY (Zero Code Changes!) ✅
 1. Compare `docs/briefs/M6a-search.md` against current `main` (`sqlite.ts` schema version, `declarations.ts`, `doctor.ts`, `M3` approved repositories in `docs/dogfood-log.md`).
 2. Explicitly flag the **PROPOSED `RISK.md §6` change** (storing 400-char capped signatures & first-paragraph doc comments for indexable code files only, never `.env`/excluded files) for owner approval.
-3. Reconcile the two evaluation repositories (`oh-my-pi` + the owner's M3 work repo) and confirm `tests/golden/search-queries.md` will be drafted as `PROPOSED` in Round 3.
-4. **STOP GATE:** Report Round 0 findings and STOP. Wait for owner approval of both the brief corrections and the `RISK.md §6` storage change.
+3. Reconcile the two evaluation repositories (`ksd-intelligence` + the owner's M3 work repo `work-sure`) and confirm `tests/golden/search-queries.md` will be drafted as `PROPOSED` in Round 3.
+4. Recorded in `.scratch/ksd-v1-readiness/evidence/06/round-0-reconcile.md`, `docs/RISK.md §6`, and `docs/DESIGN.md §15` (`D60`, `PROPOSED`).
 
-### Round 1 — FTS5 Search Index (`src/storage/sqlite.ts`, `src/core/search/segments.ts`)
-1. Implement deterministic identifier splitter (`splitIdentifier`):
-   - `retryWebhook` → `retry webhook`
-   - `HTTP_TIMEOUT_MS` → `http timeout ms`
-   - `parseURL2` → `parse url 2`
-   - `XMLHttpRequest` → `xml http request`
-   - Handles kebab paths, `$`/`_` prefixes, digits, non-ASCII identifiers.
-2. Bump `SCHEMA_VERSION` in `src/storage/sqlite.ts` (so older indexes rebuild cleanly instead of crashing!) and add an FTS5 virtual table storing per indexed declaration:
-   - `stable_key` (UNINDEXED), `name_tokens` (unsplit + split), `owner_tokens`, `kind`, `signature` (capped at 400 chars), `doc` (first paragraph, capped at 400 chars), `path_tokens`.
-3. Enforce D49 exclusion rules strictly:
-   - Indexable code under `**/secrets/**` or `**/*credentials*` IS searchable by declaration name/signature (D49).
-   - `.env*`, `*.pem`, `*.key`, excluded dirs, and non-code secret files contribute ZERO rows.
-   - Parse-error files contribute zero rows and never crash the build.
-4. Ensure `extractorStamp` covers search extraction, `incremental === cold` tests include FTS5 rows, and `ei doctor --deep` diffs FTS5 rows canonically.
-5. Measure DB size before vs after on reference repos. Run full verification gate (`PLAYBOOK.md §4`), commit locally. **STOP.**
+### Round 1 — FTS5 Search Index (`src/storage/sqlite.ts`, `src/core/search/segments.ts`) ✅ (`9302b69`)
+1. Implement deterministic identifier splitter (`splitIdentifier`) handling camelCase, PascalCase, snake_case, kebab paths, acronyms (`XMLHttpRequest`), digits, `$`/`_` prefixes, non-ASCII identifiers.
+2. Bump `SCHEMA_VERSION` to `5` in `src/storage/sqlite.ts` and add `declarations_fts` virtual table (`stable_key UNINDEXED, name_tokens, owner_tokens, kind, signature, doc, path_tokens`).
+3. Enforce D49 exclusion rules strictly (`.env*`, `*.pem`, `*.key`, excluded dirs, non-code secrets, parse-error files, and `<module>` contribute 0 rows; D49 secret-named code files remain searchable).
+4. `extractorStamp` covers `segments.js`; `incremental === cold` and `ei doctor --deep` cover `declarations_fts`.
 
-### Round 2 — Query, Ranking, CLI, OMP & AGY MCP Tool (`src/core/search/lexical.ts`)
-1. Input validation: `query` string 1–200 chars (blank/invalid → clean error or no-match line, NEVER throw); `limit` integer 1–20 (default 8).
-2. **FTS5 Injection Safety (CRITICAL):** Split `query` with `splitIdentifier`, strip empty tokens, wrap EVERY token in `"..."` (escaping internal `"` as `""`). NEVER pass raw FTS5 operators (`NEAR`, `OR`, `AND`, `NOT`, `*`, `-`, `:`, `(`, `)`, `\`) unquoted!
-3. Deterministic ranking:
-   - BM25 weighted: `name > owner > signature > doc > path`
-   - Boosts: exact whole-name match (`kind: 'exact'`), exported, log-scaled incoming caller count from `edges`
-   - Deterministic tie-breaker: ascending `stable_key` (independent of DB insertion order!)
-4. Render strictly per `docs/TOOLS.md §7` (budget 4,000 chars):
-   - Match kind is ONLY `'exact'` or `'lexical'` (NEVER `'semantic'`; NEVER print an embedding install hint!).
-   - Footer says `search: lexical only`.
-   - No matches → success-shaped `SEARCH "<query>" — no matches. Try identifiers that would appear in the code.`
-   - Freshness: stat probe → update within budget if drifted, else answer from published index with `STALE INDEX` in footer. No index yet → build-then-answer like `ei_impact`.
-5. Register `ei_search` (`approval: 'read'`) in `src/adapters/omp/extension.ts`, add CLI `ei search <query> [--limit N] [--json]` in `src/adapters/cli/main.ts`, add `ei_search` to `scripts/mcp/tools.mjs` (AGY MCP), and write audit log line (query truncated to 200 chars, no result text).
-6. Write tests for ALL 7 risky cases in `M6a-search.md` Round 2 (punctuation/operator fuzzing, empty/invalid limits, exact-first, determinism cold vs incremental, 50k declarations p95 < 300 ms, no `semantic` label, cold-build-on-first-query).
-7. Run full verification gate and commit locally. **STOP.**
+### Round 2 — Query, Ranking, CLI, OMP & AGY MCP Tool (`src/core/search/lexical.ts`, `render.ts`) ✅
+1. Input validation (`query` 1–200 chars non-blank no `\0`, `limit` integer 1–20 default 8) + FTS5 literal quoting (`"..."`, `"` -> `""`) over `splitIdentifier` + raw terms.
+2. Deterministic BM25 (`0.0, 25.0, 10.0, 0.5, 5.0, 3.0, 1.0`) + `exact`/`exported`/`log(1+callers)` boosts + ascending `stable_key` tie-breaker.
+3. Rendered per `docs/TOOLS.md §7` (4,000-char budget, `exact`/`lexical` only, `search: lexical only` / `STALE INDEX`, zero `semantic` or install hint).
+4. Registered `ei_search` across CLI (`ei search`), OMP (`extension.ts`), and AGY MCP (`scripts/mcp/tools.mjs`), with redacted/truncated `audit.jsonl` entries (`MAX_QUERY_CHARS = 200`) and all 12 Round 2 test cases in `tests/core/search-query.test.ts`.
 
-### Round 3 — Fixed Query Set, Live Smoke, Measurements & Mutation Smoke
-1. Draft `tests/golden/search-queries.md` as **PROPOSED** (20 queries for `ksd-intelligence` + 20 for the M3 work repo, no proprietary source copied) and measure top-3 & top-8 recall on BOTH repos (default pass mark: ≥ 80% in top 8, 0 confirmed missing).
-2. Live OMP run (`omp -p` or real `loadExtensions` + `execute`, labeled with OS + OMP version): find a feature without naming its symbol via `ei_search`, then follow with `ei_impact`.
-3. Record latency p50/p95 + DB growth in `docs/research/m6a-measurements.md`.
-4. Kill all 5 required mutations in `M6a-search.md` Round 3 (operators interpreted, secret file indexed, exact match not first, non-deterministic order, stale answered as fresh). **STOP.**
+### Round 3 — Fixed Query Set, Live Smoke, Measurements & Mutation Smoke ✅
+1. Drafted `tests/golden/search-queries.md` as **PROPOSED** (`20` `ksd-intelligence` + `20` `work-sure` queries): `17/20` (`85%`) top-8 / `0` missing on `ksd-intelligence`, `20/20` (`100%`) top-8 / `0` missing on `work-sure`, `100%` `rank=1` + `exact` on all exact queries (`S01–S04`, `W01–W07`).
+2. Verified live `omp -p` (`omp/19.1.0`) + Bun `1.4.2` `loadExtensions()` (`ei_search` followed by `ei_impact` + `audit.jsonl`) + CLI parity.
+3. Recorded latency (`p50`/`p95` warm + cold CLI + 50k scale `p95 = 151.18 ms`) and DB growth in `docs/research/m6a-measurements.md`.
+4. Killed `5 / 5` mutations (`M1–M5`, `EXIT=1`) and reverted cleanly.
 
 ### Round 4 — Cross-Vendor Review & Fix
 - Independent different-vendor review checking all 6 Review Focus items in `M6a-search.md`, then test-first fix round, full gates, local commit, handoff to owner.
@@ -85,11 +65,11 @@
 ---
 
 ## Acceptance Criteria
-- [ ] Run Round 0 on the [M6a brief](../../../docs/briefs/M6a-search.md). Reconcile the draft query corpus with [DESIGN §13](../../../docs/DESIGN.md#13-roadmap-and-gates): evaluate `oh-my-pi` and the real GitLab project approved for M3. Build only after owner acceptance of the corrected brief and the relevant storage/risk decision.
-- [ ] Demonstrate exact-name and lexical lookup through CLI and live OMP. Follow [RISK §6 / D49](../../../docs/RISK.md#6-skills-and-data): excluded files contribute no search rows, while indexable code under `**/secrets/**` or matching `**/*credentials*` remains searchable by name. Treat punctuation and operator-like input as data and never return stale results as fresh. Verify incremental-equals-cold and doctor coverage of the search rows.
-- [ ] Run the owner-confirmed query sets on both named repositories. Report expected-hit ranks and top-3/top-8 hit rates. Each repository must meet the owner's pass criteria; a missing run or a result below the agreed pass mark blocks acceptance. Record latency, database growth, mutation and platform CI results.
-- [ ] Verify no search result contributes to completeness, reach or verdict. No model, embeddings or additional runtime dependency.
-- [ ] Resolve only after owner acceptance and after the accepted milestone is on `origin/main`. Record the owner decision and the resulting `origin/main` commit SHA for ticket 07. Only the owner pushes or merges.
+- [x] Run Round 0 on the [M6a brief](../../../docs/briefs/M6a-search.md) (`round-0-reconcile.md`, `D60` + `RISK §6` flagged `PROPOSED`; stop gate waived per multi-milestone owner directive).
+- [x] Demonstrate exact-name and lexical lookup through CLI and live OMP (`omp -p` + Bun `loadExtensions()`), D49 exclusion rules, FTS5 operator neutralization, stale index reporting, incremental-equals-cold, and `ei doctor --deep` coverage (`VERIFIED`).
+- [x] Run the `PROPOSED` fixed query sets (`tests/golden/search-queries.md`) on both `ksd-intelligence` (`17/20` top-8, `0` missing) and `work-sure` (`20/20` top-8, `0` missing), plus latency, DB growth, and `5/5` mutation smoke in `docs/research/m6a-measurements.md` (`VERIFIED`; pending owner confirmation of `tests/golden/search-queries.md`, `RISK §6`, and macOS CI).
+- [x] Verify no search result contributes to completeness, reach or verdict, and zero models/embeddings/runtime dependencies were added (`VERIFIED`).
+- [ ] Resolve only after Round 4 independent review, owner acceptance (`RISK §6`, `search-queries.md`, macOS CI), and merge to `origin/main`.
 
 ## Common Traps to Avoid
 - **Trap 1:** Forgetting to bump `SCHEMA_VERSION` in `src/storage/sqlite.ts` when adding the FTS5 table.

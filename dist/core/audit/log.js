@@ -6,6 +6,7 @@ export const AUDIT_FILE = 'audit.jsonl';
 export const MAX_AUDIT_BYTES = 5 * 1024 * 1024;
 export const MAX_ROTATIONS = 3;
 export const MAX_TASK_CHARS = 200;
+export const MAX_QUERY_CHARS = 200;
 const failureStates = new Map();
 function errorCodeOf(error) {
     if (typeof error === 'object' && error !== null && 'code' in error) {
@@ -136,6 +137,21 @@ function sanitizeEntry(entry, options) {
             maxLen: MAX_TASK_CHARS,
         });
     }
+    if (entry.query !== undefined) {
+        clean.query = sanitizeAuditText(entry.query, {
+            env: options.env,
+            root: options.root,
+            maxLen: MAX_QUERY_CHARS,
+        });
+    }
+    if (entry.limit !== undefined)
+        clean.limit = entry.limit;
+    if (entry.hitsCount !== undefined)
+        clean.hitsCount = entry.hitsCount;
+    if (entry.totalMatches !== undefined)
+        clean.totalMatches = entry.totalMatches;
+    if (entry.indexState !== undefined)
+        clean.indexState = entry.indexState;
     if (entry.stage !== undefined)
         clean.stage = entry.stage;
     if (entry.type !== undefined)
@@ -438,5 +454,42 @@ export function auditFieldsForChanges(outcome, fallbackEngine) {
                 plannedUnchangedCount: v.plan.unchanged.length,
             }
             : {}),
+    };
+}
+export function auditFieldsForSearch(outcome, fallbackEngine, rawQuery, rawLimit) {
+    const safeLimit = typeof rawLimit === 'number' && Number.isInteger(rawLimit) ? rawLimit : undefined;
+    if (outcome.kind === 'failure') {
+        return {
+            outcome: 'failure',
+            engine: fallbackEngine,
+            ...(rawQuery !== undefined ? { query: rawQuery } : {}),
+            ...(safeLimit !== undefined ? { limit: safeLimit } : {}),
+            code: outcome.code,
+            codes: [outcome.code],
+        };
+    }
+    if (outcome.kind === 'guidance') {
+        return {
+            outcome: 'guidance',
+            engine: fallbackEngine,
+            ...(rawQuery !== undefined ? { query: rawQuery } : {}),
+            ...(safeLimit !== undefined ? { limit: safeLimit } : {}),
+            code: outcome.code,
+            codes: [outcome.code],
+        };
+    }
+    const v = outcome.value;
+    return {
+        outcome: 'result',
+        engine: v.engine.version || fallbackEngine,
+        ...(v.engine.typescript && v.engine.typescript !== 'unknown'
+            ? { ts_version: v.engine.typescript }
+            : {}),
+        query: v.query,
+        limit: v.limit,
+        hitsCount: v.hits.length,
+        totalMatches: v.totalMatches,
+        indexState: v.indexState,
+        ...(v.indexState === 'stale' ? { codes: ['stale-index'] } : {}),
     };
 }

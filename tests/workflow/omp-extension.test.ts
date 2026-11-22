@@ -55,7 +55,7 @@ function mockPi(): {
   return { pi, registered };
 }
 
-it('registers read-only ei_workflow, ei_status, ei_impact and ei_changes tools', () => {
+it('registers read-only ei_workflow, ei_status, ei_impact, ei_changes and ei_search tools', () => {
   const { pi, registered } = mockPi();
   extension(pi, { env: {}, createPolicyExtension: noPolicy });
   assert.deepEqual(
@@ -65,6 +65,7 @@ it('registers read-only ei_workflow, ei_status, ei_impact and ei_changes tools',
       ['ei_status', 'read'],
       ['ei_impact', 'read'],
       ['ei_changes', 'read'],
+      ['ei_search', 'read'],
     ],
   );
   const params = registered[1]?.parameters;
@@ -76,6 +77,9 @@ it('registers read-only ei_workflow, ei_status, ei_impact and ei_changes tools',
   const changesParams = registered[3]?.parameters;
   assert.ok(changesParams && 'keys' in changesParams);
   assert.deepEqual(changesParams.keys, ['base', 'depth', 'planned']);
+  const searchParams = registered[4]?.parameters;
+  assert.ok(searchParams && 'keys' in searchParams);
+  assert.deepEqual(searchParams.keys, ['query', 'limit']);
 });
 
 it('EI_DISABLED=1 skips the ei_* tools only', () => {
@@ -101,7 +105,7 @@ it('a failing policy module does not prevent the ei_* tools from registering', (
   });
   assert.deepEqual(
     registered.map((tool) => tool.name),
-    ['ei_workflow', 'ei_status', 'ei_impact', 'ei_changes'],
+    ['ei_workflow', 'ei_status', 'ei_impact', 'ei_changes', 'ei_search'],
   );
 });
 

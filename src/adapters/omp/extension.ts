@@ -16,6 +16,7 @@
 import {
   auditFieldsForChanges,
   auditFieldsForImpact,
+  auditFieldsForSearch,
   auditFieldsForWorkflow,
   consumeAuditWarning,
   recordAudit,
@@ -28,6 +29,8 @@ import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspac
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession, type ImpactSessionOptions } from '../../core/impact/session.js';
 import { isRecord } from '../../core/kernel/guards.js';
+import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
+import { renderSearchOutcome } from '../../core/search/render.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
@@ -70,6 +73,11 @@ interface ChangesParams {
   base?: string;
   depth?: number;
   planned?: string[];
+}
+
+interface SearchParams {
+  query: string;
+  limit?: number;
 }
 
 interface ToolResult {
@@ -587,6 +595,134 @@ function registerEiChanges(
   });
 }
 
+function registerEiSearch(
+  pi: OmpExtensionApi,
+  deps: ExtensionDeps,
+  env: NodeJS.ProcessEnv,
+  sessions: Map<string, ImpactSession>,
+): void {
+  const z = pi.zod;
+
+  const limitSchema = (() => {
+    const base = z.number ? z.number() : z.string();
+    const int = base.int ? base.int() : base;
+    const min = int.min ? int.min(1) : int;
+    const max = min.max ? min.max(20) : min;
+    return max.optional().describe('Maximum matches to return (1–20, default 8)');
+  })();
+
+  pi.registerTool<SearchParams>({
+    name: 'ei_search',
+    label: 'KSD Code Search',
+    description:
+      'Find where something is implemented when you do not know the symbol name. Give a few words or identifiers ("retry payment webhook", "session cookie parse"). Returns ranked declarations with file:line. For a symbol you can already name, call ei_impact directly.',
+    parameters: z.object({
+      query: z.string().describe('1–200 characters of words or identifiers to search for'),
+      limit: limitSchema,
+    }),
+    approval: 'read',
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      if (signal?.aborted) return errorResult('Cancelled');
+      const started = performance.now();
+      const rawQuery = isRecord(params) ? params.query : undefined;
+      const rawLimit = isRecord(params) ? params.limit : undefined;
+      const recordInvalid = async (queryText?: string, limitVal?: number): Promise<void> => {
+        const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+        if (cache === null) return;
+        recordAudit(
+          cache.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_search',
+            adapter: 'omp',
+            outcome: 'failure',
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            code: 'INVALID_INPUT',
+            codes: ['INVALID_INPUT'],
+            ...(queryText !== undefined ? { query: queryText } : {}),
+            ...(limitVal !== undefined && Number.isInteger(limitVal) ? { limit: limitVal } : {}),
+          },
+          { env, root: cache.root },
+        );
+      };
+      try {
+        const valid = validateSearchInput(rawQuery, rawLimit);
+        if (!valid.ok) {
+          await recordInvalid(
+            typeof rawQuery === 'string' ? rawQuery : undefined,
+            typeof rawLimit === 'number' ? rawLimit : undefined,
+          );
+          return errorResult(`INVALID_INPUT: ${valid.message}`);
+        }
+
+        const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+        let session = sessions.get(workspace.cacheDir);
+        if (session === undefined) {
+          session = new ImpactSession(workspace, deps.impactSession);
+          sessions.set(workspace.cacheDir, session);
+        }
+
+        const outcome = await runSearch(session, {
+          query: valid.query,
+          limit: valid.limit,
+          signal,
+          onProgress: (message, data) => {
+            onUpdate?.({ content: [{ type: 'text', text: message }], details: data });
+          },
+        });
+        if (signal?.aborted) return errorResult('Cancelled');
+
+        const text = renderSearchOutcome(outcome);
+        if (text === 'Cancelled') return errorResult('Cancelled');
+        recordAudit(
+          workspace.cacheDir,
+          {
+            ts: new Date().toISOString(),
+            tool: 'ei_search',
+            adapter: 'omp',
+            outcome: outcome.kind,
+            ms: performance.now() - started,
+            engine: engineVersion(),
+            ...auditFieldsForSearch(outcome, engineVersion(), valid.query, valid.limit),
+          },
+          { env, root: workspace.root },
+        );
+        if (outcome.kind === 'failure') {
+          return { isError: true, content: [{ type: 'text', text }], details: outcome };
+        }
+        if (outcome.kind === 'guidance') {
+          return { content: [{ type: 'text', text }], details: outcome };
+        }
+        return { content: [{ type: 'text', text }], details: outcome.value };
+      } catch (error) {
+        if (signal?.aborted) return errorResult('Cancelled');
+        const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
+        if (cache !== null) {
+          recordAudit(
+            cache.cacheDir,
+            {
+              ts: new Date().toISOString(),
+              tool: 'ei_search',
+              adapter: 'omp',
+              outcome: 'error',
+              ms: performance.now() - started,
+              engine: engineVersion(),
+              code: 'index-failed',
+              ...(typeof rawQuery === 'string' ? { query: rawQuery } : {}),
+            },
+            { env, root: cache.root },
+          );
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return errorResult(
+          `index-failed: ${message}. Retry once; if it fails again, continue without ei_search and say so in your report.`,
+        );
+      }
+    },
+  });
+}
+
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(
   pi: OmpExtensionApi,
@@ -628,5 +764,11 @@ export default function ksdIntelligenceExtension(
     registerEiChanges(pi, deps, env, sessions);
   } catch (error) {
     warnLoad('ei_changes tool', error);
+  }
+
+  try {
+    registerEiSearch(pi, deps, env, sessions);
+  } catch (error) {
+    warnLoad('ei_search tool', error);
   }
 }

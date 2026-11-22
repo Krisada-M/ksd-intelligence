@@ -465,6 +465,24 @@ export class ImpactSession {
      * `'stat'`. Caller owns closing the returned `db` when non-null.
      */
     async prepareForChanges(callOptions = {}) {
+        return this.prepareSessionDb('hash', callOptions, true);
+    }
+    /**
+     * Ensure the published index is ready for lexical search using configured freshness (`'stat'`
+     * by default). Caller owns closing the returned `db` when non-null.
+     */
+    async prepareForSearch(callOptions = {}) {
+        const ctx = await this.prepareSessionDb(this.workspace.config.impact.freshness, callOptions, false);
+        return {
+            db: ctx.db,
+            indexState: ctx.indexState,
+            updatedFiles: ctx.updatedFiles,
+            driftedFiles: ctx.driftedFiles,
+            staleReason: ctx.staleReason,
+            failureMessage: ctx.failureMessage,
+        };
+    }
+    async prepareSessionDb(freshness, callOptions = {}, capturePreUpdate = false) {
         if (callOptions.signal?.aborted) {
             return {
                 db: null,
@@ -498,8 +516,10 @@ export class ImpactSession {
                     if (persistedFailure !== null)
                         staleReason = `update failed: ${persistedFailure}`;
                     const files = readFiles(db);
-                    preUpdateIndexable = new Set(files.filter((f) => f.status === 'indexable').map((f) => f.path));
-                    const drift = await probe(this.workspace.root, this.workspace.config.impact, files, 'hash');
+                    if (capturePreUpdate) {
+                        preUpdateIndexable = new Set(files.filter((f) => f.status === 'indexable').map((f) => f.path));
+                    }
+                    const drift = await probe(this.workspace.root, this.workspace.config.impact, files, freshness);
                     driftedFiles = [...new Set([...drift.added, ...drift.changed, ...drift.deleted])].sort();
                     if (meta.config_hash !== configHash) {
                         staleReason = 'index configuration changed';
