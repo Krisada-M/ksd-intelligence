@@ -23,6 +23,18 @@ No upstream `SKILL.md` content is stored in this repo. `skills.lock.json` pins t
 
 Use is personal and non-commercial.
 
+## Bundled platform-agnostic skill pack wrappers (`skills/`)
+
+Thin KSD-native wrapper `SKILL.md` files under `skills/` (authored for KSD orchestration across AGY and OMP; no upstream `SKILL.md` text is copied). Each pack preserves upstream attribution and points to the pinned repositories above:
+
+| Pack | Where | Upstream attribution |
+|---|---|---|
+| `ksd-intelligence` | `skills/ksd-intelligence/SKILL.md` | Local KSD orchestrator (MIT) |
+| `matt-sdlc` | `skills/matt-sdlc/SKILL.md` | Matt Pocock (`mattpocock/skills`, MIT) |
+| `pstack-analysis` | `skills/pstack-analysis/SKILL.md` | Lauren Tan / poteto (`cursor/plugins` `pstack/`, MIT) |
+| `poteto-mode` | `skills/poteto-mode/SKILL.md` | Lauren Tan / poteto (`cursor/plugins` `pstack/skills/poteto-mode/SKILL.md`, MIT); explicit opt-in only |
+| `osmani-quality` | `skills/osmani-quality/SKILL.md` | Addy Osmani (`addyosmani/agent-skills`, MIT) |
+
 ## Merged code (M1c)
 
 | Source | What was moved | Where |

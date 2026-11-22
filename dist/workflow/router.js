@@ -1,5 +1,6 @@
 import { classifyTask } from './classify.js';
-import { RISKS, STAGES, TASK_TYPES, WorkflowError, isOneOf, } from './types.js';
+import { packForSkillId } from './packs.js';
+import { COMPLIANCE_DIMENSIONS, ORCHESTRATOR_SKILL_ID, RISKS, STAGES, TASK_TYPES, WorkflowError, isOneOf, } from './types.js';
 // One primary skill per stage, indexed by STAGES order:
 // plan, investigate, implement, verify, review, ship.
 const WORKFLOWS = {
@@ -52,6 +53,10 @@ const WORKFLOWS = {
         'osmani:shipping-and-launch',
     ],
 };
+const REQ_COMPLIANCE_RE = /\b(?:req|reqs|requirement|requirements|acceptance criteria|req mismatch|spec mismatch|requirement compliance)\b/i;
+export function hasRequirementComplianceSignal(task) {
+    return REQ_COMPLIANCE_RE.test(task);
+}
 function invalid(field, value, allowed) {
     return new WorkflowError('INVALID_INPUT', `invalid ${field} ${JSON.stringify(value)}; expected one of: ${allowed.join(', ')}`);
 }
@@ -62,7 +67,7 @@ function primarySkill(type, stage) {
     return skill;
 }
 export function routeTask(input) {
-    const { task, stage = 'plan', risk = 'normal', type } = input;
+    const { task, stage = 'plan', risk = 'normal', type, potetoMode = false } = input;
     if (typeof task !== 'string' || !task.trim())
         throw new WorkflowError('INVALID_INPUT', 'non-empty task required');
     if (!isOneOf(STAGES, stage))
@@ -71,14 +76,52 @@ export function routeTask(input) {
         throw invalid('risk', risk, RISKS);
     if (type !== undefined && !isOneOf(TASK_TYPES, type))
         throw invalid('type', type, TASK_TYPES);
+    if (typeof potetoMode !== 'boolean') {
+        throw new WorkflowError('INVALID_INPUT', 'potetoMode must be a boolean');
+    }
     const cleanTask = task.trim();
     const resolved = type === undefined ? classifyTask(cleanTask) : { type, classifiedBy: 'caller' };
-    const skillIds = [primarySkill(resolved.type, stage)];
+    const primary = primarySkill(resolved.type, stage);
+    const primaryPack = packForSkillId(primary);
+    const skillIds = [primary];
+    const secondaryPacks = [];
+    const secondaryReasons = {};
+    const addSecondary = (pack, reason) => {
+        if (pack === primaryPack || secondaryPacks.includes(pack))
+            return;
+        secondaryPacks.push(pack);
+        secondaryReasons[pack] = reason;
+    };
     // High risk adds at most one extra reviewer/verifier, and only at review/verify.
-    if (risk === 'high' && stage === 'review')
+    if (risk === 'high' && stage === 'review') {
         skillIds.push('poteto:blast-radius');
-    if (risk === 'high' && stage === 'verify')
+        addSecondary('pstack-analysis', 'high-risk-review');
+    }
+    if (risk === 'high' && stage === 'verify') {
         skillIds.push('osmani:security-and-hardening');
+        addSecondary('osmani-quality', 'high-risk-verify');
+    }
+    const reqSignal = hasRequirementComplianceSignal(cleanTask);
+    const stageRequiresCompliance = stage === 'verify' || stage === 'review' || stage === 'ship';
+    const requirementCompliance = {
+        required: reqSignal || stageRequiresCompliance,
+        dimensions: COMPLIANCE_DIMENSIONS,
+        trigger: reqSignal ? 'keyword' : stageRequiresCompliance ? 'stage' : 'none',
+    };
+    // Explicit REQ mismatch / compliance review justifies invoking Matt's code-review as secondary.
+    if (reqSignal && stage === 'review') {
+        skillIds.push('matt:code-review');
+        addSecondary('matt-sdlc', 'requirement-compliance');
+    }
+    else if (reqSignal && stage === 'verify') {
+        addSecondary('matt-sdlc', 'requirement-compliance');
+    }
+    // `poteto-mode` is strictly opt-in; KSD remains primary orchestrator and never auto-enables it.
+    const optInPacks = [];
+    if (potetoMode) {
+        optInPacks.push('poteto-mode');
+        addSecondary('poteto-mode', 'explicit-opt-in');
+    }
     return {
         task: cleanTask,
         type: resolved.type,
@@ -86,6 +129,12 @@ export function routeTask(input) {
         stage,
         risk,
         skillIds: [...new Set(skillIds)],
+        orchestrator: ORCHESTRATOR_SKILL_ID,
+        primaryPack,
+        secondaryPacks,
+        secondaryReasons,
+        optInPacks,
+        requirementCompliance,
         mayMerge: false,
         mayDeploy: false,
     };

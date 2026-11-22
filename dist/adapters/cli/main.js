@@ -7,10 +7,15 @@ import { loadWorkspace } from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { initProject } from '../../core/workspace/init.js';
+import { discoverAgySkills } from '../agy/skills.js';
+import { discoverOmpSkills } from '../omp/skills.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
+import { listSkillPacks } from '../../workflow/packs.js';
+import { defaultRegistryPath, readRegistry, validateRegistryConsistency, } from '../../workflow/registry.js';
 import { renderWorkflow } from '../../workflow/render.js';
 import { routeTask } from '../../workflow/router.js';
+import { checkUpstreamUpdates, publishStagedUpdate, rollbackSkillUpdate, stageSkillUpdate, } from '../../workflow/updates.js';
 import { checkSources, defaultLockPath, formatReports, readLock, reportStatus, writeLock, } from '../../workflow/sources.js';
 function doctorPassed(report) {
     const differences = report.differences;
@@ -53,8 +58,13 @@ const USAGE = `usage:
   main.js impact <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
   main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status [--root <path>] [--json]         (index, coverage, runtime, TypeScript, store, lock)
-  main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui]
+  main.js route --task "..." [--stage plan|investigate|implement|verify|review|ship] [--risk normal|high] [--type bug|feature|refactor|security|performance|ui] [--poteto-mode]
   main.js load  --task "..." [same options]      (needs checkouts; fails closed)
+  main.js skills list|check [--platform agy|omp] [--root <path>] [--profile <name>] [--detect-host] [--json]
+  main.js skills diff [--lock <path>] [--registry <path>] [--json]
+  main.js skills sync [--stage] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
+  main.js skills publish --stage-id <id> --approve [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
+  main.js skills rollback [--release <id>] [--state-dir <path>] [--lock <path>] [--registry <path>] [--json]
   main.js sources check [--write] [--lock <path>]  (never clones or fetches)
   main.js mcp   --root <path> [--workflow]        (local stdio MCP server for Antigravity)`;
 async function run(argv) {
@@ -70,6 +80,15 @@ async function run(argv) {
             stage: { type: 'string' },
             risk: { type: 'string' },
             type: { type: 'string' },
+            'poteto-mode': { type: 'boolean' },
+            platform: { type: 'string' },
+            profile: { type: 'string' },
+            'detect-host': { type: 'boolean' },
+            registry: { type: 'string' },
+            'state-dir': { type: 'string' },
+            'stage-id': { type: 'string' },
+            release: { type: 'string' },
+            approve: { type: 'boolean' },
             write: { type: 'boolean' },
             lock: { type: 'string' },
             check: { type: 'boolean' },
@@ -82,6 +101,7 @@ async function run(argv) {
     });
     const [command, sub] = positionals;
     const lockPath = values.lock ?? defaultLockPath();
+    const registryPath = values.registry ?? defaultRegistryPath();
     if (command === 'setup') {
         const version = pinnedTypescriptVersion();
         // --check only reads files; plain setup is the one command that uses the network (D44).
@@ -237,6 +257,7 @@ async function run(argv) {
             stage: values.stage,
             risk: values.risk,
             type: values.type,
+            potetoMode: values['poteto-mode'] === true,
         };
         if (command === 'route') {
             console.log(JSON.stringify(routeTask(query), null, 2));
@@ -249,6 +270,123 @@ async function run(argv) {
             lock: await readLock(lockPath),
         });
         console.log(renderWorkflow(workflow));
+        return 0;
+    }
+    if (command === 'skills' && (sub === 'list' || sub === 'check')) {
+        const rawPlatform = values.platform ?? 'omp';
+        if (rawPlatform !== 'agy' && rawPlatform !== 'omp') {
+            console.error(`invalid --platform ${JSON.stringify(rawPlatform)}; expected agy or omp`);
+            return 2;
+        }
+        const platform = rawPlatform;
+        const result = platform === 'agy'
+            ? await discoverAgySkills({
+                workspaceRoot: values.root,
+                detectHostPaths: values['detect-host'] === true,
+                requireCatalog: true,
+            })
+            : await discoverOmpSkills({
+                workspaceRoot: values.root,
+                profile: values.profile,
+                detectHostPaths: values['detect-host'] === true,
+                requireCatalog: true,
+            });
+        const registryIssues = sub === 'check'
+            ? await validateRegistryConsistency(await readRegistry(registryPath), await readLock(lockPath))
+            : [];
+        const totalIssues = result.issues.length + registryIssues.length;
+        if (values.json === true) {
+            console.log(JSON.stringify(sub === 'list'
+                ? { platform, packs: listSkillPacks(), discovery: result }
+                : { ...result, registryIssues }, null, 2));
+            return sub === 'check' && totalIssues > 0 ? 1 : 0;
+        }
+        console.log(`SKILLS ${platform} · ${result.skills.length} discovered (${result.autoVisible.length} auto, ${result.explicitOnly.length} opt-in) · ${totalIssues} issues`);
+        for (const skill of result.skills) {
+            const mode = skill.explicitOnly ? 'opt-in' : 'auto';
+            console.log(`  ${skill.name.padEnd(28)} ${mode.padEnd(8)} ${skill.sourceLabel}`);
+        }
+        for (const issue of result.issues) {
+            console.log(`  ISSUE ${issue.code}: ${issue.message}`);
+        }
+        for (const issue of registryIssues) {
+            console.log(`  REGISTRY ${issue.code}: ${issue.message}`);
+        }
+        return sub === 'check' && totalIssues > 0 ? 1 : 0;
+    }
+    if (command === 'skills' && sub === 'diff') {
+        const check = await checkUpstreamUpdates({
+            roots: rootsFromEnv(process.env),
+            lockPath,
+            registryPath,
+        });
+        if (values.json === true) {
+            console.log(JSON.stringify(check, null, 2));
+            return check.blockingFindings.length > 0 ? 1 : 0;
+        }
+        console.log(`SKILLS DIFF · updates=${check.hasUpdates ? 'yes' : 'no'} · blocking=${check.blockingFindings.length} · warnings=${check.findings.length - check.blockingFindings.length}`);
+        for (const p of check.providers) {
+            console.log(`  ${p.provider.padEnd(8)} commit ${(p.previousCommit ?? '-').slice(0, 12)} -> ${(p.nextCommit ?? '-').slice(0, 12)} · changed=${p.changed.length} added=${p.added.length} removed=${p.removed.length} renamed=${p.renamed.length}`);
+        }
+        for (const finding of check.findings) {
+            console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}: ${finding.message}`);
+        }
+        return check.blockingFindings.length > 0 ? 1 : 0;
+    }
+    if (command === 'skills' && sub === 'sync') {
+        const { stagePath, staged } = await stageSkillUpdate({
+            roots: rootsFromEnv(process.env),
+            lockPath,
+            registryPath,
+            stateDir: values['state-dir'],
+            workspaceRoot: values.root,
+        });
+        if (values.json === true) {
+            console.log(JSON.stringify({ stagePath, staged }, null, 2));
+            return staged.validation.ok ? 0 : 1;
+        }
+        console.log(`SKILLS SYNC ${staged.status.toUpperCase()} · stageId=${staged.stageId} · agy=${staged.validation.runtimes.agy.ok ? 'OK' : 'FAIL'} · omp=${staged.validation.runtimes.omp.ok ? 'OK' : 'FAIL'} · file=${stagePath}`);
+        for (const finding of staged.diff.findings) {
+            console.log(`  [${finding.severity.toUpperCase()}] ${finding.code}: ${finding.message}`);
+        }
+        if (staged.validation.ok) {
+            console.log(`Next: review diff, then run: ei skills publish --stage-id ${staged.stageId} --approve`);
+        }
+        return staged.validation.ok ? 0 : 1;
+    }
+    if (command === 'skills' && sub === 'publish') {
+        const stageId = values['stage-id'];
+        if (!stageId) {
+            console.error('usage: main.js skills publish --stage-id <id> --approve [--state-dir <path>]');
+            return 2;
+        }
+        const { snapshotPath, snapshot } = await publishStagedUpdate({
+            stageId,
+            approve: values.approve === true,
+            lockPath,
+            registryPath,
+            stateDir: values['state-dir'],
+            force: values.force === true,
+        });
+        if (values.json === true) {
+            console.log(JSON.stringify({ snapshotPath, snapshot }, null, 2));
+            return 0;
+        }
+        console.log(`SKILLS PUBLISHED releaseId=${snapshot.releaseId} from ${snapshot.stageId} · rollback snapshot=${snapshotPath}`);
+        return 0;
+    }
+    if (command === 'skills' && sub === 'rollback') {
+        const restored = await rollbackSkillUpdate({
+            releaseId: values.release,
+            lockPath,
+            registryPath,
+            stateDir: values['state-dir'],
+        });
+        if (values.json === true) {
+            console.log(JSON.stringify(restored, null, 2));
+            return 0;
+        }
+        console.log(`SKILLS ROLLED BACK to previous state of release ${restored.restoredFrom}`);
         return 0;
     }
     if (command === 'sources' && sub === 'check') {

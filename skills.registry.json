@@ -1,0 +1,181 @@
+{
+  "version": 1,
+  "orchestrator": "ksd-intelligence",
+  "lockfile": "skills.lock.json",
+  "providers": {
+    "matt": {
+      "repo": "https://github.com/mattpocock/skills.git",
+      "commit": "4ae2317ddb22b046e26455e4f9c9b3aaaf62212d",
+      "rootSubpath": "skills/engineering",
+      "license": "MIT",
+      "attribution": "Matt Pocock",
+      "adaptationBoundary": "upstream-read-only"
+    },
+    "poteto": {
+      "repo": "https://github.com/cursor/plugins.git",
+      "commit": "6b0300214a09fd6029cfb7077043125758cd1fd2",
+      "rootSubpath": "pstack/skills",
+      "license": "MIT",
+      "attribution": "Lauren Tan (poteto / pstack)",
+      "adaptationBoundary": "upstream-read-only"
+    },
+    "osmani": {
+      "repo": "https://github.com/addyosmani/agent-skills.git",
+      "commit": "301b02b12bff98e4688e6984af6556802322bbde",
+      "rootSubpath": "skills",
+      "license": "MIT",
+      "attribution": "Addy Osmani",
+      "adaptationBoundary": "upstream-read-only"
+    }
+  },
+  "packs": {
+    "matt-sdlc": {
+      "id": "matt-sdlc",
+      "owner": "matt",
+      "provider": "matt",
+      "activation": "auto",
+      "disableModelInvocation": false,
+      "supportedRuntimes": ["agy", "omp"],
+      "dependencies": {
+        "providers": ["matt"],
+        "leafSkills": [
+          "matt:diagnosing-bugs",
+          "matt:codebase-design",
+          "matt:tdd",
+          "matt:code-review"
+        ],
+        "packs": []
+      },
+      "upstream": {
+        "repo": "https://github.com/mattpocock/skills.git",
+        "rootSubpath": "skills/engineering",
+        "sourcePaths": [
+          "diagnosing-bugs/SKILL.md",
+          "codebase-design/SKILL.md",
+          "tdd/SKILL.md",
+          "code-review/SKILL.md",
+          "grill-with-docs/SKILL.md",
+          "to-spec/SKILL.md",
+          "domain-modeling/SKILL.md",
+          "implement/SKILL.md",
+          "implement-spec/SKILL.md"
+        ]
+      },
+      "ksdAdaptation": {
+        "wrapperPath": "skills/matt-sdlc/SKILL.md",
+        "localPolicyOwner": "ksd-intelligence",
+        "runtimeNotes": {
+          "agy": "Discovered via .agents/skills or .agents/skills.json; invoked via ei_workflow MCP tool or native skill.",
+          "omp": "Discovered via marketplace plugin skills/ (priority 70) and invoked via ei_workflow tool; respects RULES.md and user overrides."
+        }
+      }
+    },
+    "pstack-analysis": {
+      "id": "pstack-analysis",
+      "owner": "pstack",
+      "provider": "poteto",
+      "activation": "auto",
+      "disableModelInvocation": false,
+      "supportedRuntimes": ["agy", "omp"],
+      "dependencies": {
+        "providers": ["poteto"],
+        "leafSkills": ["poteto:how", "poteto:why", "poteto:blast-radius"],
+        "packs": []
+      },
+      "upstream": {
+        "repo": "https://github.com/cursor/plugins.git",
+        "rootSubpath": "pstack/skills",
+        "sourcePaths": [
+          "how/SKILL.md",
+          "why/SKILL.md",
+          "blast-radius/SKILL.md",
+          "architect/SKILL.md",
+          "arena/SKILL.md",
+          "figure-it-out/SKILL.md",
+          "interrogate/SKILL.md",
+          "show-me-your-work/SKILL.md"
+        ]
+      },
+      "ksdAdaptation": {
+        "wrapperPath": "skills/pstack-analysis/SKILL.md",
+        "localPolicyOwner": "ksd-intelligence",
+        "runtimeNotes": {
+          "agy": "Forbids auto-starting poteto-mode or swarm; pairs with ei_impact MCP tool.",
+          "omp": "Discovered via marketplace plugin skills/ (priority 70); pairs with ei_impact tool without auto-starting poteto-mode."
+        }
+      }
+    },
+    "poteto-mode": {
+      "id": "poteto-mode",
+      "owner": "poteto",
+      "provider": "poteto",
+      "activation": "opt-in",
+      "disableModelInvocation": true,
+      "supportedRuntimes": ["agy", "omp"],
+      "dependencies": {
+        "providers": ["poteto"],
+        "leafSkills": [],
+        "packs": ["pstack-analysis"]
+      },
+      "upstream": {
+        "repo": "https://github.com/cursor/plugins.git",
+        "rootSubpath": "pstack/skills",
+        "sourcePaths": ["poteto-mode/SKILL.md"]
+      },
+      "ksdAdaptation": {
+        "wrapperPath": "skills/poteto-mode/SKILL.md",
+        "localPolicyOwner": "ksd-intelligence",
+        "runtimeNotes": {
+          "agy": "Explicit opt-in only via potetoMode: true or /poteto-mode; strips Cursor-only Task params and model slugs.",
+          "omp": "Hidden from model auto-discovery via disable-model-invocation: true; invoked only via /skill:poteto-mode or potetoMode: true."
+        }
+      }
+    },
+    "osmani-quality": {
+      "id": "osmani-quality",
+      "owner": "osmani",
+      "provider": "osmani",
+      "activation": "auto",
+      "disableModelInvocation": false,
+      "supportedRuntimes": ["agy", "omp"],
+      "dependencies": {
+        "providers": ["osmani"],
+        "leafSkills": [
+          "osmani:spec-driven-development",
+          "osmani:incremental-implementation",
+          "osmani:code-review-and-quality",
+          "osmani:security-and-hardening",
+          "osmani:performance-optimization",
+          "osmani:frontend-ui-engineering",
+          "osmani:browser-testing-with-devtools",
+          "osmani:shipping-and-launch"
+        ],
+        "packs": []
+      },
+      "upstream": {
+        "repo": "https://github.com/addyosmani/agent-skills.git",
+        "rootSubpath": "skills",
+        "sourcePaths": [
+          "spec-driven-development/SKILL.md",
+          "incremental-implementation/SKILL.md",
+          "code-review-and-quality/SKILL.md",
+          "security-and-hardening/SKILL.md",
+          "performance-optimization/SKILL.md",
+          "frontend-ui-engineering/SKILL.md",
+          "browser-testing-with-devtools/SKILL.md",
+          "shipping-and-launch/SKILL.md",
+          "api-and-interface-design/SKILL.md",
+          "observability-and-instrumentation/SKILL.md"
+        ]
+      },
+      "ksdAdaptation": {
+        "wrapperPath": "skills/osmani-quality/SKILL.md",
+        "localPolicyOwner": "ksd-intelligence",
+        "runtimeNotes": {
+          "agy": "Requires observed browser/runtime evidence; marks unavailable tools NOT VERIFIED.",
+          "omp": "Discovered via marketplace plugin skills/ (priority 70); respects KSD policy module and RULES.md."
+        }
+      }
+    }
+  }
+}

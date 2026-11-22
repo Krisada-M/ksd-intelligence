@@ -74,6 +74,11 @@ const WORKFLOW_TOOL = {
         type: 'string',
         enum: ['bug', 'feature', 'refactor', 'security', 'performance', 'ui'],
       },
+      potetoMode: {
+        type: 'boolean',
+        description:
+          'Explicit opt-in for poteto-mode multi-phase workflow; never enabled automatically',
+      },
     },
     ['task', 'stage'],
   ),
@@ -98,7 +103,7 @@ function validate(name, args) {
       ? []
       : name === 'ei_impact'
         ? ['targets', 'depth']
-        : ['task', 'stage', 'risk', 'type'];
+        : ['task', 'stage', 'risk', 'type', 'potetoMode'];
   if (Object.keys(args).some((key) => !allowed.includes(key))) {
     return 'INVALID_INPUT: unknown argument';
   }
@@ -129,9 +134,10 @@ function validate(name, args) {
     !['plan', 'investigate', 'implement', 'verify', 'review', 'ship'].includes(args.stage) ||
     (args.risk !== undefined && !['normal', 'high'].includes(args.risk)) ||
     (args.type !== undefined &&
-      !['bug', 'feature', 'refactor', 'security', 'performance', 'ui'].includes(args.type))
+      !['bug', 'feature', 'refactor', 'security', 'performance', 'ui'].includes(args.type)) ||
+    (args.potetoMode !== undefined && typeof args.potetoMode !== 'boolean')
   ) {
-    return 'INVALID_INPUT: task, stage, risk or type is invalid';
+    return 'INVALID_INPUT: task, stage, risk, type or potetoMode is invalid';
   }
   return null;
 }
@@ -184,6 +190,7 @@ export function createTools({ root, env = process.env }) {
         stage: args.stage,
         risk: args.risk,
         type: args.type,
+        potetoMode: args.potetoMode,
         strict: true,
         roots: rootsFromEnv(env),
         lock: await readLock(defaultLockPath()),
