@@ -1206,6 +1206,7 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
       stmt.all = ((...args: unknown[]) => {
         recordPlan(args);
         const rows = origAll(...(args as never[]));
+        // 500 mirrors MAX_CANDIDATES in src/core/search/lexical.ts; change them together.
         assert.ok(
           rows.length <= 500,
           `search "${currentQuery}" materialized ${rows.length} rows in one query`,
@@ -1231,6 +1232,12 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
         assert.ok(res.totalMatches > 500, `expected > 500 matches for "${q}"`);
         assert.equal(res.hits[0]?.symbol, expectedSymbol);
         assert.equal(res.hits[0]?.kind, 'exact');
+        // Score > 1000 proves the buried row kept its real BM25, killing the compound
+        // mutant (drop `+` and add LIMIT), which collapses the score to exactly 1000.
+        assert.ok(
+          (res.hits[0]?.score ?? 0) > 1000,
+          `search "${q}" exact hit score ${res.hits[0]?.score} lost its BM25 component`,
+        );
       }
     } finally {
       ctx.db.close();

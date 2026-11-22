@@ -67,9 +67,10 @@
 - [x] Iteration 3 gate at `3ce2a4d`: two reviewers and Challenger 1 approved, the forensic auditor was clean, and Challenger 2 rejected because the FTS rowid-filter regression survived.
 - [x] Iteration 4 regression test: the unmodified code passes; removing unary `+` fails with 551 materialized rows in the >500-match fixture.
 - [x] Iteration 4 local Challenger 2 recheck: 9/9 mutants killed (`M1`, `M3`–`M8`, `REG1`, `REG2`); schema-6 recall `17/20` and `20/20` top-8 with `0` missing, including `S06` rank 3.
-- [ ] Post-fix Iteration 4 independent gate review and forensic audit (`NOT VERIFIED`).
+- [x] Iteration 5 hardening after the independent review: REG1 now also asserts each exact hit keeps `score > 1000`, killing the compound mutant (drop `+` **and** add `LIMIT`; `9/9` earlier kills plus compound `KILLED` with `exact hit score 1000 lost its BM25 component`); threshold comment ties the in-test `500` to `MAX_CANDIDATES`. Punctuation/operator probe on `7426969` (`!!!`, `NEAR OR (1)`, `signature: retry*`, …) returned clean `result` outcomes; whitespace-only rejected as `INVALID_INPUT`.
+- [ ] Post-fix Iteration 4 independent gate review and forensic audit (`NOT VERIFIED`; the cross-vendor review below is a separate, evidence-limited gate).
 - [ ] Protected-path PR gate failed on 15 inherited paths: 10 approved release footers, four proposed M2c snapshots, and the proposed search oracle. Iteration 4 changes none; the owner's PR label is still required.
-- [ ] Independent non-Gemini vendor review (`NOT VERIFIED` — executed in separate read-only sessions on the same `Gemini` runtime family inside Antigravity CLI).
+- [x] Independent non-Gemini vendor review (`VERIFIED` for its scope): Anthropic `claude-opus-5` via `omp -p` (no tools, inline evidence) returned `APPROVE` — see `docs/reviews/m6a-review.md` §8 for findings and dispositions (zero-token crash ruled out; `callers` edge-vs-source counting, disabled-search `index-failed` code, `totalMatches` lower bound recorded as fix-forward; `indexState` fallthrough verified latent-only).
 - [ ] macOS CI / live macOS OMP verification (`NOT VERIFIED` — Linux WSL2 `x86_64` host only).
 
 ---

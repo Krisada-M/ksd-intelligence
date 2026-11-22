@@ -16,3 +16,11 @@ Latency felt: fine (no-drift warm `ImpactSession.query` p50 `66.1 ms` / p95 `75.
 Verdict given: `low`, `proceed` (`picture complete`) for `desktop/src/status.ts#serverErrorMessage` — right call for `desktop/src/`; `NOT INDEXED` for `app/javascript/utils/sankey_zoom.mjs` — honest boundary
 Missing: `ei init --dry-run` `TS configs:` display missed `desktop/tsconfig.json` (`init.ts:196`), `desktop/node_modules` absent (`dependencies installed: no`), and `app/javascript/**` lacks `jsconfig.json` / Rails importmap resolution
 
+
+## 2026-11-22 — ksd-intelligence — Verify M6a Iteration 4 candidate (`7426969`) through the installed OMP extension in a clean clone
+Tools called: ei_impact(`src/core/search/lexical.ts#querySearch`) · ei_changes(base `3ce2a4d`)
+Correct? yes — `ei_impact` reported reach 2 direct / 11 total, 5 test files, `picture complete`, `Gaps: none`, matching the touched surface (test-only commit); `ei_changes` reported 1 modified symbol (`search-query.test.ts`), the two markdown records as `outside-index-scope`, and the harness `node_modules` symlink as `symbolic link; not followed`, with `completeness=partial` / `verdict=unknown` instead of claiming full coverage
+Changed what the agent did? yes — replaced a manual `git diff --stat` review with a census that names every unanalysed path and reason, so the report could not silently drop the docs from review scope
+Latency felt: fine (cold index build + `ei_impact` `5.01 s` in the fresh clone; warm `ei_changes` `427 ms`; whole clean-clone run `9.2 s` wall)
+Verdict given: census `partial`/`unknown` with 3 gap sites — honest boundary for a test-only change whose docs sit outside `impact.include`
+Missing: run was harness-driven (`bun` + installed OMP extension loader in an isolated `HOME`), not an interactive agent session; two earlier harness iterations mis-asserted the symlink gap before the engine output was accepted as correct (harness bug, not an engine defect)
