@@ -200,6 +200,8 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
       list.result.tools.map((tool) => tool.name),
       ['ei_status', 'ei_impact', 'ei_workflow'],
     );
+    const workflowTool = list.result.tools.find((tool) => tool.name === 'ei_workflow');
+    assert.equal(workflowTool.inputSchema.properties.potetoMode.type, 'boolean');
     const response = await c.request(2, 'tools/call', {
       ...meta,
       name: 'ei_workflow',
@@ -207,6 +209,13 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     });
     assert.equal(response.result.isError, true);
     assert.match(response.result.content[0].text, /KSD_FAILED:|SKILLS_UNAVAILABLE:/);
+    const badOptIn = await c.request(3, 'tools/call', {
+      ...meta,
+      name: 'ei_workflow',
+      arguments: { task: 'fix crash', stage: 'investigate', potetoMode: 'yes' },
+    });
+    assert.equal(badOptIn.result.isError, true);
+    assert.match(badOptIn.result.content[0].text, /^INVALID_INPUT:/);
   });
 
   it('EI_DISABLED hides all tools', async (t) => {
@@ -283,5 +292,7 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
       list.result.tools.map((tool) => tool.name),
       ['ei_status', 'ei_impact', 'ei_workflow'],
     );
+    const workflowTool = list.result.tools.find((tool) => tool.name === 'ei_workflow');
+    assert.equal(workflowTool.inputSchema.properties.potetoMode.type, 'boolean');
   });
 });

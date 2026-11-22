@@ -36,6 +36,7 @@ interface SchemaLike {
 
 interface SchemaBuilder {
   string(): SchemaLike;
+  boolean?(): SchemaLike;
   number?(): SchemaLike;
   array?(element: SchemaLike): SchemaLike;
   enum(values: readonly string[]): SchemaLike;
@@ -47,6 +48,7 @@ interface ToolParams {
   stage: string;
   risk?: string;
   type?: string;
+  potetoMode?: boolean;
 }
 
 interface ImpactParams {
@@ -83,6 +85,7 @@ export interface OmpExtensionApi {
 export interface ExtensionDeps {
   env?: NodeJS.ProcessEnv;
   lockPath?: string;
+  skillsDir?: string;
   cacheHome?: string;
   impactSession?: ImpactSessionOptions;
   /** Injectable for tests; defaults to the real KSD policy entry. */
@@ -100,24 +103,39 @@ function warnLoad(stage: string, error: unknown): void {
   console.error(`ksd-intelligence: ${stage} failed to register (${SECTION_KEY}): ${message}`);
 }
 
-function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPath: string): void {
+function registerEiWorkflow(
+  pi: OmpExtensionApi,
+  env: NodeJS.ProcessEnv,
+  lockPath: string,
+  skillsDir?: string,
+): void {
   const z = pi.zod;
+  const shape: Record<string, SchemaLike> = {
+    task: z.string(),
+    stage: z.enum(STAGES),
+    risk: z.enum(RISKS).optional(),
+    type: z
+      .enum(TASK_TYPES)
+      .optional()
+      .describe('Caller-asserted task type; overrides the keyword classifier'),
+  };
+  if (z.boolean) {
+    shape.potetoMode = z
+      .boolean()
+      .optional()
+      .describe(
+        'Explicit opt-in for poteto-mode multi-phase workflow; never enabled automatically',
+      );
+  }
 
   pi.registerTool<ToolParams>({
     name: 'ei_workflow',
     label: 'KSD Skills Workflow',
     description:
-      'Choose and read allowlisted Matt Pocock, poteto and Addy Osmani skills for an engineering task and stage. ' +
-      'Pass `type` when you can classify the task yourself (including non-English text); otherwise a keyword guess is used and reported.',
-    parameters: z.object({
-      task: z.string(),
-      stage: z.enum(STAGES),
-      risk: z.enum(RISKS).optional(),
-      type: z
-        .enum(TASK_TYPES)
-        .optional()
-        .describe('Caller-asserted task type; overrides the keyword classifier'),
-    }),
+      'Choose and read allowlisted Matt Pocock, poteto/pstack and Addy Osmani skills for an engineering task and stage. ' +
+      'Pass `type` when you can classify the task yourself (including non-English text); otherwise a keyword guess is used and reported. ' +
+      'Set `potetoMode: true` only when the user explicitly opts into poteto-mode.',
+    parameters: z.object(shape),
     approval: 'read',
     async execute(_toolCallId, params, signal) {
       if (signal?.aborted) return errorResult('Cancelled');
@@ -127,6 +145,7 @@ function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPat
           strict: true,
           roots: rootsFromEnv(env),
           lock: await readLock(lockPath),
+          skillsDir,
         });
         return {
           content: [{ type: 'text', text: renderWorkflow(workflow) }],
@@ -136,6 +155,7 @@ function registerEiWorkflow(pi: OmpExtensionApi, env: NodeJS.ProcessEnv, lockPat
             stage: workflow.stage,
             skillIds: workflow.skillIds,
             ready: workflow.ready,
+            ...(workflow.optInPacks.length > 0 ? { optInPacks: workflow.optInPacks } : {}),
           },
         };
       } catch (error) {
@@ -274,7 +294,7 @@ export default function ksdIntelligenceExtension(
   if (env.EI_DISABLED === '1') return;
 
   try {
-    registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath());
+    registerEiWorkflow(pi, env, deps.lockPath ?? defaultLockPath(), deps.skillsDir);
   } catch (error) {
     warnLoad('ei_workflow tool', error);
   }

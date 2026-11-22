@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { PROVIDERS, skillIdsOf } from './catalog.js';
@@ -9,9 +10,21 @@ import { PROVIDER_IDS, WorkflowError } from './types.js';
 const execFileAsync = promisify(execFile);
 const COMMIT = /^[0-9a-f]{40}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
-// Resolves to <repo>/skills.lock.json from both src/workflow and dist/workflow.
+// Resolves to <repo>/skills.lock.json from src/workflow, dist/workflow, and dist-test/src/workflow.
 export function defaultLockPath() {
-    return fileURLToPath(new URL('../../skills.lock.json', import.meta.url));
+    const fallback = fileURLToPath(new URL('../../skills.lock.json', import.meta.url));
+    let dir = dirname(fileURLToPath(import.meta.url));
+    for (let depth = 0; depth < 5; depth += 1) {
+        const candidate = join(dir, 'skills.lock.json');
+        if (existsSync(join(dir, 'package.json')) && existsSync(candidate)) {
+            return candidate;
+        }
+        const parent = dirname(dir);
+        if (parent === dir)
+            break;
+        dir = parent;
+    }
+    return fallback;
 }
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);

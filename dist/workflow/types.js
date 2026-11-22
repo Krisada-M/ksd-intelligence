@@ -2,6 +2,15 @@ export const TASK_TYPES = ['bug', 'feature', 'refactor', 'security', 'performanc
 export const STAGES = ['plan', 'investigate', 'implement', 'verify', 'review', 'ship'];
 export const RISKS = ['normal', 'high'];
 export const PROVIDER_IDS = ['matt', 'poteto', 'osmani'];
+export const ORCHESTRATOR_SKILL_ID = 'ksd-intelligence';
+export const SKILL_PACK_IDS = [
+    'matt-sdlc',
+    'pstack-analysis',
+    'poteto-mode',
+    'osmani-quality',
+];
+export const CATALOG_SKILL_NAMES = [ORCHESTRATOR_SKILL_ID, ...SKILL_PACK_IDS];
+export const COMPLIANCE_DIMENSIONS = ['REQ', 'Code', 'Test', 'Runtime Evidence'];
 export const SKILL_IDS = [
     'matt:diagnosing-bugs',
     'matt:codebase-design',

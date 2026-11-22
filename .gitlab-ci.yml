@@ -1,0 +1,57 @@
+stages:
+  - verify
+  - check-skills
+
+default:
+  image: node:24-bookworm
+
+variables:
+  # Prevent git from ever executing hooks inside cloned upstream skill repositories.
+  GIT_CONFIG_COUNT: '1'
+  GIT_CONFIG_KEY_0: 'core.hooksPath'
+  GIT_CONFIG_VALUE_0: '/dev/null'
+  SKILLS_REPORT_DIR: '$CI_PROJECT_DIR/artifacts/skills-update'
+
+verify:unified-skills:
+  stage: verify
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  script:
+    - npm ci
+    - npm run typecheck
+    - npm run lint
+    - npm run format:check
+    - npm test
+    - npm run check:dist
+    - node dist/adapters/cli/main.js skills check --platform agy
+    - node dist/adapters/cli/main.js skills check --platform omp
+
+# Scheduled or manual job: inspects upstream repositories read-only, stages + validates
+# updates for BOTH AGY and OMP, and optionally proposes a Draft Merge Request.
+# Auto-merge is strictly disabled; owner review and approval are always required.
+skills-update-check:
+  stage: check-skills
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+      when: manual
+  variables:
+    PROPOSE_MR: 'false'
+  script:
+    - npm ci
+    - npm run build
+    - mkdir -p "$CI_PROJECT_DIR/.tmp-skill-sources"
+    - git clone --depth 1 https://github.com/mattpocock/skills.git "$CI_PROJECT_DIR/.tmp-skill-sources/matt"
+    - git clone --depth 1 https://github.com/cursor/plugins.git "$CI_PROJECT_DIR/.tmp-skill-sources/cursor-plugins"
+    - git clone --depth 1 https://github.com/addyosmani/agent-skills.git "$CI_PROJECT_DIR/.tmp-skill-sources/osmani"
+    - |
+      EI_MATT_ROOT="$CI_PROJECT_DIR/.tmp-skill-sources/matt" \
+      EI_POTETO_ROOT="$CI_PROJECT_DIR/.tmp-skill-sources/cursor-plugins" \
+      EI_OSMANI_ROOT="$CI_PROJECT_DIR/.tmp-skill-sources/osmani" \
+      node scripts/ci/check-skills-updates.mjs
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - artifacts/skills-update/

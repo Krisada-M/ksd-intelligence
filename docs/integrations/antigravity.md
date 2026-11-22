@@ -42,7 +42,9 @@ Avoid relying on the IDE's process working directory: it may be different from t
 | `ei_impact` | Default | Same core query and evidence-based rendering used in OMP |
 | `ei_workflow` | **Opt-in only** via `KSD_MCP_WORKFLOW=1` in the server's `env` | Loads strictly pinned local SKILL.md sources; no scripts are executed |
 
-For `ei_workflow`, configure the reviewed `EI_MATT_ROOT`, `EI_POTETO_ROOT`, and `EI_OSMANI_ROOT` environment variables for the local checkouts. Do not enable a second automatic upstream skills router; this MCP tool is a user/agent-called reader, **not** Antigravity native skills provisioning. Pinned skills can still contain untrusted instructions.
+For `ei_workflow`, configure the reviewed `EI_MATT_ROOT`, `EI_POTETO_ROOT`, and `EI_OSMANI_ROOT` environment variables for the local checkouts. Pass `potetoMode: true` only when the user explicitly opts into deep multi-phase mode; `poteto-mode` is never enabled automatically. Do not enable a second automatic upstream skills router; KSD stays the primary orchestrator. Pinned skills can still contain untrusted instructions.
+
+For native AGY skill discovery of KSD's platform-agnostic skill catalog (`skills/`), see `docs/integrations/skills-catalog.md` and `docs/examples/antigravity-skills.json`.
 
 `EI_DISABLED=1` hides all `ei_*` MCP tools. Unlike the OMP extension, the MCP process never installs KSD policy hooks or changes an AGY session.
 

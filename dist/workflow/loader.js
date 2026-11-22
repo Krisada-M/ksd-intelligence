@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { PROVIDERS, lookupSkill } from './catalog.js';
+import { defaultSkillsDir, parseSkillFrontmatter, SKILL_PACKS } from './packs.js';
 import { routeTask } from './router.js';
-import { WorkflowError } from './types.js';
+import { WorkflowError, } from './types.js';
 export const MAX_SKILL_BYTES = 64 * 1024;
 const FRONTMATTER = /^---\r?\n[\s\S]*?\r?\n---\r?\n/;
 export function sha256Hex(bytes) {
@@ -66,9 +67,50 @@ export async function loadSkill(id, roots, lock) {
     }
     return { ...skill, hash: 'verified' };
 }
+export async function loadPackSkill(packId, skillsDir = defaultSkillsDir()) {
+    const pack = SKILL_PACKS[packId];
+    if (!isAbsolute(skillsDir)) {
+        throw new WorkflowError('PROVIDER_ROOT_MISSING', `skillsDir must be an absolute path (needed for ${packId})`);
+    }
+    const base = await realpathOrThrow(skillsDir, () => new WorkflowError('PROVIDER_ROOT_NOT_FOUND', `skills catalog root ${skillsDir} does not exist (needed for ${packId})`));
+    const candidate = resolve(base, packId, 'SKILL.md');
+    const file = await realpathOrThrow(candidate, () => new WorkflowError('SKILL_NOT_FOUND', `${packId}: catalog skill ${candidate} not found`));
+    const rel = relative(base, file);
+    if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+        throw new WorkflowError('PATH_ESCAPE', `${packId} resolves to ${file}, outside catalog root ${base}`);
+    }
+    const info = await stat(file);
+    if (!info.isFile()) {
+        throw new WorkflowError('INVALID_SKILL', `${packId}: ${file} is not a regular file`);
+    }
+    if (info.size > MAX_SKILL_BYTES) {
+        throw new WorkflowError('INVALID_SKILL', `${packId}: ${file} is ${info.size} bytes, over the ${MAX_SKILL_BYTES} byte cap`);
+    }
+    const bytes = await readFile(file);
+    if (bytes.length > MAX_SKILL_BYTES) {
+        throw new WorkflowError('INVALID_SKILL', `${packId}: ${file} grew past the ${MAX_SKILL_BYTES} byte cap while reading`);
+    }
+    const text = bytes.toString('utf8');
+    const frontmatter = parseSkillFrontmatter(text);
+    if (!frontmatter || !frontmatter.name || !frontmatter.description) {
+        throw new WorkflowError('INVALID_SKILL', `${packId}: ${file} has invalid frontmatter`);
+    }
+    if (pack.disableModelInvocation && !frontmatter.disableModelInvocation) {
+        throw new WorkflowError('INVALID_SKILL', `${packId}: ${file} must declare disable-model-invocation: true`);
+    }
+    return {
+        id: packId,
+        file,
+        baseDir: dirname(file),
+        text,
+        sha256: sha256Hex(bytes),
+        hash: 'unpinned',
+    };
+}
 export async function prepareWorkflow(options) {
     const route = routeTask(options);
     const loaded = [];
+    const packInstructions = [];
     const missing = [];
     for (const id of route.skillIds) {
         try {
@@ -80,9 +122,19 @@ export async function prepareWorkflow(options) {
             missing.push({ id, code: error.code, reason: error.message });
         }
     }
+    for (const packId of route.optInPacks) {
+        try {
+            packInstructions.push(await loadPackSkill(packId, options.skillsDir));
+        }
+        catch (error) {
+            if (!(error instanceof WorkflowError))
+                throw error;
+            missing.push({ id: packId, code: error.code, reason: error.message });
+        }
+    }
     if (options.strict && missing.length > 0) {
         const detail = missing.map((entry) => `${entry.id} (${entry.code})`).join(', ');
         throw new WorkflowError('SKILLS_UNAVAILABLE', `required skills unavailable: ${detail}`);
     }
-    return { ...route, loaded, missing, ready: missing.length === 0 };
+    return { ...route, loaded, packInstructions, missing, ready: missing.length === 0 };
 }
