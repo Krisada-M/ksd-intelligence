@@ -111,3 +111,10 @@ To resolve `teamwork_auditor_m3_i2_1`'s Check 4 rejection and both Iteration 2 r
   - Unknown `indexState` values fall through to `'fresh'` in `runSearch`: **latent only** — `prepareSessionDb` pairs `failed`/`building` exclusively with `db === null`, which routes to the failure/guidance branches; `VERIFIED` by reading `session.ts` `prepareSessionDb` in full. Remedy if the state union ever grows: exhaustive mapping defaulting to `stale`.
   - REG1 robustness: threshold `500` decoupled from `MAX_CANDIDATES` (now documented in-test), and a compound mutant (drop `+` **and** add `LIMIT`) evaded REG1 while being caught only by the sibling test's `score > 1000`. Fixed in Iteration 5: REG1 now asserts each exact hit's `score > 1000` itself.
 - Reviewer `LIMITS` (not re-checked here): FTS population/publish path, D49 content caps, audit writer, renderer/TOOLS text, CLI/MCP registration, golden oracle, and all execution evidence.
+
+## 9. Owner Decisions and `callers` Fix (2026-11-22)
+
+- **Owner accepted** (recorded as `docs/DESIGN.md` D62): the 40-query oracle `tests/golden/search-queries.md`, the `RISK §6` amendment and the M6a decisions of D60.
+- **Owner approved the `callers` fix-forward from §8.** TDD: new test 4b (one symbol reaching `util` via `REFERENCES` + `CALLS`) failed on the old code with `2 !== 1`; both `COUNT(*)` sites in `src/core/search/lexical.ts` (candidate read and exact-supplement read) now use `COUNT(DISTINCT e.source)`; focused tests pass. `VERIFIED`.
+- **Recall after the fix (same method as §6):** `ksd-intelligence` `17/20` top-8 (`13` top-3), `work-sure` `20/20` top-8 (`20` top-3), `0` missing, `11/11` exact — identical to the pre-fix numbers, so the accepted oracle is unaffected. `VERIFIED`.
+- Still open for the owner (unchanged): disabled-search failure code, `totalMatches` lower-bound note, macOS CI / live macOS OMP, and the `owner-approved` PR label for the 15 inherited protected paths (10 already covered by accepted engine footers, 4 M2c snapshots, the now-accepted search oracle).

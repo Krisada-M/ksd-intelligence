@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 — Find code with lexical search (owner accepted and merged on `origin/main`) + dogfood evidence from Ticket 03/M3.
 
-**Status:** ready-for-agent (GATED — MUST start with **Round 0 — reconcile + evidence audit ONLY**)
+**Status:** closed by owner skip (2026-11-22) — `SKIP ALL` recorded in `docs/DESIGN.md` D61; no detector code written.
 
 **Requirement:** REQ-07 in the [spec](../spec.md).
 
@@ -78,3 +78,7 @@
 - **Trap 2:** Matching `.get('/x', fn)` by method name without checking receiver type is Hono.
 - **Trap 3:** Guessing a dynamic template route instead of recording a gap site.
 - **Trap 4:** Silently skipping M4a without an explicit recorded owner skip decision.
+
+## Comments
+
+- **2026-11-22 owner decision: `SKIP ALL`.** Evidence basis: M3 route census (`docs/research/m3-work-sure-linux.md` §7) and `docs/dogfood-log.md` show no qualifying workflow for `B1a`, `B1b`, `B1c` or `B2`; two application manifests in the work repository declare none of `next`, `expo-router`, `hono`. Decision table (all rows `no evidence → SKIP`), recorded as D61 in `docs/DESIGN.md`.

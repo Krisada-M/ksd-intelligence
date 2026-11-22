@@ -200,7 +200,7 @@ function readCandidates(
          d.start_line AS start_line,
          d.end_line AS end_line,
          top.bm25_score AS bm25_score,
-         (SELECT COUNT(*) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
+         (SELECT COUNT(DISTINCT e.source) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
        FROM top
        JOIN declarations d ON d.id = top.id
        JOIN declarations_fts f ON f.rowid = top.id`,
@@ -336,7 +336,7 @@ export function querySearch(
                  d.start_line AS start_line,
                  d.end_line AS end_line,
                  0.0 AS bm25_score,
-                 (SELECT COUNT(*) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
+                 (SELECT COUNT(DISTINCT e.source) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
                FROM declarations d
                JOIN symbols s ON s.id = d.id
                JOIN declarations_fts f ON f.rowid = d.id

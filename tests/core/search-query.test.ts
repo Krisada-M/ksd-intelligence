@@ -452,6 +452,27 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.ok(exactTierOut.value.hits[1]!.score - exactTierOut.value.hits[2]!.score > 800);
   });
 
+  it('4b. counts distinct caller symbols when one caller contributes multiple edge kinds', async () => {
+    const work = await makeTempDir('ei-search-distinct-callers-');
+    const { repo, workspace } = await createRepo(work, {
+      'src/dep.ts': 'export function util(): number {\n  return 1;\n}\n',
+      'src/user.ts':
+        'import { util } from "./dep.js";\nexport function caller(): number {\n  const fn: typeof util = util;\n  return fn === util ? util() : 0;\n}\n',
+    });
+    const report = await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    assert.deepEqual(report.problems, []);
+
+    const out = await runSearch(new ImpactSession(workspace), { query: 'util' });
+    assert.equal(out.kind, 'result');
+    assert.equal(out.value.hits[0]?.symbol, 'src/dep.ts#util');
+    // `caller` reaches `util` twice (REFERENCES via `typeof util`/value use, CALLS via `util()`)
+    // but is still one caller symbol.
+    assert.equal(out.value.hits[0]?.callers, 1);
+  });
+
   it('5. produces deterministic byte-identical results across repeated queries and cold vs incremental builds', async () => {
     const work = await makeTempDir('ei-search-det-');
     const { repo, workspace } = await createRepo(work, {

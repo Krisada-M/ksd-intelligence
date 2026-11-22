@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Review the actual change with M2c (owner accepted and merged on `origin/main`).
 
-**Status:** Round 4 Iteration 4 local verification complete: the 7 core Challenger 2 mutants and both planner regressions were killed, and proposed recall targets held. Independent post-fix review, owner acceptance of `RISK §6` / `tests/golden/search-queries.md`, the `owner-approved` PR gate, and platform CI remain pending. See [the review record](../../../docs/reviews/m6a-review.md#6-iteration-4-regression-test).
+**Status:** Owner accepted the M6a `PROPOSED` set (D62: golden oracle, `RISK §6`, D60) and approved the `callers` distinct-source fix; Iteration 5 committed locally. Remaining before merge: `owner-approved` PR label (15 inherited protected paths) and macOS CI / live macOS OMP.
 
 **Requirement:** REQ-06 in the [spec](../spec.md).
 
@@ -71,6 +71,7 @@
 - [ ] Post-fix Iteration 4 independent gate review and forensic audit (`NOT VERIFIED`; the cross-vendor review below is a separate, evidence-limited gate).
 - [ ] Protected-path PR gate failed on 15 inherited paths: 10 approved release footers, four proposed M2c snapshots, and the proposed search oracle. Iteration 4 changes none; the owner's PR label is still required.
 - [x] Independent non-Gemini vendor review (`VERIFIED` for its scope): Anthropic `claude-opus-5` via `omp -p` (no tools, inline evidence) returned `APPROVE` — see `docs/reviews/m6a-review.md` §8 for findings and dispositions (zero-token crash ruled out; `callers` edge-vs-source counting, disabled-search `index-failed` code, `totalMatches` lower bound recorded as fix-forward; `indexState` fallthrough verified latent-only).
+- [x] Owner acceptance 2026-11-22 (D62): golden oracle `tests/golden/search-queries.md`, `RISK §6`, D60 decisions accepted; `callers` fix approved and landed (`COUNT(DISTINCT e.source)`, test 4b RED `2 !== 1` → GREEN; recall unchanged `17/20` + `20/20` top-8, `0` missing, `11/11` exact — `docs/reviews/m6a-review.md` §9).
 - [ ] macOS CI / live macOS OMP verification (`NOT VERIFIED` — Linux WSL2 `x86_64` host only).
 
 ---
