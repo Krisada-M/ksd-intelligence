@@ -34,6 +34,8 @@ export interface FileDeclarations {
    * Includes CommonJS assignment targets (`exports.x`), which TypeScript reports as declarations.
    */
   keyOf: Map<TS.Node, string>;
+  /** Primary AST nodes per declaration key (excluding aliases) for search extraction. */
+  nodesOf: Map<string, readonly TS.Node[]>;
   moduleKey: string;
 }
 
@@ -143,7 +145,7 @@ function isFunctionValue(
 }
 
 /** Signature text without bodies: what callers depend on syntactically. */
-function signatureText(ts: Ts, sf: TS.SourceFile, node: TS.Node): string {
+export function signatureText(ts: Ts, sf: TS.SourceFile, node: TS.Node): string {
   const text = sf.text;
   const start = node.getStart(sf);
   if (ts.isClassDeclaration(node)) return text.slice(start, node.members.pos);
@@ -452,6 +454,7 @@ export function fileDeclarations(ts: Ts, sf: TS.SourceFile, file: string): FileD
   }
 
   const keyOf = new Map<TS.Node, string>();
+  const nodesOf = new Map<string, readonly TS.Node[]>();
   const moduleKey = `${file}#${MODULE_NAME}`;
   const [, lastLine] = spanOf(ts, sf, sf);
   const declarations: Declaration[] = [
@@ -499,12 +502,16 @@ export function fileDeclarations(ts: Ts, sf: TS.SourceFile, file: string): FileD
         .digest('hex')
         .slice(0, 16),
     });
+    nodesOf.set(
+      key,
+      group.entries.map((entry) => entry.node),
+    );
     for (const entry of group.entries) {
       keyOf.set(entry.node, key);
       for (const alias of entry.aliases) keyOf.set(alias, key);
     }
   }
-  return { declarations, keyOf, moduleKey };
+  return { declarations, keyOf, nodesOf, moduleKey };
 }
 
 /** The key of the nearest enclosing indexed declaration of a use site (ADR 0002). */

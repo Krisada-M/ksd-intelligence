@@ -207,5 +207,6 @@ export function scanLexically(ts, file, content, names) {
         externalImports: [],
         exports: [],
         markers: [],
+        search: [],
     };
 }

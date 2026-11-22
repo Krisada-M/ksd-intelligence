@@ -143,6 +143,24 @@ const MIGRATIONS: readonly { version: number; sql: string }[] = [
       CREATE INDEX markers_kind ON markers (kind);
       CREATE INDEX external_imports_specifier ON external_imports (specifier);`,
   },
+  {
+    // M6a: lexical search index over indexed declarations (`extraction = 'ok'`, non-module only).
+    // `stable_key` is column 0 (UNINDEXED), so bm25() calls MUST pass 7 weights starting with
+    // `0.0` for `stable_key` (SQLite silently shifts weights left if fewer weights are passed).
+    // `rowid` matches `declarations.id` (`symbols.id`).
+    version: 5,
+    sql: `
+      CREATE VIRTUAL TABLE declarations_fts USING fts5(
+        stable_key UNINDEXED,
+        name_tokens,
+        owner_tokens,
+        kind,
+        signature,
+        doc,
+        path_tokens,
+        tokenize = 'unicode61'
+      );`,
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

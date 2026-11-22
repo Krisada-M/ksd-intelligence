@@ -228,5 +228,6 @@ export function scanLexically(
     externalImports: [],
     exports: [],
     markers: [],
+    search: [],
   };
 }

@@ -74,7 +74,7 @@ function isFunctionValue(ts, expr) {
     return expr !== undefined && (ts.isArrowFunction(expr) || ts.isFunctionExpression(expr));
 }
 /** Signature text without bodies: what callers depend on syntactically. */
-function signatureText(ts, sf, node) {
+export function signatureText(ts, sf, node) {
     const text = sf.text;
     const start = node.getStart(sf);
     if (ts.isClassDeclaration(node))
@@ -385,6 +385,7 @@ export function fileDeclarations(ts, sf, file) {
         groups.push(group);
     }
     const keyOf = new Map();
+    const nodesOf = new Map();
     const moduleKey = `${file}#${MODULE_NAME}`;
     const [, lastLine] = spanOf(ts, sf, sf);
     const declarations = [
@@ -432,13 +433,14 @@ export function fileDeclarations(ts, sf, file) {
                 .digest('hex')
                 .slice(0, 16),
         });
+        nodesOf.set(key, group.entries.map((entry) => entry.node));
         for (const entry of group.entries) {
             keyOf.set(entry.node, key);
             for (const alias of entry.aliases)
                 keyOf.set(alias, key);
         }
     }
-    return { declarations, keyOf, moduleKey };
+    return { declarations, keyOf, nodesOf, moduleKey };
 }
 /** The key of the nearest enclosing indexed declaration of a use site (ADR 0002). */
 export function enclosingKey(node, declarations) {
