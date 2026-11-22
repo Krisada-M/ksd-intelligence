@@ -59,7 +59,7 @@ export function validateSearchInput(rawQuery: unknown, rawLimit?: unknown): Vali
 
 /** Wraps a query term as a double-quoted FTS5 string literal so no operator is ever parsed. */
 export function quoteFtsLiteral(term: string): string {
-  return `"${term.replaceAll('"', '""')}"`;
+  return `"${term.replaceAll('\0', '').replaceAll('"', '""')}"`;
 }
 
 export interface BuiltFtsQuery {
@@ -68,7 +68,11 @@ export interface BuiltFtsQuery {
   rawTerms: string[];
 }
 
-export function buildFtsQuery(query: string): BuiltFtsQuery {
+interface InternalBuiltFtsQuery extends BuiltFtsQuery {
+  tokenLimitHit: boolean;
+}
+
+function buildFtsQueryInternal(query: string): InternalBuiltFtsQuery {
   const rawTerms: string[] = [];
   const rawSeen = new Set<string>();
   const pushRaw = (term: string): void => {
@@ -90,11 +94,15 @@ export function buildFtsQuery(query: string): BuiltFtsQuery {
 
   const ftsTokens: string[] = [];
   const ftsSeen = new Set<string>();
+  let tokenLimitHit = false;
   for (const token of [...splitTokens, ...alnumRaw.map((term) => term.toLowerCase())]) {
     if (token === '' || ftsSeen.has(token)) continue;
+    if (ftsTokens.length >= MAX_FTS_TOKENS) {
+      tokenLimitHit = true;
+      break;
+    }
     ftsSeen.add(token);
     ftsTokens.push(token);
-    if (ftsTokens.length >= MAX_FTS_TOKENS) break;
   }
 
   const exactClauses: string[] = [];
@@ -120,10 +128,17 @@ export function buildFtsQuery(query: string): BuiltFtsQuery {
     matchExpr: ftsTokens.length === 0 ? null : ftsTokens.map(quoteFtsLiteral).join(' OR '),
     exactMatchExpr: exactClauses.length === 0 ? null : exactClauses.join(' OR '),
     rawTerms,
+    tokenLimitHit,
   };
 }
 
+export function buildFtsQuery(query: string): BuiltFtsQuery {
+  const { matchExpr, exactMatchExpr, rawTerms } = buildFtsQueryInternal(query);
+  return { matchExpr, exactMatchExpr, rawTerms };
+}
+
 interface CandidateRow {
+  id: number;
   stableKey: string;
   signature: string;
   file: string;
@@ -137,35 +152,9 @@ interface CandidateRow {
   callers: number;
 }
 
-function readCandidates(
-  db: DatabaseSync,
-  matchExpr: string,
-  candidateLimit: number,
-): CandidateRow[] {
-  const rows = db
-    .prepare(
-      `SELECT
-         f.stable_key AS stable_key,
-         f.signature AS signature,
-         d.file AS file,
-         d.name AS name,
-         d.simple AS simple,
-         d.kind AS decl_kind,
-         d.exported AS exported,
-         d.start_line AS start_line,
-         d.end_line AS end_line,
-         ${BM25_SQL} AS bm25_score,
-         (SELECT COUNT(*) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
-       FROM declarations_fts f
-       JOIN symbols s ON s.key = f.stable_key
-       JOIN declarations d ON d.id = s.id
-       WHERE declarations_fts MATCH ?
-       ORDER BY bm25_score DESC, f.stable_key ASC
-       LIMIT ?`,
-    )
-    .all(matchExpr, candidateLimit);
-
-  return rows.map((row) => ({
+function mapCandidateRow(row: Record<string, unknown>): CandidateRow {
+  return {
+    id: Number(row.id),
     stableKey: String(row.stable_key),
     signature: String(row.signature),
     file: String(row.file),
@@ -177,7 +166,48 @@ function readCandidates(
     endLine: Number(row.end_line),
     bm25Score: Number(row.bm25_score),
     callers: Number(row.callers),
-  }));
+  };
+}
+
+function readCandidates(
+  db: DatabaseSync,
+  matchExpr: string,
+  candidateLimit: number,
+): CandidateRow[] {
+  // Select top-N rowids via compact symbols B-tree before hydrating wide FTS/declaration rows and caller counts.
+  const rows = db
+    .prepare(
+      `WITH top AS (
+         SELECT
+           f.rowid AS id,
+           s.key AS stable_key,
+           ${BM25_SQL} AS bm25_score
+         FROM declarations_fts f
+         JOIN symbols s ON s.id = f.rowid
+         WHERE declarations_fts MATCH ?
+         ORDER BY bm25_score DESC, s.key ASC
+         LIMIT ?
+       )
+       SELECT
+         top.id AS id,
+         top.stable_key AS stable_key,
+         f.signature AS signature,
+         d.file AS file,
+         d.name AS name,
+         d.simple AS simple,
+         d.kind AS decl_kind,
+         d.exported AS exported,
+         d.start_line AS start_line,
+         d.end_line AS end_line,
+         top.bm25_score AS bm25_score,
+         (SELECT COUNT(*) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
+       FROM top
+       JOIN declarations d ON d.id = top.id
+       JOIN declarations_fts f ON f.rowid = top.id`,
+    )
+    .all(matchExpr, candidateLimit) as Array<Record<string, unknown>>;
+
+  return rows.map(mapCandidateRow);
 }
 
 export function querySearch(
@@ -202,7 +232,7 @@ export function querySearch(
   const scannedFiles = Number(scannedRow?.n ?? 0);
   const indexState = extras?.indexState ?? 'fresh';
 
-  const { matchExpr, exactMatchExpr, rawTerms } = buildFtsQuery(query);
+  const { matchExpr, exactMatchExpr, rawTerms, tokenLimitHit } = buildFtsQueryInternal(query);
   if (matchExpr === null && exactMatchExpr === null) {
     return {
       query,
@@ -226,22 +256,126 @@ export function querySearch(
   const ftsTotal = Number(totalRow?.total ?? 0);
 
   const candidates = new Map<string, CandidateRow>();
+  const seenIds = new Set<number>();
   if (matchExpr !== null) {
     for (const row of readCandidates(db, matchExpr, MAX_CANDIDATES)) {
       candidates.set(row.stableKey, row);
-    }
-  }
-  if (exactMatchExpr !== null) {
-    for (const row of readCandidates(db, exactMatchExpr, MAX_EXACT_CANDIDATES)) {
-      const existing = candidates.get(row.stableKey);
-      if (existing === undefined || row.bm25Score > existing.bm25Score) {
-        candidates.set(row.stableKey, row);
-      }
+      seenIds.add(row.id);
     }
   }
 
   const exactSet = new Set<string>([...rawTerms, query.trim()]);
   const exactLowerSet = new Set<string>([...exactSet].map((term) => term.toLowerCase()));
+
+  if (
+    (ftsTotal > MAX_CANDIDATES || tokenLimitHit || matchExpr === null) &&
+    exactMatchExpr !== null
+  ) {
+    const exactTerms = [...exactSet].filter(
+      (term) => !term.includes('\0') && /\p{L}|\p{N}/u.test(term),
+    );
+    const hasNonAscii = exactTerms.some((term) => /[^\x00-\x7f]/.test(term));
+    const fallbackExact = (): void => {
+      for (const row of readCandidates(db, exactMatchExpr, MAX_EXACT_CANDIDATES)) {
+        if (!candidates.has(row.stableKey)) {
+          candidates.set(row.stableKey, row);
+          seenIds.add(row.id);
+        }
+      }
+    };
+
+    if (hasNonAscii || exactTerms.length === 0 || matchExpr === null) {
+      fallbackExact();
+    } else {
+      const predicates: string[] = [];
+      const params: string[] = [];
+      for (const term of exactTerms) {
+        predicates.push('d.simple = ? COLLATE NOCASE');
+        params.push(term);
+        if (term.includes('.') || term.includes(' ')) {
+          predicates.push('d.name = ? COLLATE NOCASE');
+          params.push(term);
+        }
+      }
+      const exactIdRows = db
+        .prepare(
+          `SELECT d.id AS id
+           FROM declarations d
+           WHERE d.kind != 'module' AND (${predicates.join(' OR ')})`,
+        )
+        .all(...params) as Array<{ id: number }>;
+      const missingExactIds: number[] = [];
+      for (const row of exactIdRows) {
+        const id = Number(row.id);
+        if (!seenIds.has(id)) missingExactIds.push(id);
+      }
+
+      if (missingExactIds.length > MAX_EXACT_CANDIDATES) {
+        fallbackExact();
+      } else if (missingExactIds.length > 0) {
+        const placeholders = missingExactIds.map(() => '?').join(', ');
+        const missingRows = (
+          db
+            .prepare(
+              `SELECT
+                 d.id AS id,
+                 s.key AS stable_key,
+                 f.signature AS signature,
+                 d.file AS file,
+                 d.name AS name,
+                 d.simple AS simple,
+                 d.kind AS decl_kind,
+                 d.exported AS exported,
+                 d.start_line AS start_line,
+                 d.end_line AS end_line,
+                 0.0 AS bm25_score,
+                 (SELECT COUNT(*) FROM edges e WHERE e.target = d.id AND e.kind NOT IN ('IMPORTS', 'TESTS')) AS callers
+               FROM declarations d
+               JOIN symbols s ON s.id = d.id
+               JOIN declarations_fts f ON f.rowid = d.id
+               WHERE d.id IN (${placeholders})`,
+            )
+            .all(...missingExactIds) as Array<Record<string, unknown>>
+        ).map(mapCandidateRow);
+
+        let anyExistingExact = false;
+        for (const row of candidates.values()) {
+          if (
+            exactSet.has(row.name) ||
+            exactSet.has(row.simple) ||
+            exactLowerSet.has(row.name.toLowerCase()) ||
+            exactLowerSet.has(row.simple.toLowerCase())
+          ) {
+            anyExistingExact = true;
+            break;
+          }
+        }
+
+        const bm25ById = new Map<number, number>();
+        if (!tokenLimitHit && (missingExactIds.length > 1 || anyExistingExact)) {
+          const bm25Rows = db
+            .prepare(
+              `SELECT f.rowid AS id, ${BM25_SQL} AS bm25_score
+               FROM declarations_fts f
+               WHERE declarations_fts MATCH ? AND f.rowid IN (${placeholders})`,
+            )
+            .all(matchExpr, ...missingExactIds) as Array<{ id: number; bm25_score: number }>;
+          for (const bm of bm25Rows) {
+            bm25ById.set(Number(bm.id), Number(bm.bm25_score));
+          }
+        }
+
+        for (const row of missingRows) {
+          const bm25 = bm25ById.get(row.id);
+          if (bm25 !== undefined) row.bm25Score = bm25;
+          if (!candidates.has(row.stableKey)) {
+            candidates.set(row.stableKey, row);
+            seenIds.add(row.id);
+          }
+        }
+      }
+    }
+  }
 
   const scored = [...candidates.values()].map((row) => {
     const exactCase = exactSet.has(row.name) || exactSet.has(row.simple);

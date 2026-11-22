@@ -312,6 +312,12 @@ export function createTools({ root, env = process.env }) {
         ...(name === 'ei_search' && isObject(args) && typeof args.query === 'string'
           ? { query: args.query }
           : {}),
+        ...(name === 'ei_search' &&
+        isObject(args) &&
+        typeof args.limit === 'number' &&
+        Number.isInteger(args.limit)
+          ? { limit: args.limit }
+          : {}),
         ...(name === 'ei_workflow' && isObject(args) && typeof args.task === 'string'
           ? { task: args.task }
           : {}),
@@ -382,10 +388,13 @@ export function createTools({ root, env = process.env }) {
         return result(renderChangesOutcome(outcome), outcome.kind === 'failure');
       }
       if (name === 'ei_search') {
+        const valid = validateSearchInput(args.query, args.limit);
+        const searchQuery = valid.ok ? valid.query : args.query;
+        const searchLimit = valid.ok ? valid.limit : args.limit;
         const session = await impactSession();
         const outcome = await runSearch(session, {
-          query: args.query,
-          limit: args.limit,
+          query: searchQuery,
+          limit: searchLimit,
           signal,
           onProgress: (message) => onProgress(message),
         });
@@ -396,7 +405,7 @@ export function createTools({ root, env = process.env }) {
             tool: 'ei_search',
             outcome: outcome.kind,
             ms: performance.now() - started,
-            ...auditFieldsForSearch(outcome, engineVersion(), args.query, args.limit),
+            ...auditFieldsForSearch(outcome, engineVersion(), searchQuery, searchLimit),
           },
           { root: ws.root, cacheDir: ws.cacheDir },
         );

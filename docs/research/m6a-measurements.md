@@ -1,12 +1,16 @@
-# M6a Round 3 — Fixed Query Recall, Latency, DB Growth, Live Smoke & 5-Mutation Report
+# M6a Rounds 3 & 4 — Fixed Query Recall, Latency, DB Growth, Live Smoke & Mutation Report
 
 - **Date:** 2026-11-22
 - **Branch / Engine:** `m6a-search` · engine `0.2.0` · schema `5`
 - **Runtime:** Linux WSL2 `x86_64` (`6.18.58.1-microsoft-standard-WSL2`) · Node `v24.21.0` · npm `12.2.0` · Bun `1.4.2` · OMP `omp/19.1.0` · TypeScript `5.9.3` (runtime)
 - **Safety / Isolation:**
-  - All `work-sure` measurements ran on a disposable `/tmp/m6a-worksure-*` copy with an isolated temporary `HOME` cache (`runtime/` symlinked); both temporary directories were deleted afterward (`trap`) and the read-only `work-sure` checkout remained completely unmodified (`git status --short` clean).
+  - All `work-sure` measurements ran on a disposable `/tmp/m6a-*` copy with an isolated temporary `HOME` cache (`runtime/` symlinked); both temporary directories were deleted afterward (`trap`) and the read-only `work-sure` checkout remained completely unmodified (`git status --short` clean).
   - All live smoke checks (`omp -p`, Bun `loadExtensions()`, CLI parity) ran on a disposable `/tmp/m6a-*` copy of `ksd-intelligence` with an isolated temporary `HOME`; both were deleted afterward.
   - Zero personal paths and zero proprietary `work-sure` code snippets appear in this document or `tests/golden/search-queries.md`.
+- **Verification Scope & `NOT VERIFIED` Boundaries:**
+  - `VERIFIED` only on Linux WSL2 `x86_64` (`Node v24.21.0`, `Bun 1.4.2`, `OMP omp/19.1.0`).
+  - **`NOT VERIFIED: macOS CI / live macOS OMP`** — macOS CI workflow and live macOS OMP runtime were not available on this host and require owner verification on macOS / CI push.
+  - **`NOT VERIFIED: independent non-Gemini vendor review`** — Round 4 reviews and audit ran in separate read-only sessions on the same `Gemini` runtime family inside Antigravity CLI.
 
 ---
 
@@ -43,7 +47,7 @@ Evaluated at `limit = 8` (primary recall window) and `limit = 20` (missing check
 | ID | Query | Expected Target | Rank (`limit=8` / `20`) | Match Kind | Total Matches | Top-1 Hit (when rank > 1) |
 |---|---|---|---:|---|---:|---|
 | S01 | `deriveVerdict` | `src/core/kernel/verdict.ts#deriveVerdict` | **1** | `exact` | 32 | — |
-| S02 | `acquireBuildLock` | `src/core/engine/lock.ts#acquireBuildLock` | **1** | `exact` | 146 | — |
+| S02 | `acquireBuildLock` | `src/core/engine/lock.ts#acquireBuildLock` | **1** | `exact` | 147 | — |
 | S03 | `fileDeclarations` | `src/core/indexing/declarations.ts#fileDeclarations` | **1** | `exact` | 311 | — |
 | S04 | `ImpactSession` | `src/core/impact/session.ts#ImpactSession` | **1** | `exact` | 356 | — |
 | S05 | `holder alive` | `src/core/engine/lock.ts#isHolderAlive` | **2** | `lexical` | 17 | `tests/core/lock.test.ts#HOLDER` |
@@ -57,7 +61,7 @@ Evaluated at `limit = 8` (primary recall window) and `limit = 20` (missing check
 | S13 | `differential find references` | `src/core/indexing/differential.ts#differential` | **3** | `exact` | 41 | `src/core/indexing/differential.ts#DifferentialReport.references` |
 | S14 | `stat probe freshness drift` | `src/core/workspace/probe.ts#probe` | **2** | `exact` | 60 | `src/core/workspace/probe.ts#ProbeResult.freshness` |
 | S15 | `index-failed INVALID_INPUT` | `src/core/kernel/types.ts#FailureCode` | **1** | `lexical` | 160 | — |
-| S16 | `computed-member-access interface-dispatch` | `src/core/indexing/resolve.ts#GapCode` | **1** | `lexical` | 236 | — |
+| S16 | `computed-member-access interface-dispatch` | `src/core/indexing/resolve.ts#GapCode` | **1** | `lexical` | 237 | — |
 | S17 | `unresolved-name-match` | `src/core/indexing/resolve.ts#UnresolvedRecord` | **4** | `lexical` | 126 | `src/core/indexing/resolve.ts#UnresolvedRecord.reason` |
 | S18 | `audit summary render` | `src/core/audit/summary.ts#renderAuditSummary` | **8** | `lexical` | 207 | `src/workflow/packs.ts#SKILL_PACKS.matt-sdlc.summary` |
 | S19 | `changes git base ref` | `src/core/changes/git.ts#validateBaseRef` | **9** (outside top-8) | `lexical` | 156 | `src/core/changes/changes.ts#ChangesOptions.base` |
@@ -90,15 +94,16 @@ Evaluated at `limit = 8` (primary recall window) and `limit = 20` (missing check
 
 ---
 
-## 3. Search Latency (`p50` / `p95`, Warm Probe + Cold CLI + 50k Scale) — `VERIFIED`
+## 3. Search Latency (`p50` / `p95`, Warm Probe + Cold CLI + 50k Scale) — `VERIFIED` (Post-Round 4 Fix)
 
 | Benchmark | Sample Size | `p50` | `p95` | Notes |
 |---|---|---:|---:|---|
-| `ksd-intelligence` warm `runSearch(limit=8)` (incl. `stat` probe) | `3 x 20 = 60` calls | **11.67 ms** | **13.43 ms** | Runs 1/2/3 `p50`: `11.42 / 11.67 / 11.81 ms`; `p95`: `13.31 / 13.43 / 13.35 ms` |
-| `ksd-intelligence` cold CLI `ei search ... --json` | `3` invocations | **89.14 ms** | — | `86.15 / 89.14 / 91.95 ms` |
-| `work-sure` warm `runSearch(limit=8)` (incl. `stat` probe) | `3 x 20 = 60` calls | **58.64 ms** | **63.11 ms** | Runs 1/2/3 `p50`: `58.66 / 58.77 / 58.50 ms`; `p95`: `64.16 / 60.66 / 61.95 ms` (`8,434` files stated in `probe()`) |
-| `work-sure` cold CLI `ei search ... --json` | `3` invocations | **172.34 ms** | — | `172.34 / 173.21 / 159.74 ms` |
-| **Synthetic 50,000-declaration scale** (`500` `.ts` files, `32,964,608` B DB, incl. `stat` probe) | `25` queries | **94.45 ms** | **151.18 ms** | Max `159.01 ms`; well below `300 ms` gate |
+| `ksd-intelligence` warm `runSearch(limit=8)` (incl. `stat` probe) | `3 x 20 = 60` calls | **16.60 ms** | **19.36 ms** | Runs 1/2/3 `p50`: `16.45 / 17.03 / 16.26 ms`; `p95`: `18.85 / 20.00 / 19.04 ms` |
+| `ksd-intelligence` cold CLI `ei search ... --json` | `3` invocations | **132.54 ms** | — | `132.76 / 132.54 / 127.69 ms` |
+| `work-sure` warm `runSearch(limit=8)` (incl. `stat` probe) | `3 x 20 = 60` calls | **79.69 ms** | **88.34 ms** | Runs 1/2/3 `p50`: `78.83 / 78.33 / 80.40 ms`; `p95`: `87.52 / 89.74 / 83.56 ms` |
+| `work-sure` cold CLI `ei search ... --json` | `3` invocations | **228.91 ms** | — | `228.91 / 236.15 / 222.66 ms` |
+| **Synthetic 50,000-declaration scale — isolated** (`search-query.test.js` Test 6, `500` `.ts` files, incl. `stat` probe) | `25` queries | **68.22 ms** | **83.59 ms** | Max `91.26 ms`; well below `300 ms` gate |
+| **Synthetic 50,000-declaration scale — full `npm test` (2 runs)** (76 suites concurrent, incl. `stat` probe) | `2 x 25` queries | **85.82–87.84 ms** | **110.72–124.94 ms** | Run 1: `p50=87.84 / p95=124.94 / max=127.99 ms`; Run 2: `p50=85.82 / p95=110.72 / max=111.45 ms` (`< 300 ms` gate) |
 
 ---
 
@@ -164,14 +169,34 @@ CLI `ei search "sanitize audit text" --limit 5 --root <SCRATCH>` produced identi
 
 ---
 
-## 5. Mutation Smoke (`5 / 5` Killed, Cleanly Reverted — `VERIFIED`)
+## 5. Mutation Smoke (`8 / 8` Killed, Cleanly Reverted — `VERIFIED`)
 
-Each localized mutation was applied to `src/`, compiled (`npm run build && tsc -p tests/tsconfig.json && node scripts/copy-policy-to-dist.mjs --test-tree`), executed via `node --import ./tests/policy/helpers/isolated-home.js --test ...`, confirmed `EXIT=1`, and cleanly reverted (`git diff -- src/` empty relative to clean Round 2 state):
+Each localized mutation was applied to `src/`, compiled (`npm run build && tsc -p tests/tsconfig.json && node scripts/copy-policy-to-dist.mjs --test-tree`), executed via `node --import ./tests/policy/helpers/isolated-home.js --test ...`, confirmed `EXIT=1`, and cleanly reverted (`src/core/search/lexical.ts` byte-identical to clean state):
 
-| # | Required Break (`M6a-search.md`) | File & Mutation | Targeted Command & Failing Test | Exit Code |
+| # | Required Break (`M6a-search.md` / Round 4) | File & Mutation | Targeted Command & Failing Test | Exit Code |
 |---|---|---|---|---:|
-| **M1** | **Operators interpreted by FTS5** | `src/core/search/lexical.ts` (`buildFtsQuery`: pass raw `query.trim()` to `matchExpr` instead of `quoteFtsLiteral` tokens) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `1. neutralizes FTS5 operators and punctuation fuzzing` (`Error: unterminated string`) & `3. ranks exact whole-name matches first` (`Error: fts5: syntax error near "."`) | `1` (**KILLED**) |
-| **M2** | **A secret file indexed** | `src/core/indexing/indexer.ts` (`cold`: insert `census.records` with `reason === 'secret'` into `declarations_fts`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-index.test.js` — fails `indexes D49 secret-named code files while excluding .env, .pem, .key, non-code secrets, and excluded dirs` | `1` (**KILLED**) |
-| **M3** | **Exact match not first** | `src/core/search/lexical.ts` (`querySearch`: set `exactBoost = 0`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `3. ranks exact whole-name matches first (exact) over higher-caller/doc-heavy lexical hits` | `1` (**KILLED**) |
-| **M4** | **Non-deterministic result order** | `src/core/search/lexical.ts` (`readCandidates` / `querySearch`: drop `f.stable_key ASC` and `stableKey` comparator tie-breaker) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `5. produces deterministic byte-identical results across repeated queries and cold vs incremental builds` | `1` (**KILLED**) |
-| **M5** | **Stale index answered as fresh** | `src/core/impact/session.ts` (`prepareForSearch`: map `'stale'` to `'fresh'`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `9. falls back to published index with STALE INDEX on drift when build lock or failing update blocks` | `1` (**KILLED**) |
+| **M1** | **Operators interpreted by FTS5** | `src/core/search/lexical.ts` (`buildFtsQueryInternal`: pass `query.trim()` to `matchExpr` instead of `quoteFtsLiteral` tokens) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `1. neutralizes FTS5 operators...` (`fts5: syntax error near "OR"`), `3.` (`fts5: syntax error near "."`), & direct `\0` test (re-verified post-Round 4) | `1` (**KILLED**) |
+| **M2** | **A secret file indexed** | `src/core/indexing/indexer.ts` (`cold`: insert `census.records` with `reason === 'secret'` into `declarations_fts`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-index.test.js` — fails `indexes D49 secret-named code files while excluding .env, .pem, .key, non-code secrets, and excluded dirs` (Round 3; `indexer.ts` unchanged in Round 4) | `1` (**KILLED**) |
+| **M3** | **Exact match not first** | `src/core/search/lexical.ts` (`querySearch`: set `exactBoost = 0`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `3. ranks exact whole-name matches first`, `4.`, & buried `> 500` exact test (re-verified post-Round 4) | `1` (**KILLED**) |
+| **M4** | **Non-deterministic result order** | `src/core/search/lexical.ts` (`readCandidates` / `querySearch`: drop `s.key ASC` and `stableKey` comparator tie-breaker) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `5. produces deterministic byte-identical results across repeated queries and cold vs incremental builds` (re-verified post-Round 4) | `1` (**KILLED**) |
+| **M5** | **Stale index answered as fresh** | `src/core/impact/session.ts` (`prepareForSearch`: map `'stale'` to `'fresh'`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `9. falls back to published index with STALE INDEX on drift when build lock or failing update blocks` (Round 3; `session.ts` unchanged in Round 4) | `1` (**KILLED**) |
+| **M6** | **Caller boost disabled (`callerBoost = 0`)** | `src/core/search/lexical.ts` (`querySearch`: set `callerBoost = 0`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `4.` (`boosts_a.ts#sharedPopular` beats `boosts_z.ts#sharedPopular`) | `1` (**KILLED**) |
+| **M7** | **Flat BM25 column weights** | `src/core/search/lexical.ts` (`BM25_SQL`: `(0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0)`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `4.` (`expected src/weights/f6_name.ts#accessorHelper before src/weights/e5_owner.ts#AccessorOwner.memberFn`) | `1` (**KILLED**) |
+| **M8** | **`exactCase === exactLower` (`900`)** | `src/core/search/lexical.ts` (`querySearch`: set `exactBoost = exactCase \|\| exactLower ? 900 : 0`) | `node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js` — fails `4.` (`src/case_a.ts#tokenAlpha` beats `src/case_z.ts#TokenAlpha`) | `1` (**KILLED**) |
+
+---
+
+## 6. Round 4 Remediation & Re-Measurements (Post-`lexical.ts` Optimization) — `VERIFIED`
+
+- **Why re-measured:** Round 3 recorded synthetic 50k `p95 = 151.18 ms`, but Round 4 Iteration 1 independent review & forensic audit at `7df3459` proved Test 6 (`50,000 declarations ... p95 < 300 ms`) failed deterministically (`455.15–1114.70 ms >= 300 ms`) because `readCandidates` joined `symbols`/`declarations` and evaluated the correlated `edges` subquery before `LIMIT`, and `querySearch` ran a second 50k `exactMatchExpr` FTS5 `bm25()` scan unconditionally.
+- **Optimization & Fixes Applied:**
+  1. `src/core/search/lexical.ts`: Added `WITH top AS (SELECT f.rowid AS id, s.key AS stable_key, -bm25(...) AS bm25_score FROM declarations_fts f JOIN symbols s ON s.id = f.rowid ... LIMIT ?)` in `readCandidates` so wide FTS/declaration rows and correlated `edges` caller counts run only on the `<= 500` top rows; replaced unconditional `exactMatchExpr` FTS5 scan in `querySearch` with a gated `declarations` `COLLATE NOCASE` exact-match supplement (skipped when `ftsTotal <= 500 && !tokenLimitHit`); stripped `\0` in `quoteFtsLiteral`.
+  2. `src/core/search/render.ts`: Updated overflow lines (`L75`, `L87`) to `plural(remaining, 'more match', 'more matches')` (`(+1 more match)` vs `(+2 more matches)`).
+  3. `scripts/mcp/tools.mjs`: Added integer `limit` logging on `INVALID_INPUT` audit entries and `validateSearchInput` parity (`valid.query`, `valid.limit`) on `runSearch` and `auditFieldsForSearch`.
+  4. `tests/core/search-query.test.ts`: Replaced Test 4 with unconfounded 6-tier `'accessor'` equal-22-token BM25 tests, IDF-invariant `'sharedPopular'` `callerBoost` test, and `'TokenAlpha'` `exactCase`/`exactLower`/`lexical` tier tests; added MCP audit parity test, singular/plural overflow test, direct `\0` test, and `> 500` buried-exact test; preserved Test 6 (`50,000` rows, `25` queries, `< 300 ms` p95) untouched.
+- **Re-Measurement Summary (Linux WSL2 `x86_64`, post-fix):**
+  - **Test 6 isolated** (`node --import ./tests/policy/helpers/isolated-home.js --test dist-test/tests/core/search-query.test.js`): `14/14` pass; `p50 = 68.22 ms`, **`p95 = 83.59 ms`**, `max = 91.26 ms` (`< 300 ms`).
+  - **Full `npm test` (2 runs, 76 suites concurrent):** `726/726` pass in both runs; Run 1 `p50 = 87.84 ms`, **`p95 = 124.94 ms`**, `max = 127.99 ms`; Run 2 `p50 = 85.82 ms`, **`p95 = 110.72 ms`**, `max = 111.45 ms` (`< 300 ms`).
+  - **Recall parity (`S01–S20` & `W01–W20`):** Unchanged top-8 recall (`17/20` = `85%` on `ksd-intelligence`, `20/20` = `100%` on `work-sure`, `0/40` missing, `100%` rank `1` + `exact` on `S01–S04` & `W01–W07`).
+  - **Section 1 (Schema 4 vs 5 DB growth) & Section 4 (`omp -p` / Bun `loadExtensions()` live transcripts):** Carried forward unchanged from `9302b69`/`7df3459` (`segments.ts` and `render.ts` non-overflow formatting unchanged).
+

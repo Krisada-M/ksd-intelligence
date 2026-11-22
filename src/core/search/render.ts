@@ -72,7 +72,7 @@ export function renderSearch(result: SearchResult, budget = SEARCH_BUDGET): stri
       makeHeader(nextShown),
       ...chosen,
       row,
-      ...(remaining > 0 ? [`  (+${remaining.toLocaleString('en-US')} more matches)`] : []),
+      ...(remaining > 0 ? [`  (+${plural(remaining, 'more match', 'more matches')})`] : []),
       next,
       footer,
     ];
@@ -84,7 +84,7 @@ export function renderSearch(result: SearchResult, budget = SEARCH_BUDGET): stri
   const out = [
     makeHeader(chosen.length),
     ...chosen,
-    ...(remaining > 0 ? [`  (+${remaining.toLocaleString('en-US')} more matches)`] : []),
+    ...(remaining > 0 ? [`  (+${plural(remaining, 'more match', 'more matches')})`] : []),
     next,
     footer,
   ].join('\n');

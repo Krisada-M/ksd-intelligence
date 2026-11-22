@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Review the actual change with M2c (owner accepted and merged on `origin/main`).
 
-**Status:** round-3-complete (Rounds 0–3 verified on `m6a-search`; Round 4 independent review pending)
+**Status:** round-4-remediated (Rounds 0–3 + Round 4 Iteration 2 fixes verified on `m6a-search` in [`docs/reviews/m6a-review.md`](../../../docs/reviews/m6a-review.md) and [`docs/research/m6a-measurements.md`](../../../docs/research/m6a-measurements.md); Iteration 2 independent Gate re-audit pending; awaiting owner acceptance of `RISK §6` / `tests/golden/search-queries.md` and macOS CI)
 
 **Requirement:** REQ-06 in the [spec](../spec.md).
 
@@ -56,18 +56,23 @@
 ### Round 3 — Fixed Query Set, Live Smoke, Measurements & Mutation Smoke ✅
 1. Drafted `tests/golden/search-queries.md` as **PROPOSED** (`20` `ksd-intelligence` + `20` `work-sure` queries): `17/20` (`85%`) top-8 / `0` missing on `ksd-intelligence`, `20/20` (`100%`) top-8 / `0` missing on `work-sure`, `100%` `rank=1` + `exact` on all exact queries (`S01–S04`, `W01–W07`).
 2. Verified live `omp -p` (`omp/19.1.0`) + Bun `1.4.2` `loadExtensions()` (`ei_search` followed by `ei_impact` + `audit.jsonl`) + CLI parity.
-3. Recorded latency (`p50`/`p95` warm + cold CLI + 50k scale `p95 = 151.18 ms`) and DB growth in `docs/research/m6a-measurements.md`.
+3. Recorded latency (`p50`/`p95` warm + cold CLI + 50k scale) and DB growth in `docs/research/m6a-measurements.md`.
 4. Killed `5 / 5` mutations (`M1–M5`, `EXIT=1`) and reverted cleanly.
 
-### Round 4 — Cross-Vendor Review & Fix
-- Independent different-vendor review checking all 6 Review Focus items in `M6a-search.md`, then test-first fix round, full gates, local commit, handoff to owner.
+### Round 4 — Cross-Vendor Review & Fix (Iteration 2 Remediation Complete; Gate Re-Audit Pending)
+- [x] Iteration 1 read-only reviews (`teamwork_reviewer_m3_1_2`, `teamwork_reviewer_m3_2_2`) & forensic audit (`teamwork_auditor_m3_1_2`) at `7df3459` recorded in `docs/reviews/m6a-review.md` §1 (same-vendor `Gemini` model caveat noted).
+- [x] Iteration 2 test-first fixes: 50k `readCandidates`/`querySearch` optimization (`src/core/search/lexical.ts`), non-tautological `callerBoost`/BM25 weight/`exactLower` tests (`tests/core/search-query.test.ts` Test 4), `quoteFtsLiteral` `\0` stripping + direct-API tests, `render.ts` `(+1 more match)` singular/plural, and `scripts/mcp/tools.mjs` audit parity.
+- [x] Post-fix re-verification on Linux WSL2 `x86_64`: `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (`726/726` pass across 2 runs; 50k isolated `p95 = 83.59 ms`, full `npm test` `p95 = 110.72–124.94 ms`, `< 300 ms`), `npm run check:dist`, `npm run verify:skills`, re-measured `docs/research/m6a-measurements.md`, and `8/8` mutation kills (`M1`, `M3`, `M4`, `callerBoost = 0`, flat BM25, `exactCase = 900` post-fix; `M2`, `M5` from Round 3).
+- [ ] Post-fix Iteration 2 independent Gate re-review & forensic audit (`NOT VERIFIED` — pending Gate re-audit on the remediation commit).
+- [ ] Independent non-Gemini vendor review (`NOT VERIFIED` — executed in separate read-only sessions on the same `Gemini` runtime family inside Antigravity CLI).
+- [ ] macOS CI / live macOS OMP verification (`NOT VERIFIED` — Linux WSL2 `x86_64` host only).
 
 ---
 
 ## Acceptance Criteria
 - [x] Run Round 0 on the [M6a brief](../../../docs/briefs/M6a-search.md) (`round-0-reconcile.md`, `D60` + `RISK §6` flagged `PROPOSED`; stop gate waived per multi-milestone owner directive).
 - [x] Demonstrate exact-name and lexical lookup through CLI and live OMP (`omp -p` + Bun `loadExtensions()`), D49 exclusion rules, FTS5 operator neutralization, stale index reporting, incremental-equals-cold, and `ei doctor --deep` coverage (`VERIFIED`).
-- [x] Run the `PROPOSED` fixed query sets (`tests/golden/search-queries.md`) on both `ksd-intelligence` (`17/20` top-8, `0` missing) and `work-sure` (`20/20` top-8, `0` missing), plus latency, DB growth, and `5/5` mutation smoke in `docs/research/m6a-measurements.md` (`VERIFIED`; pending owner confirmation of `tests/golden/search-queries.md`, `RISK §6`, and macOS CI).
+- [x] Run the `PROPOSED` fixed query sets (`tests/golden/search-queries.md`) on both `ksd-intelligence` (`17/20` top-8, `0` missing) and `work-sure` (`20/20` top-8, `0` missing), plus latency, DB growth, and `8/8` mutation smoke in `docs/research/m6a-measurements.md` (`VERIFIED`; pending owner confirmation of `tests/golden/search-queries.md`, `RISK §6`, and macOS CI).
 - [x] Verify no search result contributes to completeness, reach or verdict, and zero models/embeddings/runtime dependencies were added (`VERIFIED`).
 - [ ] Resolve only after Round 4 independent review, owner acceptance (`RISK §6`, `search-queries.md`, macOS CI), and merge to `origin/main`.
 
@@ -76,3 +81,15 @@
 - **Trap 2:** Passing raw `query` into SQLite `MATCH ?` without quoting each token (crashes on `foo-bar`, `a:b`, `OR`, `NEAR`, trailing `\`).
 - **Trap 3:** Failing to store `stable_key` tie-breaker → non-deterministic ordering between cold and incremental builds.
 - **Trap 4:** Blocking indexable `.ts` files under `secrets/` (violates D49!) OR accidentally indexing `.env` files (violates `RISK §6`!).
+
+---
+
+## Comments
+
+### 2026-11-22 — Rounds 0–3 Complete on `m6a-search` (`9302b69`, `7df3459`)
+- Implemented Round 0 (`round-0-reconcile.md`, `D60`, `RISK §6` `PROPOSED`), Round 1 (`SCHEMA_VERSION = 5`, `declarations_fts`, `segments.ts`, D49 exclusions, `ei doctor --deep`), Round 2 (`lexical.ts`, `render.ts`, CLI/OMP/AGY MCP `ei_search`, redacted `audit.jsonl`), and Round 3 (`tests/golden/search-queries.md` `PROPOSED`, `omp -p` + Bun `loadExtensions()` live smoke, `docs/research/m6a-measurements.md`).
+
+### 2026-11-22 — Round 4 Iteration 1 Findings & Iteration 2 Remediation (`m6a-search`)
+- Iteration 1 read-only reviews and forensic audit (`docs/reviews/m6a-review.md` §1) rejected `7df3459` because Test 6 (`50,000 declarations ... p95 < 300 ms`) failed deterministically (`455.15–1114.70 ms >= 300 ms`), `quoteFtsLiteral`/`querySearch` threw on direct `\0`, Test 4 had tautological `callerBoost`/confounded BM25 checks, `render.ts` used `(+1 more matches)`, `scripts/mcp/tools.mjs` omitted `limit` on `INVALID_INPUT` / trimmed parity on `ei_search` audit, and `m6a-measurements.md` lacked `NOT VERIFIED` host/vendor notes.
+- Iteration 2 applied test-first fixes (`src/core/search/{lexical,render}.ts`, `scripts/mcp/tools.mjs`, `tests/core/search-query.test.ts`), verified `726/726` pass across two full `npm test` runs (`50k` isolated `p95 = 83.59 ms`, full `npm test` `p95 = 110.72–124.94 ms`, `< 300 ms`), killed `8/8` mutations (`M1–M8`), and updated `docs/research/m6a-measurements.md` and `docs/reviews/m6a-review.md`.
+- **Remaining Gates:** Post-fix Iteration 2 independent Gate re-audit on `m6a-search`, independent non-Gemini vendor review (`NOT VERIFIED`), macOS CI / live macOS OMP (`NOT VERIFIED`), and owner acceptance of `RISK §6` and `tests/golden/search-queries.md` (`PROPOSED`).

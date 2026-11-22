@@ -19,9 +19,11 @@ import {
   SEARCH_BUDGET,
   buildFtsQuery,
   querySearch,
+  quoteFtsLiteral,
   renderSearch,
   renderSearchOutcome,
   runSearch,
+  type SearchHit,
 } from '../../src/index.js';
 import {
   SCHEMA_VERSION,
@@ -330,35 +332,68 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.equal(multiWordExact.value.hits[0]?.kind, 'exact');
   });
 
-  it('4. applies BM25 field weights (name > owner > signature > doc > path), exported, and caller boosts', async () => {
+  it('4. applies BM25 field weights (name > owner > signature > doc > path > kind), exact tiers, exported, and caller boosts', async () => {
     const work = await makeTempDir('ei-search-weights-');
+    const longDoc =
+      '/** One two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen. */';
+    const callers10 = Array.from(
+      { length: 10 },
+      (_, i) => `export function c${i}() { return tokenAlphaExtra(); }`,
+    ).join('\n');
     const { repo, workspace } = await createRepo(work, {
-      'src/fields.ts': [
-        '/** Primary symbol declaration in fixture. */',
-        'function beacon() { return 1; }',
-        '/** Service container class in fixture. */',
-        'export class Beacon {',
-        '  /** Member method inside container class. */',
-        '  memberFn() { return 2; }',
+      // Equal-token-length (22 FTS tokens), unexported, 0-caller declarations with inverted stable_key order
+      'src/weights/a1_kind.ts': [
+        'class BoxHost {',
+        '  /** Alpha beta gamma delta epsilon zeta eta theta iota. */',
+        '  get item() { return 1; }',
         '}',
-        '/** Value interface definition in fixture. */',
-        'export interface BeaconType { value: string; }',
-        '/** Signature parameter test helper function. */',
-        'function sigMatch(beacon: string) { return beacon; }',
-        '/** Mentions beacon in first paragraph. */',
-        'function docMatch() { return 3; }',
       ].join('\n'),
-      'src/beacon/pathOnly.ts':
-        '/** Path segment test helper function. */\nfunction pathMatch() { return 4; }\n',
-      'src/boosts.ts': [
+      'src/weights/accessor/b2_path.ts': [
+        '/** Alpha beta gamma delta epsilon zeta eta theta. */',
+        'function pathHolder(): number { return 1; }',
+      ].join('\n'),
+      'src/weights/c3_doc.ts': [
+        '/** Alpha beta gamma delta accessor zeta eta theta iota. */',
+        'function docHolder(): number { return 1; }',
+      ].join('\n'),
+      'src/weights/d4_sig.ts': [
+        '/** Alpha beta gamma delta epsilon zeta eta. */',
+        'function sigHolder(accessor: number): number { return accessor; }',
+      ].join('\n'),
+      'src/weights/e5_owner.ts': [
+        'class AccessorOwner {',
+        '  /** Alpha beta gamma delta epsilon zeta eta. */',
+        '  memberFn(): number { return 1; }',
+        '}',
+      ].join('\n'),
+      'src/weights/f6_name.ts': [
+        '/** Alpha beta gamma delta epsilon zeta eta theta iota. */',
+        'function accessorHelper(): number { return 1; }',
+      ].join('\n'),
+      'src/boosts_a.ts': [
         'export function exportedZero() { return 1; }',
         'function unexportedZero() { return 2; }',
-        'export function popularFn() { return 3; }',
-        'export function unpopularFn() { return 4; }',
-        'export function use1() { return popularFn(); }',
-        'export function use2() { return popularFn(); }',
-        'export function use3() { return popularFn(); }',
+        'export function sharedPopular() { return 3; }',
       ].join('\n'),
+      'src/boosts_z.ts': [
+        'export function sharedPopular() { return 4; }',
+        'export function use1() { return sharedPopular(); }',
+        'export function use2() { return sharedPopular(); }',
+        'export function use3() { return sharedPopular(); }',
+      ].join('\n'),
+      'src/case_0.ts': [
+        '/** tokenAlpha tokenAlpha tokenAlpha tokenAlpha tokenAlpha */',
+        'export function tokenAlphaExtra() { return 1; }',
+        callers10,
+      ].join('\n'),
+      'src/case_a.ts': [
+        longDoc,
+        'export function tokenAlpha() { return 2; }',
+        'export function l1() { return tokenAlpha(); }',
+        'export function l2() { return tokenAlpha(); }',
+        'export function l3() { return tokenAlpha(); }',
+      ].join('\n'),
+      'src/case_z.ts': [longDoc, 'function TokenAlpha() { return 3; }'].join('\n'),
     });
     const report = await new Indexer(ts, repo, workspace.cacheDir).index({
       impact: workspace.config.impact,
@@ -367,24 +402,54 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.deepEqual(report.problems, []);
     const session = new ImpactSession(workspace);
 
-    const fieldOut = await runSearch(session, { query: 'beacon', limit: 20 });
+    const fieldOut = await runSearch(session, { query: 'accessor', limit: 20 });
     assert.equal(fieldOut.kind, 'result');
     const symbols = fieldOut.value.hits.map((h) => h.symbol);
     const rankOf = (s: string) => symbols.indexOf(s);
-    assert.ok(rankOf('src/fields.ts#beacon') >= 0);
-    assert.ok(rankOf('src/fields.ts#Beacon.memberFn') > rankOf('src/fields.ts#beacon'));
-    assert.ok(rankOf('src/fields.ts#sigMatch') > rankOf('src/fields.ts#Beacon.memberFn'));
-    assert.ok(rankOf('src/fields.ts#docMatch') > rankOf('src/fields.ts#sigMatch'));
-    assert.ok(rankOf('src/beacon/pathOnly.ts#pathMatch') > rankOf('src/fields.ts#docMatch'));
+    const expectedOrder = [
+      'src/weights/f6_name.ts#accessorHelper',
+      'src/weights/e5_owner.ts#AccessorOwner.memberFn',
+      'src/weights/d4_sig.ts#sigHolder',
+      'src/weights/c3_doc.ts#docHolder',
+      'src/weights/accessor/b2_path.ts#pathHolder',
+      'src/weights/a1_kind.ts#BoxHost.item',
+    ];
+    for (const sym of expectedOrder) {
+      const hit: SearchHit | undefined = fieldOut.value.hits.find((h) => h.symbol === sym);
+      assert.ok(hit, `missing ${sym}`);
+      assert.equal(hit.kind, 'lexical');
+      assert.equal(hit.exported, false);
+      assert.equal(hit.callers, 0);
+    }
+    for (let i = 0; i < expectedOrder.length - 1; i++) {
+      assert.ok(
+        rankOf(expectedOrder[i]!) < rankOf(expectedOrder[i + 1]!),
+        `expected ${expectedOrder[i]} before ${expectedOrder[i + 1]}`,
+      );
+    }
 
     const exportOut = await runSearch(session, { query: 'zero' });
     assert.equal(exportOut.kind, 'result');
-    assert.equal(exportOut.value.hits[0]?.symbol, 'src/boosts.ts#exportedZero');
-    assert.equal(exportOut.value.hits[1]?.symbol, 'src/boosts.ts#unexportedZero');
+    assert.equal(exportOut.value.hits[0]?.symbol, 'src/boosts_a.ts#exportedZero');
+    assert.equal(exportOut.value.hits[1]?.symbol, 'src/boosts_a.ts#unexportedZero');
 
-    const callerOut = await runSearch(session, { query: 'popularFn unpopularFn' });
+    const callerOut = await runSearch(session, { query: 'sharedPopular' });
     assert.equal(callerOut.kind, 'result');
-    assert.equal(callerOut.value.hits[0]?.symbol, 'src/boosts.ts#popularFn');
+    assert.equal(callerOut.value.hits[0]?.symbol, 'src/boosts_z.ts#sharedPopular');
+    assert.equal(callerOut.value.hits[1]?.symbol, 'src/boosts_a.ts#sharedPopular');
+    assert.equal(callerOut.value.hits[0]?.callers, 3);
+    assert.equal(callerOut.value.hits[1]?.callers, 0);
+
+    const exactTierOut = await runSearch(session, { query: 'TokenAlpha' });
+    assert.equal(exactTierOut.kind, 'result');
+    assert.equal(exactTierOut.value.hits[0]?.symbol, 'src/case_z.ts#TokenAlpha');
+    assert.equal(exactTierOut.value.hits[0]?.kind, 'exact');
+    assert.equal(exactTierOut.value.hits[1]?.symbol, 'src/case_a.ts#tokenAlpha');
+    assert.equal(exactTierOut.value.hits[1]?.kind, 'exact');
+    assert.equal(exactTierOut.value.hits[2]?.symbol, 'src/case_0.ts#tokenAlphaExtra');
+    assert.equal(exactTierOut.value.hits[2]?.kind, 'lexical');
+    assert.ok(exactTierOut.value.hits[0]!.score - exactTierOut.value.hits[1]!.score > 50);
+    assert.ok(exactTierOut.value.hits[1]!.score - exactTierOut.value.hits[2]!.score > 800);
   });
 
   it('5. produces deterministic byte-identical results across repeated queries and cold vs incremental builds', async () => {
@@ -423,7 +488,7 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.equal(renderSearchOutcome(rAfter), renderSearchOutcome(r1));
   });
 
-  it('6. searches 50,000 declarations with stat probe at p95 < 300 ms', async () => {
+  it('6. searches 50,000 declarations with stat probe at p95 < 300 ms', async (t) => {
     const work = await makeTempDir('ei-search-50k-');
     const repo = join(work, 'repo');
     const cacheHome = join(work, 'home');
@@ -556,7 +621,12 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
       assert.equal(res.value.indexState, 'fresh');
     }
     timings.sort((a, b) => a - b);
+    const p50 = timings[Math.min(timings.length - 1, Math.ceil(timings.length * 0.5) - 1)]!;
     const p95 = timings[Math.min(timings.length - 1, Math.ceil(timings.length * 0.95) - 1)]!;
+    const max = timings[timings.length - 1]!;
+    t.diagnostic(
+      `50k timings (25 queries): p50=${p50.toFixed(2)} ms, p95=${p95.toFixed(2)} ms, max=${max.toFixed(2)} ms`,
+    );
     assert.ok(p95 < 300, `50k search p95 was ${p95.toFixed(2)} ms (>= 300 ms)`);
   });
 
@@ -760,6 +830,77 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.ok(!rawAudit.includes(repo));
     const realHome = homedir();
     if (realHome.length > 1) assert.ok(!rawAudit.includes(realHome));
+
+    // AGY MCP ei_search audit parity: INVALID_INPUT logs integer limit (omits non-integer),
+    // and valid args log trimmed query + default limit (matching CLI and OMP)
+    const { createTools } = (await import(MCP_TOOLS_URL)) as {
+      createTools: (opts: { root: string; env?: NodeJS.ProcessEnv }) => {
+        call: (
+          name: string,
+          args: unknown,
+          signal: AbortSignal,
+        ) => Promise<{ isError?: boolean; content: { text: string }[] }>;
+      };
+    };
+    const mcpWork = await makeTempDir('ei-search-mcp-audit-');
+    const mcpRepo = await createRepo(mcpWork, {
+      'src/a.ts': 'export function alpha() { return 1; }\n',
+    });
+    const mcpTools = createTools({
+      root: mcpRepo.repo,
+      env: { ...process.env, HOME: mcpRepo.cacheHome },
+    });
+    const inv1 = await mcpTools.call(
+      'ei_search',
+      { query: '   ', limit: 21 },
+      new AbortController().signal,
+    );
+    assert.equal(inv1.isError, true);
+    const inv2 = await mcpTools.call(
+      'ei_search',
+      { query: '   ', limit: 1.5 },
+      new AbortController().signal,
+    );
+    assert.equal(inv2.isError, true);
+
+    const disabledMcpWork = await makeTempDir('ei-search-mcp-audit-disabled-');
+    const disabledMcpRepo = await createRepo(
+      disabledMcpWork,
+      { 'src/a.ts': 'export function alpha() { return 1; }\n' },
+      { search: { enabled: false, semantic: false } },
+    );
+    const disabledMcpTools = createTools({
+      root: disabledMcpRepo.repo,
+      env: { ...process.env, HOME: disabledMcpRepo.cacheHome },
+    });
+    const trimmedFail = await disabledMcpTools.call(
+      'ei_search',
+      { query: '  alpha  ' },
+      new AbortController().signal,
+    );
+    assert.equal(trimmedFail.isError, true);
+
+    const mcpAuditLines = (await readFile(join(mcpRepo.workspace.cacheDir, AUDIT_FILE), 'utf8'))
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(mcpAuditLines.length, 2);
+    assert.equal(mcpAuditLines[0]?.code, 'INVALID_INPUT');
+    assert.equal(mcpAuditLines[0]?.query, '   ');
+    assert.equal(mcpAuditLines[0]?.limit, 21);
+    assert.equal(mcpAuditLines[1]?.code, 'INVALID_INPUT');
+    assert.equal(mcpAuditLines[1]?.limit, undefined);
+
+    const disabledAuditLines = (
+      await readFile(join(disabledMcpRepo.workspace.cacheDir, AUDIT_FILE), 'utf8')
+    )
+      .trimEnd()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    assert.equal(disabledAuditLines.length, 1);
+    assert.equal(disabledAuditLines[0]?.outcome, 'failure');
+    assert.equal(disabledAuditLines[0]?.query, 'alpha');
+    assert.equal(disabledAuditLines[0]?.limit, 8);
   });
 
   it('12. maintains CLI/OMP/MCP output parity and enforces the 4,000-character budget', async () => {
@@ -835,12 +976,61 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
       `rendered length ${rendered20.length} > ${SEARCH_BUDGET}`,
     );
     assert.match(rendered20, /\(\+\d+ more matches\)/);
+
+    // Singular vs plural overflow line: (+1 more match) vs (+2 more matches)
+    const sampleOverflow = (totalMatches: number): Parameters<typeof renderSearch>[0] => ({
+      query: 'q',
+      limit: 8,
+      totalMatches,
+      hits: [
+        {
+          kind: 'exact',
+          symbol: 'src/a.ts#firstFn',
+          declarationKind: 'function',
+          span: { file: 'src/a.ts', startLine: 1, endLine: 1 },
+          signature: 'export function firstFn(): void',
+          exported: true,
+          callers: 0,
+          route: false,
+          score: 1000,
+        },
+        {
+          kind: 'lexical',
+          symbol: 'src/a.ts#secondFn',
+          declarationKind: 'function',
+          span: { file: 'src/a.ts', startLine: 2, endLine: 2 },
+          signature: 'export function secondFn(): void',
+          exported: true,
+          callers: 0,
+          route: false,
+          score: 10,
+        },
+      ],
+      indexState: 'fresh',
+      scannedFiles: 1,
+      engine: { version: '0.2.0', typescript: '5.9.3', extractor: 'test' },
+    });
+    const fitOneBudget = renderSearch(sampleOverflow(2), 10_000).length - 1;
+    const oneMore = renderSearch(sampleOverflow(2), fitOneBudget);
+    assert.match(oneMore, /\(\+1 more match\)/);
+    assert.doesNotMatch(oneMore, /\(\+1 more matches\)/);
+    const twoMore = renderSearch(sampleOverflow(3), fitOneBudget);
+    assert.match(twoMore, /\(\+2 more matches\)/);
   });
 
-  it('querySearch can run directly on an open DB and never introduces semantic hits', async () => {
+  it('querySearch can run directly on an open DB and neutralizes NUL bytes without semantic hits', async () => {
+    assert.equal(quoteFtsLiteral('foo\0bar'), '"foobar"');
+    assert.equal(quoteFtsLiteral('\0'), '""');
+    const nulBuilt = buildFtsQuery('\0');
+    assert.equal(nulBuilt.matchExpr, null);
+    assert.equal(nulBuilt.exactMatchExpr, null);
+    const fooNulBuilt = buildFtsQuery('foo\0bar');
+    assert.equal(fooNulBuilt.matchExpr, '"foo" OR "bar" OR "foobar"');
+
     const work = await makeTempDir('ei-search-direct-');
     const { repo, workspace } = await createRepo(work, {
-      'src/a.ts': 'export function directFn() { return 1; }\n',
+      'src/a.ts':
+        'export function directFn() { return 1; }\nexport function fooBar() { return 2; }\n',
     });
     await new Indexer(ts, repo, workspace.cacheDir).index({
       impact: workspace.config.impact,
@@ -851,8 +1041,39 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     try {
       const res = querySearch(ctx.db, workspace.config.impact, 'directFn', 8);
       assert.equal(res.hits[0]?.kind, 'exact');
+
+      const nulRes = querySearch(ctx.db, workspace.config.impact, 'foo\0bar', 8);
+      assert.equal(nulRes.hits[0]?.symbol, 'src/a.ts#fooBar');
+      assert.equal(nulRes.hits[0]?.kind, 'lexical');
+      assert.ok(nulRes.hits.every((h) => h.kind === 'exact' || h.kind === 'lexical'));
+
+      const onlyNulRes = querySearch(ctx.db, workspace.config.impact, '\0', 8);
+      assert.deepEqual(onlyNulRes.hits, []);
+      assert.equal(onlyNulRes.totalMatches, 0);
     } finally {
       ctx.db.close();
     }
+  });
+
+  it('finds buried exact-name match even when > 500 lexical FTS hits precede it', async () => {
+    const work = await makeTempDir('ei-search-buried-exact-');
+    const filler = Array.from(
+      { length: 550 },
+      (_, i) => `/** retry retry retry */\nexport function retryFiller${i}() { return ${i}; }`,
+    ).join('\n');
+    const { repo, workspace } = await createRepo(work, {
+      'src/a_fillers.ts': filler,
+      'src/z_target.ts': 'function retry() { return 0; }\n',
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+    const session = new ImpactSession(workspace);
+    const out = await runSearch(session, { query: 'retry', limit: 8 });
+    assert.equal(out.kind, 'result');
+    assert.ok(out.value.totalMatches > 500);
+    assert.equal(out.value.hits[0]?.symbol, 'src/z_target.ts#retry');
+    assert.equal(out.value.hits[0]?.kind, 'exact');
   });
 });
