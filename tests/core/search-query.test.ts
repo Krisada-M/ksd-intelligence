@@ -1055,7 +1055,7 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     }
   });
 
-  it('finds genuinely buried single-exact matches (> 500 FTS hits) with real BM25 score and buried RETRY / PaymentService.charge', async () => {
+  it('finds buried exact matches and dotted qualified matches among > 500 FTS hits', async () => {
     const work = await makeTempDir('ei-search-buried-exact-');
     const retryFillers = Array.from(
       { length: 550 },
@@ -1112,7 +1112,7 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
       `expected buried single exact hit to retain non-zero BM25 (> 1000), got ${out.value.hits[0]?.score}`,
     );
 
-    // 2. Buried dotted qualified match (`PaymentService.charge` over > 500 chargeFiller rows):
+    // 2. Dotted qualified match (`PaymentService.charge` over > 500 chargeFiller rows):
     const dottedOut = await runSearch(session, { query: 'PaymentService.charge', limit: 8 });
     assert.equal(dottedOut.kind, 'result');
     assert.ok(dottedOut.value.totalMatches > 500);
@@ -1158,7 +1158,7 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     assert.ok((pairOut.value.hits[1]?.score ?? 0) > 1000);
   });
 
-  it('never executes SCAN declarations in EXPLAIN QUERY PLAN for simple, dotted, or multi-word queries > 500 rows', async () => {
+  it('bounds materialized rows and avoids declaration-table scans for queries with > 500 matches', async () => {
     const work = await makeTempDir('ei-search-eqp-');
     const retryFillers = Array.from(
       { length: 550 },
@@ -1205,7 +1205,12 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
       const origGet = stmt.get.bind(stmt);
       stmt.all = ((...args: unknown[]) => {
         recordPlan(args);
-        return origAll(...(args as never[]));
+        const rows = origAll(...(args as never[]));
+        assert.ok(
+          rows.length <= 500,
+          `search "${currentQuery}" materialized ${rows.length} rows in one query`,
+        );
+        return rows;
       }) as typeof stmt.all;
       stmt.get = ((...args: unknown[]) => {
         recordPlan(args);
