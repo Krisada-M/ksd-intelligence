@@ -609,6 +609,8 @@ export class ImpactSession {
       driftedFiles: ctx.driftedFiles,
       staleReason: ctx.staleReason,
       failureMessage: ctx.failureMessage,
+      ...(ctx.meta !== undefined ? { meta: ctx.meta } : {}),
+      ...(ctx.scannedFiles !== undefined ? { scannedFiles: ctx.scannedFiles } : {}),
     };
   }
 
@@ -635,6 +637,8 @@ export class ImpactSession {
     let previousId: string | null = null;
     let staleReason = '';
     let preUpdateIndexable: Set<string> | null = null;
+    let meta: Record<string, string> | undefined;
+    let scannedFiles: number | undefined;
     try {
       const configHash = impactConfigHash(this.workspace.config.impact);
       db = openPublished(this.workspace.cacheDir);
@@ -644,11 +648,12 @@ export class ImpactSession {
           db.close();
           db = null;
         } else {
-          const meta = readMeta(db);
+          meta = readMeta(db);
           previousId = meta.build_id ?? null;
           const persistedFailure = lastFailure(this.workspace.cacheDir, meta.built_at);
           if (persistedFailure !== null) staleReason = `update failed: ${persistedFailure}`;
           const files = readFiles(db);
+          scannedFiles = files.length;
           if (capturePreUpdate) {
             preUpdateIndexable = new Set(
               files.filter((f) => f.status === 'indexable').map((f) => f.path),
@@ -675,6 +680,8 @@ export class ImpactSession {
               staleReason: `stale-index: ${staleReason}`,
               failureMessage: null,
               preUpdateIndexable,
+              meta,
+              scannedFiles,
             };
           }
           if (driftedFiles.length === 0) {
@@ -687,6 +694,8 @@ export class ImpactSession {
               staleReason: null,
               failureMessage: null,
               preUpdateIndexable,
+              meta,
+              scannedFiles,
             };
           }
           fingerprint = driftFingerprint(this.workspace.root, driftedFiles, configHash);
@@ -703,6 +712,8 @@ export class ImpactSession {
               ),
               failureMessage: null,
               preUpdateIndexable,
+              meta,
+              scannedFiles,
             };
           }
         }
@@ -812,6 +823,8 @@ export class ImpactSession {
         staleReason: staleReasonText(driftedFiles, staleReason, failureMessage),
         failureMessage: null,
         preUpdateIndexable,
+        ...(meta !== undefined ? { meta } : {}),
+        ...(scannedFiles !== undefined ? { scannedFiles } : {}),
       };
     } catch (error) {
       db?.close();
@@ -835,6 +848,8 @@ export interface SearchSessionContext {
   driftedFiles: string[];
   staleReason: string | null;
   failureMessage: string | null;
+  meta?: Record<string, string>;
+  scannedFiles?: number;
 }
 
 export interface ChangesSessionContext extends SearchSessionContext {

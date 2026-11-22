@@ -138,7 +138,7 @@ describe('ei index and ei_status (M2a.1)', () => {
       text,
       /^TypeScript {2}5\.9\.3 \(runtime\) · .*typescript\.js · verified sha256 [0-9a-f]{12}$/m,
     );
-    assert.match(text, /^Store {7}.*index\.sqlite · [\d,]+ KB · schema 5$/m);
+    assert.match(text, /^Store {7}.*index\.sqlite · [\d,]+ KB · schema 6$/m);
     // ADR 0003: uses stored and uses skipped by category, with the ratio.
     const uses = status.index?.graph.uses ?? {};
     assert.ok((uses.indexed ?? 0) > 0 && (uses.local ?? 0) > 0 && (uses.external ?? 0) > 0);

@@ -1055,25 +1055,191 @@ describe('M6a Round 2 — query, ranking, rendering, CLI/OMP/MCP parity, audit',
     }
   });
 
-  it('finds buried exact-name match even when > 500 lexical FTS hits precede it', async () => {
+  it('finds genuinely buried single-exact matches (> 500 FTS hits) with real BM25 score and buried RETRY / PaymentService.charge', async () => {
     const work = await makeTempDir('ei-search-buried-exact-');
-    const filler = Array.from(
+    const retryFillers = Array.from(
       { length: 550 },
       (_, i) => `/** retry retry retry */\nexport function retryFiller${i}() { return ${i}; }`,
     ).join('\n');
+    const chargeFillers = Array.from(
+      { length: 550 },
+      (_, i) => `/** charge charge charge */\nexport function chargeFiller${i}() { return ${i}; }`,
+    ).join('\n');
+    const unrelated = Array.from(
+      { length: 700 },
+      (_, i) => `export function otherThing${i}() { return ${i}; }`,
+    ).join('\n');
+    const paddedDoc =
+      '/** alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi */';
+
     const { repo, workspace } = await createRepo(work, {
-      'src/a_fillers.ts': filler,
-      'src/z_target.ts': 'function retry() { return 0; }\n',
+      'src/a_fillers.ts': `${retryFillers}\n${chargeFillers}\n`,
+      'src/b_unrelated.ts': unrelated,
+      'src/z_target.ts': `${paddedDoc}\nfunction retry() { return 0; }\n`,
+      'src/z_upper.ts': `${paddedDoc}\nfunction RETRY_ALIAS() { return 0; }\n`,
+      'src/z_service.ts': `export class PaymentService {\n  ${paddedDoc}\n  charge() { return 1; }\n}\n`,
     });
+    // Also verify case-insensitive buried RETRY on a dedicated repo where only RETRY exists for 'retry'
+    const upperWork = await makeTempDir('ei-search-buried-upper-');
+    const upperRepo = await createRepo(upperWork, {
+      'src/a_fillers.ts': retryFillers,
+      'src/b_unrelated.ts': unrelated,
+      'src/z_upper.ts': `${paddedDoc}\nfunction RETRY() { return 0; }\n`,
+    });
+    // And verify 2 exact matches (one in top-500, one buried) both get exact rank + bm25Score > 0
+    const pairWork = await makeTempDir('ei-search-buried-pair-');
+    const pairRepo = await createRepo(pairWork, {
+      'src/a_top.ts': 'export function retry() { return 1; }\n',
+      'src/b_fillers.ts': retryFillers,
+      'src/c_unrelated.ts': unrelated,
+      'src/z_buried.ts': `${paddedDoc}\nfunction retry() { return 2; }\n`,
+    });
+
     await new Indexer(ts, repo, workspace.cacheDir).index({
       impact: workspace.config.impact,
       full: true,
     });
     const session = new ImpactSession(workspace);
+
+    // 1. Single buried exact lowercase match (`missingExactIds.length === 1` without anyExistingExact):
     const out = await runSearch(session, { query: 'retry', limit: 8 });
     assert.equal(out.kind, 'result');
     assert.ok(out.value.totalMatches > 500);
     assert.equal(out.value.hits[0]?.symbol, 'src/z_target.ts#retry');
     assert.equal(out.value.hits[0]?.kind, 'exact');
+    assert.ok(
+      (out.value.hits[0]?.score ?? 0) > 1000,
+      `expected buried single exact hit to retain non-zero BM25 (> 1000), got ${out.value.hits[0]?.score}`,
+    );
+
+    // 2. Buried dotted qualified match (`PaymentService.charge` over > 500 chargeFiller rows):
+    const dottedOut = await runSearch(session, { query: 'PaymentService.charge', limit: 8 });
+    assert.equal(dottedOut.kind, 'result');
+    assert.ok(dottedOut.value.totalMatches > 500);
+    assert.equal(dottedOut.value.hits[0]?.symbol, 'src/z_service.ts#PaymentService.charge');
+    assert.equal(dottedOut.value.hits[0]?.kind, 'exact');
+    assert.ok(
+      (dottedOut.value.hits[0]?.score ?? 0) > 1000,
+      `expected buried dotted exact hit score > 1000, got ${dottedOut.value.hits[0]?.score}`,
+    );
+
+    // 3. Buried uppercase RETRY queried as lowercase 'retry' over > 500 matching rows:
+    await new Indexer(ts, upperRepo.repo, upperRepo.workspace.cacheDir).index({
+      impact: upperRepo.workspace.config.impact,
+      full: true,
+    });
+    const upperOut = await runSearch(new ImpactSession(upperRepo.workspace), {
+      query: 'retry',
+      limit: 8,
+    });
+    assert.equal(upperOut.kind, 'result');
+    assert.ok(upperOut.value.totalMatches > 500);
+    assert.equal(upperOut.value.hits[0]?.symbol, 'src/z_upper.ts#RETRY');
+    assert.equal(upperOut.value.hits[0]?.kind, 'exact');
+    assert.ok(
+      (upperOut.value.hits[0]?.score ?? 0) > 900,
+      `expected buried uppercase exactLower hit score > 900, got ${upperOut.value.hits[0]?.score}`,
+    );
+
+    // 4. Two exact matches (1 in top-500 + 1 buried) both retain exact rank and bm25Score > 0:
+    await new Indexer(ts, pairRepo.repo, pairRepo.workspace.cacheDir).index({
+      impact: pairRepo.workspace.config.impact,
+      full: true,
+    });
+    const pairOut = await runSearch(new ImpactSession(pairRepo.workspace), {
+      query: 'retry',
+      limit: 8,
+    });
+    assert.equal(pairOut.kind, 'result');
+    assert.equal(pairOut.value.hits[0]?.symbol, 'src/a_top.ts#retry');
+    assert.equal(pairOut.value.hits[0]?.kind, 'exact');
+    assert.equal(pairOut.value.hits[1]?.symbol, 'src/z_buried.ts#retry');
+    assert.equal(pairOut.value.hits[1]?.kind, 'exact');
+    assert.ok((pairOut.value.hits[1]?.score ?? 0) > 1000);
+  });
+
+  it('never executes SCAN declarations in EXPLAIN QUERY PLAN for simple, dotted, or multi-word queries > 500 rows', async () => {
+    const work = await makeTempDir('ei-search-eqp-');
+    const retryFillers = Array.from(
+      { length: 550 },
+      (_, i) => `/** retry retry retry */\nexport function retryFiller${i}() { return ${i}; }`,
+    ).join('\n');
+    const chargeFillers = Array.from(
+      { length: 550 },
+      (_, i) => `/** charge charge charge */\nexport function chargeFiller${i}() { return ${i}; }`,
+    ).join('\n');
+    const paddedDoc =
+      '/** alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi omicron pi */';
+
+    const { repo, workspace } = await createRepo(work, {
+      'src/a_fillers.ts': `${retryFillers}\n${chargeFillers}\n`,
+      'src/z_target.ts': `${paddedDoc}\nfunction retry() { return 0; }\n`,
+      'src/z_service.ts': `export class PaymentService {\n  ${paddedDoc}\n  charge() { return 1; }\n}\n`,
+    });
+    await new Indexer(ts, repo, workspace.cacheDir).index({
+      impact: workspace.config.impact,
+      full: true,
+    });
+
+    const ctx = await new ImpactSession(workspace).prepareForSearch();
+    assert.ok(ctx.db !== null);
+    const capturedPlans: Array<{ query: string; sql: string; details: string[] }> = [];
+    let currentQuery = '';
+    const origPrepare = ctx.db.prepare.bind(ctx.db);
+    ctx.db.prepare = ((sql: string) => {
+      const stmt = origPrepare(sql);
+      const recordPlan = (args: unknown[]): void => {
+        if (sql.trimStart().toUpperCase().startsWith('EXPLAIN')) return;
+        const planRows = origPrepare(`EXPLAIN QUERY PLAN ${sql}`).all(
+          ...(args as never[]),
+        ) as Array<{
+          detail?: string;
+        }>;
+        capturedPlans.push({
+          query: currentQuery,
+          sql,
+          details: planRows.map((row) => String(row.detail ?? '')),
+        });
+      };
+      const origAll = stmt.all.bind(stmt);
+      const origGet = stmt.get.bind(stmt);
+      stmt.all = ((...args: unknown[]) => {
+        recordPlan(args);
+        return origAll(...(args as never[]));
+      }) as typeof stmt.all;
+      stmt.get = ((...args: unknown[]) => {
+        recordPlan(args);
+        return origGet(...(args as never[]));
+      }) as typeof stmt.get;
+      return stmt;
+    }) as typeof ctx.db.prepare;
+
+    try {
+      const checks: Array<{ q: string; expectedSymbol: string }> = [
+        { q: 'retry', expectedSymbol: 'src/z_target.ts#retry' },
+        { q: 'PaymentService.charge', expectedSymbol: 'src/z_service.ts#PaymentService.charge' },
+        { q: 'find retry implementation', expectedSymbol: 'src/z_target.ts#retry' },
+      ];
+      for (const { q, expectedSymbol } of checks) {
+        currentQuery = q;
+        const res = querySearch(ctx.db, workspace.config.impact, q, 8);
+        assert.ok(res.totalMatches > 500, `expected > 500 matches for "${q}"`);
+        assert.equal(res.hits[0]?.symbol, expectedSymbol);
+        assert.equal(res.hits[0]?.kind, 'exact');
+      }
+    } finally {
+      ctx.db.close();
+    }
+
+    assert.ok(capturedPlans.length > 0);
+    for (const plan of capturedPlans) {
+      for (const detail of plan.details) {
+        assert.doesNotMatch(
+          detail,
+          /\bSCAN\s+(?:TABLE\s+)?(?:d|declarations)\b/i,
+          `unexpected declarations table scan for "${plan.query}" (${detail}) in SQL:\n${plan.sql}`,
+        );
+      }
+    }
   });
 });

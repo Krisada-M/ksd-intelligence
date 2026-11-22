@@ -2,10 +2,11 @@
 
 - **Date:** 2026-11-22
 - **Branch Reviewed (Round 4 Iteration 1):** `m6a-search` @ `7df3459` (base `m2c-changes` @ `584e83a`; commits `9302b69` & `7df3459`)
-- **Branch Remediated (Round 4 Iteration 2):** `m6a-search` (local Round 4 Iteration 2 commit)
+- **Branch Remediated (Round 4 Iteration 2):** `m6a-search` @ `bf715e8`
+- **Branch Remediated (Round 4 Iteration 3):** `m6a-search` (local Round 4 Iteration 3 commit; post-`bf715e8`)
 - **Runtime:** Linux WSL2 `x86_64` (`6.18.58.1-microsoft-standard-WSL2`) · Node `v24.21.0` · npm `12.2.0` · Bun `1.4.2` · OMP `omp/19.1.0`
 - **Model & Cross-Vendor Caveat (per `docs/briefs/README.md` & `docs/briefs/M6a-search.md`):**
-  - Round 4 independent reviews and forensic audit were executed by read-only subagents running in the `Gemini` agent runtime inside Antigravity CLI — the **same model family** as the Round 0–3 and Round 4 remediation workers. True cross-vendor model diversity (an independent non-Gemini vendor model) is **`NOT VERIFIED`** in this automated local harness; the reviewers and auditor were separate read-only sessions that did not author `9302b69`, `7df3459`, or the Round 4 remediation commit.
+  - Round 4 independent reviews and forensic audit were executed by read-only subagents running in the `Gemini` agent runtime inside Antigravity CLI — the **same model family** as the Round 0–3 and Round 4 remediation workers. True cross-vendor model diversity (an independent non-Gemini vendor model) is **`NOT VERIFIED`** in this automated local harness; the reviewers and auditor were separate read-only sessions that did not author `9302b69`, `7df3459`, `bf715e8`, or the Iteration 3 remediation commit.
   - Host boundaries unchanged: `macOS CI / live macOS OMP` (`NOT VERIFIED` on Linux WSL2 `x86_64`).
   - Owner-approval boundaries unchanged: `tests/golden/search-queries.md` (`PROPOSED`), `docs/RISK.md §6` (`PROPOSED` D60 exception), and `docs/DESIGN.md §15` (`D60`, `PROPOSED`) remain `PROPOSED` awaiting owner confirmation.
 
@@ -21,18 +22,16 @@
 
 ---
 
-## 2. Round 4 Iteration 2 Test-First Fixes & Re-Verification
+## 2. Round 4 Iteration 2 Test-First Fixes & Re-Verification (`bf715e8`)
 
-All Round 4 Iteration 1 findings were fixed test-first on `m6a-search`:
+All Round 4 Iteration 1 findings were fixed test-first on `m6a-search` (`bf715e8`):
 
 1. **50k `readCandidates` / `querySearch` latency optimization (`src/core/search/lexical.ts`, `tests/core/search-query.test.ts` Test 6):**
    - Added `WITH top AS (SELECT f.rowid AS id, s.key AS stable_key, -bm25(...) AS bm25_score FROM declarations_fts f JOIN symbols s ON s.id = f.rowid WHERE declarations_fts MATCH ? ORDER BY bm25_score DESC, s.key ASC LIMIT ?)` in `readCandidates`, deferring wide FTS/declaration hydration and correlated `edges` caller subqueries to `<= 500` rows.
    - Replaced unconditional second 50k `exactMatchExpr` FTS5 scan in `querySearch` with a gated `declarations` `COLLATE NOCASE` exact-match supplement (skipped when `ftsTotal <= 500 && !tokenLimitHit`), preserving existing `matchExpr` BM25 scores and adding a `> 500` buried-exact regression test without weakening Test 6 (`50,000` rows, `25` queries, `p95 < 300 ms`).
-   - Re-measured `50k` Test 6 (`VERIFIED`): isolated `p50 = 68.22 ms`, **`p95 = 83.59 ms`**, `max = 91.26 ms` (`14/14` pass); full `npm test` Run 1 `p50 = 87.84 ms`, **`p95 = 124.94 ms`**, `max = 127.99 ms`; Run 2 `p50 = 85.82 ms`, **`p95 = 110.72 ms`**, `max = 111.45 ms`.
-   - Re-measured `ksd-intelligence` (`17/20` top-8, `0/20` missing; warm `p50 = 16.60 ms`, `p95 = 19.36 ms`; cold CLI median `132.54 ms`) and `work-sure` (`20/20` top-8, `0/20` missing; warm `p50 = 79.69 ms`, `p95 = 88.34 ms`; cold CLI median `228.91 ms`) in `docs/research/m6a-measurements.md`.
+   - Post-Iteration-2 measurements (`bf715e8`): isolated `p50 = 68.22 ms`, `p95 = 83.59 ms`, `max = 91.26 ms`; full `npm test` Run 1 `p95 = 124.94 ms`, Run 2 `p95 = 110.72 ms`.
 2. **Non-tautological ranking, `callerBoost`, field weights & `exactLower` tests (`tests/core/search-query.test.ts` Test 4):**
-   - Replaced Test 4 with unconfounded equal-22-token 6-tier BM25 weights (`'accessor'`), IDF-invariant `'sharedPopular'` `callerBoost`, and `'TokenAlpha'` `exactCase`/`exactLower`/`lexical` tier tests.
-   - Re-verified `8/8` mutation kills (`M1`, `M3`, `M4`, `callerBoost = 0`, flat `(0,1,1,1,1,1,1)` BM25, and `exactCase = 900` executed post-fix, all `EXIT=1` and cleanly reverted; `M2` and `M5` unchanged from Round 3).
+   - Replaced Test 4 with unconfounded equal-22-token 6-tier BM25 weights (`'accessor'`), IDF-invariant `'sharedPopular'` `callerBoost`, and `'TokenAlpha'` `exactCase`/`exactLower`/`lexical` tier tests; verified `8/8` mutation kills.
 3. **Direct-API `\0` defense (`src/core/search/lexical.ts:61-63`, `tests/core/search-query.test.ts`):**
    - Stripped `\0` in `quoteFtsLiteral` (`term.replaceAll('\0', '').replaceAll('"', '""')`) and filtered `\0` terms from `COLLATE NOCASE` lookup, with direct `quoteFtsLiteral`, `buildFtsQuery`, and `querySearch(..., 'foo\0bar' | '\0', 8)` regression tests.
 4. **Singular/plural overflow rendering (`src/core/search/render.ts:75,87`, `tests/core/search-query.test.ts`):**
@@ -40,11 +39,42 @@ All Round 4 Iteration 1 findings were fixed test-first on `m6a-search`:
 5. **AGY MCP `ei_search` audit parity (`scripts/mcp/tools.mjs:312-320, 384-404`, `tests/core/search-query.test.ts`):**
    - Added valid integer `limit` logging on `INVALID_INPUT` audit entries and passed `validateSearchInput` (`valid.query`, `valid.limit`) to `runSearch` and `auditFieldsForSearch` (matching CLI and OMP), with parity audit test.
 6. **Documentation, Protected Paths & Verification Gates:**
-   - Updated `docs/research/m6a-measurements.md` (with post-fix re-measurements and explicit `NOT VERIFIED` boundaries), `docs/reviews/m6a-review.md`, and `.scratch/ksd-v1-readiness/issues/06-m6a-lexical-search.md`.
-   - Verified `tests/golden/M2-impact-cases.md`, `src/policy/**`, `tests/policy/**`, and `tests/snapshots/**` remain untouched (`0` changed lines); `tests/golden/search-queries.md` remains `PROPOSED`.
+   - Updated `docs/research/m6a-measurements.md`, `docs/reviews/m6a-review.md`, and `.scratch/ksd-v1-readiness/issues/06-m6a-lexical-search.md`.
+   - Verified `tests/golden/M2-impact-cases.md`, `src/policy/**`, `tests/policy/**`, and `tests/snapshots/**` untouched (`0` changed lines); `tests/golden/search-queries.md` remains `PROPOSED`.
 
 ---
 
-## 3. Iteration 2 Independent Re-Verification & Forensic Audit (`PENDING`)
+## 3. Round 4 Iteration 2 Independent Reviews & Forensic Audit (`bf715e8`)
 
-- **`NOT VERIFIED` (pending Iteration 2 Gate re-audit):** Independent Round 4 Iteration 2 re-review and forensic audit on the post-fix commit have not yet completed at the time of this commit; this section will be finalized once the independent Iteration 2 auditor and reviewer issue their post-fix verdicts.
+| Agent | Role & Scope | Verdict | Key Findings / Evidence |
+|---|---|---|---|
+| `teamwork_reviewer_m3_i2_1` | Read-only reviewer (`readCandidates` CTE, 29 direct-API fuzz probes, `DESIGN.md §6.11` isolation, `npm test` `726/726`) | `APPROVE` (`LOW` risk) | Verified `readCandidates` CTE `EXPLAIN QUERY PLAN`, 29 direct-API fuzz probes, `DESIGN.md §6.11` isolation, and serialized `npm test` (`726/726` pass, `50k p95 = 87.10 ms`). Noted 2 non-blocking minors: `d.simple = ? COLLATE NOCASE` triggered `SCAN d` vs `BINARY` `declarations_simple`, and `missingExactIds.length === 1 && !anyExistingExact` left `bm25Score = 0.0`. |
+| `teamwork_reviewer_m3_i2_2` | Read-only reviewer (Test 4 SQLite FTS5 algebraic check, CLI/OMP/MCP audit parity, `render.ts` plural, Tests 11–14, `m6a-measurements.md`) | `APPROVE` (`LOW` risk) | Verified `726/726` `npm test` (`50k p95 = 297.20 ms` under contention / `89.98 ms` isolated), Test 4 `'accessor'`/`'sharedPopular'`/`'TokenAlpha'`, CLI/OMP/MCP audit parity, `(+1 more match)` vs `(+2 more matches)`, Tests 11–14, and `m6a-measurements.md`. |
+| `teamwork_auditor_m3_i2_1` | Forensic integrity auditor (Checks 1–4 against `bf715e8`) | **`INTEGRITY VIOLATION`** (Checks 1–3 `CLEAN`; Check 4 `FAIL`) | **Checks 1–3 CLEAN:** Genuine FTS5/BM25 code, unweakened Test 6, `0` protected-path edits, `0` runtime deps, `0` network calls, `PROPOSED` labels, `0` personal paths, `work-sure` clean. **Check 4 FAIL:** Full `npm test` failed on Run 1 with `exit 1` (`725/726` pass, `50k search p95 was 305.90 ms >= 300 ms`), passing Runs 2–3 (`113.99 ms`, `90.18 ms`) and isolated (`82.91 ms`); `EXPLAIN QUERY PLAN` proved `d.simple = ? COLLATE NOCASE` (`src/core/search/lexical.ts:293-305`) could not use `BINARY` index `declarations_simple` (`src/storage/sqlite.ts:75`), causing a full `50,000`-row `SCAN d` on `ftsTotal > 500` queries. |
+
+---
+
+## 4. Round 4 Iteration 3 Remediation & Re-Verification
+
+To resolve `teamwork_auditor_m3_i2_1`'s Check 4 rejection and both Iteration 2 reviewer minor observations without weakening Test 6:
+
+1. **Schema 6 partial `COLLATE NOCASE` indexes (`src/storage/sqlite.ts:164-173`, `tests/core/status.test.ts:141`, `tests/core/search-index.test.ts:370-442`):**
+   - Added migration `version: 6` (`SCHEMA_VERSION = 6`) creating `declarations_simple_nocase ON declarations (simple COLLATE NOCASE) WHERE kind != 'module'` and `declarations_name_nocase ON declarations (name COLLATE NOCASE) WHERE kind != 'module'`.
+   - Updated `tests/core/status.test.ts:141` (`schema 5` -> `schema 6`) and `tests/core/search-index.test.ts` (`SCHEMA_VERSION = 6` + v4->v6 and v5->v6 auto-rebuild verification).
+2. **`SCAN d` elimination, `+f.rowid IN`, conditional `COUNT(*)`, & session reuse (`src/core/search/lexical.ts`, `src/core/impact/session.ts`):**
+   - Rewrote exact-match supplement predicates in `lexical.ts` from `OR` across `COLLATE NOCASE` (which still triggers SQLite `SCAN d` even with NOCASE indexes) to `d.kind != 'module' AND d.simple COLLATE NOCASE IN (...)` + `UNION` `d.kind != 'module' AND d.name COLLATE NOCASE IN (...)` when dotted/spaced terms are present.
+   - Replaced `f.rowid IN (${placeholders})` with `+f.rowid IN (${placeholders})` to prevent SQLite `3.53.4` FTS5 from rewriting a 1-element `IN (?)` into `rowid = ?` (`0:=M7`, 50k scan), dropped the `anyExistingExact` loop, and guarded BM25 hydration with `missingExactIds.length > 0 && !tokenLimitHit && matchExpr !== null`.
+   - Executed `readCandidates(db, matchExpr, MAX_CANDIDATES)` first and skipped `SELECT COUNT(*)` whenever `topRows.length < MAX_CANDIDATES` (`ftsTotal = topRows.length`).
+   - Forwarded pre-read `meta` and `scannedFiles` (`files.length`) from `prepareSessionDb` via `SearchSessionContext` (`src/core/impact/session.ts`) into `querySearch` (preserving standalone `querySearch` fallback).
+3. **`hasGitAncestor` guard (`src/core/workspace/scan.ts:197-227`):**
+   - Added `hasGitAncestor(root)` (`existsSync(join(dir, '.git'))` up to `/`) before spawning `git -C root ls-files` when `GIT_DIR`, `GIT_WORK_TREE`, and `GIT_COMMON_DIR` are unset, eliminating 25 doomed `git` spawns per Test 6 run on non-git `/tmp` repos.
+4. **Regression tests & post-fix verification (`tests/core/search-query.test.ts`, `docs/research/m6a-measurements.md`):**
+   - Added `EXPLAIN QUERY PLAN` non-`SCAN d` regression test across simple (`'retry'`), dotted (`'PaymentService.charge'`), and multi-word (`'find retry implementation'`) queries (`> 500` rows, zero `SCAN d`/`SCAN declarations`); strengthened Test 14 for genuinely buried single-exact `bm25Score > 1000`, buried uppercase `RETRY` (`> 900`), buried `PaymentService.charge` (`> 1000`), and 2-match exact ranking. Preserved Test 6 (`50,000` rows, `25` queries, `stat` probe, `< 300 ms` p95) untouched.
+   - Verified `npm run build`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm run check:dist`, `npm run verify:skills`, isolated `dist-test/tests/core/search-query.test.js` (`15/15`, `50k p50 = 40.11 ms / p95 = 48.69 ms / max = 48.70 ms`), **3 consecutive full `npm test` runs** (`727/727` pass on all 3: Run 1 `p50 = 57.26 / p95 = 80.25 / max = 89.97 ms`, Run 2 `p50 = 53.49 / p95 = 76.35 / max = 77.49 ms`, Run 3 `p50 = 49.91 / p95 = 64.21 / max = 68.07 ms`), `S01–S20` (`17/20` top-8, `0` missing), `W01–W20` (`20/20` top-8, `0` missing), and `6/6` re-verified mutation kills (`M1`, `M3`, `M4`, `callerBoost = 0`, flat BM25, `exactCase = 900`, all `EXIT=1` and cleanly reverted).
+
+---
+
+## 5. Iteration 3 Independent Re-Verification & Forensic Audit (`PENDING`)
+
+- **`NOT VERIFIED` (pending Iteration 3 Gate re-audit):** Independent Round 4 Iteration 3 re-review and forensic audit on the post-Iteration-3 remediation commit have not yet completed at the time of this commit; this section will be finalized once the independent Iteration 3 reviewer and auditor issue their post-fix verdicts.
+- Unchanged boundaries: `macOS CI / live macOS OMP` (`NOT VERIFIED`), independent non-Gemini vendor review (`NOT VERIFIED`), and owner acceptance of `tests/golden/search-queries.md` / `docs/RISK.md §6` / `docs/DESIGN.md §15` (`PROPOSED`).

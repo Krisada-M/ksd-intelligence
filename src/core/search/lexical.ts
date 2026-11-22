@@ -219,17 +219,21 @@ export function querySearch(
     indexState?: 'fresh' | 'updated' | 'stale';
     updatedFiles?: number;
     staleReason?: string;
+    meta?: Record<string, string>;
+    scannedFiles?: number;
   },
 ): SearchResult {
-  const meta = readMeta(db);
+  const meta = extras?.meta ?? readMeta(db);
   const engine = {
     version: engineVersion(),
     typescript: meta.typescript_version ?? 'unknown',
     extractor: meta.extractor_stamp ?? 'unknown',
   };
-  const scannedRow = db.prepare('SELECT COUNT(*) AS n FROM files').get() as
-    { n?: number } | undefined;
-  const scannedFiles = Number(scannedRow?.n ?? 0);
+  const scannedFiles =
+    extras?.scannedFiles ??
+    Number(
+      (db.prepare('SELECT COUNT(*) AS n FROM files').get() as { n?: number } | undefined)?.n ?? 0,
+    );
   const indexState = extras?.indexState ?? 'fresh';
 
   const { matchExpr, exactMatchExpr, rawTerms, tokenLimitHit } = buildFtsQueryInternal(query);
@@ -247,20 +251,22 @@ export function querySearch(
     };
   }
 
-  const totalRow =
-    matchExpr === null
-      ? undefined
-      : (db
-          .prepare('SELECT COUNT(*) AS total FROM declarations_fts WHERE declarations_fts MATCH ?')
-          .get(matchExpr) as { total?: number } | undefined);
-  const ftsTotal = Number(totalRow?.total ?? 0);
-
   const candidates = new Map<string, CandidateRow>();
   const seenIds = new Set<number>();
+  let ftsTotal = 0;
   if (matchExpr !== null) {
-    for (const row of readCandidates(db, matchExpr, MAX_CANDIDATES)) {
+    const topRows = readCandidates(db, matchExpr, MAX_CANDIDATES);
+    for (const row of topRows) {
       candidates.set(row.stableKey, row);
       seenIds.add(row.id);
+    }
+    if (topRows.length < MAX_CANDIDATES) {
+      ftsTotal = topRows.length;
+    } else {
+      const totalRow = db
+        .prepare('SELECT COUNT(*) AS total FROM declarations_fts WHERE declarations_fts MATCH ?')
+        .get(matchExpr) as { total?: number } | undefined;
+      ftsTotal = Number(totalRow?.total ?? 0);
     }
   }
 
@@ -287,23 +293,24 @@ export function querySearch(
     if (hasNonAscii || exactTerms.length === 0 || matchExpr === null) {
       fallbackExact();
     } else {
-      const predicates: string[] = [];
-      const params: string[] = [];
-      for (const term of exactTerms) {
-        predicates.push('d.simple = ? COLLATE NOCASE');
-        params.push(term);
-        if (term.includes('.') || term.includes(' ')) {
-          predicates.push('d.name = ? COLLATE NOCASE');
-          params.push(term);
-        }
-      }
-      const exactIdRows = db
-        .prepare(
-          `SELECT d.id AS id
-           FROM declarations d
-           WHERE d.kind != 'module' AND (${predicates.join(' OR ')})`,
-        )
-        .all(...params) as Array<{ id: number }>;
+      // IN (...) + UNION avoids SQLite's planner falling back to SCAN d on OR across COLLATE NOCASE predicates.
+      const simplePlaceholders = exactTerms.map(() => '?').join(', ');
+      const dottedTerms = exactTerms.filter((term) => term.includes('.') || term.includes(' '));
+      const exactSql =
+        dottedTerms.length === 0
+          ? `SELECT d.id AS id
+             FROM declarations d
+             WHERE d.kind != 'module' AND d.simple COLLATE NOCASE IN (${simplePlaceholders})`
+          : `SELECT d.id AS id
+             FROM declarations d
+             WHERE d.kind != 'module' AND d.simple COLLATE NOCASE IN (${simplePlaceholders})
+             UNION
+             SELECT d.id AS id
+             FROM declarations d
+             WHERE d.kind != 'module' AND d.name COLLATE NOCASE IN (${dottedTerms.map(() => '?').join(', ')})`;
+      const exactIdRows = db.prepare(exactSql).all(...exactTerms, ...dottedTerms) as Array<{
+        id: number;
+      }>;
       const missingExactIds: number[] = [];
       for (const row of exactIdRows) {
         const id = Number(row.id);
@@ -338,26 +345,14 @@ export function querySearch(
             .all(...missingExactIds) as Array<Record<string, unknown>>
         ).map(mapCandidateRow);
 
-        let anyExistingExact = false;
-        for (const row of candidates.values()) {
-          if (
-            exactSet.has(row.name) ||
-            exactSet.has(row.simple) ||
-            exactLowerSet.has(row.name.toLowerCase()) ||
-            exactLowerSet.has(row.simple.toLowerCase())
-          ) {
-            anyExistingExact = true;
-            break;
-          }
-        }
-
         const bm25ById = new Map<number, number>();
-        if (!tokenLimitHit && (missingExactIds.length > 1 || anyExistingExact)) {
+        if (missingExactIds.length > 0 && !tokenLimitHit && matchExpr !== null) {
+          // Unary `+` stops SQLite FTS5 from turning 1-element `IN (?)` into `rowid = ?` (`0:=M7`), which ignores the rowid filter.
           const bm25Rows = db
             .prepare(
               `SELECT f.rowid AS id, ${BM25_SQL} AS bm25_score
                FROM declarations_fts f
-               WHERE declarations_fts MATCH ? AND f.rowid IN (${placeholders})`,
+               WHERE declarations_fts MATCH ? AND +f.rowid IN (${placeholders})`,
             )
             .all(matchExpr, ...missingExactIds) as Array<{ id: number; bm25_score: number }>;
           for (const bm of bm25Rows) {
@@ -481,6 +476,8 @@ export async function runSearch(
         ctx.indexState === 'updated' ? 'updated' : ctx.indexState === 'stale' ? 'stale' : 'fresh',
       updatedFiles: ctx.updatedFiles,
       ...(ctx.staleReason !== null ? { staleReason: ctx.staleReason } : {}),
+      ...(ctx.meta !== undefined ? { meta: ctx.meta } : {}),
+      ...(ctx.scannedFiles !== undefined ? { scannedFiles: ctx.scannedFiles } : {}),
     });
     return { kind: 'result', value: result };
   } finally {

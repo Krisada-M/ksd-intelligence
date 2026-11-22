@@ -367,37 +367,81 @@ describe('M6a Round 1 — FTS5 search index', () => {
     }
   });
 
-  it('auto-rebuilds schema v4 databases to schema v5 and populates declarations_fts', async () => {
+  it('auto-rebuilds schema v4 and v5 databases to schema v6 with declarations_fts and NOCASE indexes', async () => {
     const repo = await fixtureRepo('m6a-v4');
     tempDirs.push(join(repo, '..'));
     const cacheDir = await makeTempDir('ei-m6a-v4-cache-');
 
-    // Simulate a legacy schema v4 published index lacking declarations_fts.
-    const legacy = beginBuild(cacheDir);
-    legacy.exec('DROP TABLE declarations_fts;');
-    writeMeta(legacy, { schema_version: '4', typescript_version: ts.version });
-    publishBuild(legacy, cacheDir);
+    // Simulate a legacy schema v4 published index lacking declarations_fts and v6 indexes.
+    const legacy4 = beginBuild(cacheDir);
+    legacy4.exec(
+      'DROP TABLE declarations_fts; DROP INDEX declarations_simple_nocase; DROP INDEX declarations_name_nocase;',
+    );
+    writeMeta(legacy4, { schema_version: '4', typescript_version: ts.version });
+    publishBuild(legacy4, cacheDir);
 
-    const before = openPublished(cacheDir);
-    assert.ok(before);
-    assert.equal(readSchemaVersion(before), 4);
-    before.close();
+    const before4 = openPublished(cacheDir);
+    assert.ok(before4);
+    assert.equal(readSchemaVersion(before4), 4);
+    before4.close();
 
-    const report = await new Indexer(ts, repo, cacheDir).index({ impact: impactOf(repo) });
-    assert.equal(report.action, 'cold');
-    assert.equal(report.reason, 'index schema 4');
-    assert.deepEqual(report.problems, []);
-    assert.ok(report.counts.declarations_fts > 0);
+    const report4 = await new Indexer(ts, repo, cacheDir).index({ impact: impactOf(repo) });
+    assert.equal(report4.action, 'cold');
+    assert.equal(report4.reason, 'index schema 4');
+    assert.deepEqual(report4.problems, []);
+    assert.ok(report4.counts.declarations_fts > 0);
 
-    const after = openPublished(cacheDir);
-    assert.ok(after);
+    const after4 = openPublished(cacheDir);
+    assert.ok(after4);
     try {
-      assert.equal(readSchemaVersion(after), SCHEMA_VERSION);
-      assert.equal(SCHEMA_VERSION, 5);
-      const count = Number(after.prepare('SELECT COUNT(*) AS n FROM declarations_fts').get()?.n);
-      assert.equal(count, report.counts.declarations_fts);
+      assert.equal(readSchemaVersion(after4), SCHEMA_VERSION);
+      assert.equal(SCHEMA_VERSION, 6);
+      const count = Number(after4.prepare('SELECT COUNT(*) AS n FROM declarations_fts').get()?.n);
+      assert.equal(count, report4.counts.declarations_fts);
+      const indexes = after4
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'declarations'",
+        )
+        .all()
+        .map((r) => String(r.name));
+      assert.ok(indexes.includes('declarations_simple_nocase'));
+      assert.ok(indexes.includes('declarations_name_nocase'));
     } finally {
-      after.close();
+      after4.close();
+    }
+
+    // Simulate a legacy schema v5 published index lacking v6 NOCASE partial indexes.
+    const cacheDir5 = await makeTempDir('ei-m6a-v5-cache-');
+    const legacy5 = beginBuild(cacheDir5);
+    legacy5.exec('DROP INDEX declarations_simple_nocase; DROP INDEX declarations_name_nocase;');
+    writeMeta(legacy5, { schema_version: '5', typescript_version: ts.version });
+    publishBuild(legacy5, cacheDir5);
+
+    const before5 = openPublished(cacheDir5);
+    assert.ok(before5);
+    assert.equal(readSchemaVersion(before5), 5);
+    before5.close();
+
+    const report5 = await new Indexer(ts, repo, cacheDir5).index({ impact: impactOf(repo) });
+    assert.equal(report5.action, 'cold');
+    assert.equal(report5.reason, 'index schema 5');
+    assert.deepEqual(report5.problems, []);
+    assert.ok(report5.counts.declarations_fts > 0);
+
+    const after5 = openPublished(cacheDir5);
+    assert.ok(after5);
+    try {
+      assert.equal(readSchemaVersion(after5), 6);
+      const indexes = after5
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'declarations'",
+        )
+        .all()
+        .map((r) => String(r.name));
+      assert.ok(indexes.includes('declarations_simple_nocase'));
+      assert.ok(indexes.includes('declarations_name_nocase'));
+    } finally {
+      after5.close();
     }
   });
 

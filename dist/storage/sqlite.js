@@ -148,6 +148,13 @@ const MIGRATIONS = [
         tokenize = 'unicode61'
       );`,
     },
+    {
+        // M6a Iteration 3: partial case-insensitive indexes so exact-match supplement avoids SCAN d.
+        version: 6,
+        sql: `
+      CREATE INDEX declarations_simple_nocase ON declarations (simple COLLATE NOCASE) WHERE kind != 'module';
+      CREATE INDEX declarations_name_nocase ON declarations (name COLLATE NOCASE) WHERE kind != 'module';`,
+    },
 ];
 export const SCHEMA_VERSION = MIGRATIONS.length;
 export function indexPath(cacheDir) {

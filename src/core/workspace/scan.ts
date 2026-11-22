@@ -1,8 +1,8 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream, lstatSync } from 'node:fs';
+import { createReadStream, existsSync, lstatSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
-import { basename, dirname, extname, isAbsolute, join, relative, sep } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 import type * as TS from 'typescript';
@@ -194,6 +194,16 @@ async function walkVisible(root: string): Promise<string[]> {
   return files;
 }
 
+function hasGitAncestor(root: string): boolean {
+  let dir = resolve(root);
+  for (;;) {
+    if (existsSync(join(dir, '.git'))) return true;
+    const parent = dirname(dir);
+    if (parent === dir) return false;
+    dir = parent;
+  }
+}
+
 /**
  * The visible set (D25): git's tracked + untracked − ignored when `root` is in a git work tree,
  * else a walk honouring .gitignore. Paths are repo-relative POSIX; the disk check comes later.
@@ -201,6 +211,13 @@ async function walkVisible(root: string): Promise<string[]> {
 export async function listVisibleFiles(
   root: string,
 ): Promise<{ paths: string[]; listing: 'git' | 'walk' }> {
+  const hasGitEnv =
+    Boolean(process.env.GIT_DIR) ||
+    Boolean(process.env.GIT_WORK_TREE) ||
+    Boolean(process.env.GIT_COMMON_DIR);
+  if (!hasGitEnv && !hasGitAncestor(root)) {
+    return { paths: await walkVisible(root), listing: 'walk' };
+  }
   try {
     const { stdout } = await run(
       'git',
