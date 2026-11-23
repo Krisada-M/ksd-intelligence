@@ -24,3 +24,67 @@ Changed what the agent did? yes — replaced a manual `git diff --stat` review w
 Latency felt: fine (cold index build + `ei_impact` `5.01 s` in the fresh clone; warm `ei_changes` `427 ms`; whole clean-clone run `9.2 s` wall)
 Verdict given: census `partial`/`unknown` with 3 gap sites — honest boundary for a test-only change whose docs sit outside `impact.include`
 Missing: run was harness-driven (`bun` + installed OMP extension loader in an isolated `HOME`), not an interactive agent session; two earlier harness iterations mis-asserted the symlink gap before the engine output was accepted as correct (harness bug, not an engine defect)
+
+## 2026-11-23 — ksd-intelligence (disposable clone) — Rename rehearsal: rename `pathTokens` before touching callers
+Tools called: ei_impact(`src/core/search/segments.ts#pathTokens`) · ei_changes
+Correct? yes — impact before the edit: `2` direct / `36` total, `medium`/`run-tests`, picture complete, 21 test files; after renaming in `src/`, `ei_changes` reported `Removed, still used (2)` (`pathTokens`, `SearchRow.pathTokens`) with the `tests/core/search-index.test.ts` break flagged as `UNRESOLVED_IMPORT`/`UNRESOLVED_NAME_MATCH`, plus `Modified (2)` and `Added (2)` — every rename surface named
+Changed what the agent did? yes — the census named the broken test import before anything was run, so the rename could not be reported done without fixing it
+Latency felt: fine (whole task `7.2 s` wall incl. cold index; warm impact `~1.2 s`)
+Verdict given: `medium`/`run-tests` before, `unknown`/`check-gaps` after — right calls for a rename that breaks an import
+Missing: —
+
+## 2026-11-23 — ksd-intelligence (disposable clone) — Deleted export: drop `capSearchText`
+Tools called: ei_impact(`src/core/search/segments.ts#capSearchText`) · ei_changes
+Correct? yes — impact first (`3` direct, complete); after deletion `ei_changes` caught both in-file callers left behind plus the test import break, with `unresolved-import`/`unresolved-name-match` gap reasons and `Tests to run (1)`
+Changed what the agent did? yes — deletion stayed staged until the two leftover call sites were fixed
+Latency felt: fine (impact incl. index update `~1 s`)
+Verdict given: `unknown`/`check-gaps` — right; the picture was genuinely incomplete until callers were resolved
+Missing: —
+
+## 2026-11-23 — ksd-intelligence (disposable clone) — Type-only widening: `mapCandidateRow(row: object)`
+Tools called: ei_impact(`src/core/search/lexical.ts#mapCandidateRow`) · ei_changes
+Correct? yes — `ei_changes` classified the annotation-only edit as `Signature changed, still called` with both `REFERENCES` callers (`querySearch`, `readCandidates`) and `medium`/`run-tests`, picture complete — the D59 signature semantics working on a real type-only change
+Changed what the agent did? no — rehearsal task; the caller list is what a real change would have used
+Latency felt: fine (block of 3 tasks `9.5 s` wall incl. one index update)
+Verdict given: `medium`/`run-tests` — right for a signature change still called by two sites
+Missing: —
+
+## 2026-11-23 — ksd-intelligence (disposable clone) — Three-file comment-only edit, then immediate `ei_changes`
+Tools called: ei_changes
+Correct? yes — `3 files, 0 symbols`, `low`/`proceed`, picture complete; measured warm call `160 ms` right after the edits (index updated on demand)
+Changed what the agent did? yes — the `low`/`proceed` let the edit ship without a test detour
+Latency felt: fine (`160 ms`)
+Verdict given: `low`/`proceed` — right
+Missing: `Tests to run (1): tests/core/glob.test.ts` was listed for a comment-only touch of `src/core/kernel/glob.ts` — harmless but slightly over-listed
+
+## 2026-11-23 — ksd-intelligence (disposable clone) — Impact of a name defined in an untracked root file
+Tools called: ei_impact(`orphanHelper`)
+Correct? yes (honest boundary) — `NOT FOUND orphanHelper` with closest name `src/core/engine/status.ts#Coverage.orphan`; the untracked root file is never indexed, and the tool said so instead of guessing
+Changed what the agent did? yes — stopped assuming the helper was unused; inspected the file by hand instead
+Latency felt: fine (`3.2 s` incl. on-demand index update absorbing the new file)
+Verdict given: `NOT FOUND` — right
+Missing: wish it mentioned that the name lives in an untracked/orphan file (it only offers closest names)
+
+## 2026-11-23 — ksd-intelligence (git worktree) — Status from a linked worktree root
+Tools called: ei_status(`--root .` inside `git worktree`)
+Correct? partly — the worktree got its own empty cache: `STATUS degraded (no index)` with config/runtime resolved correctly; honest, but it did not reuse or point at the main worktree's index, so a cold re-index would be needed there
+Changed what the agent did? yes — avoided assuming the worktree shared the main index
+Latency felt: fine (status instant)
+Verdict given: degraded — honest
+Missing: share or resume the main worktree's index, or label the state `worktree: separate cache`
+
+## 2026-11-23 — work-sure — Find the desktop status-rendering code, then check who depends on it
+Tools called: ei_search(`status error message render`) · ei_impact(`desktop/src/status.ts#serverErrorMessage`, depth 2)
+Correct? yes — search (`164 ms`) surfaced `serverErrorMessage` plus the three renderers (`setStatus`, `renderRemembered`, `renderServers`); impact (`175 ms`) gave `3` direct + `2` depth-2 callers, gaps none, `Next: make your change and call ei_changes before you report done`
+Changed what the agent did? yes — replaced grep + manual caller scanning; the footer's next-step kept the workflow honest
+Latency felt: fine (index update `2.3 s`, then `164 ms` / `175 ms`)
+Verdict given: `low`/`proceed` — right for desktop-internal callers with zero tests (tests: none was stated plainly)
+Missing: —
+
+## 2026-11-23 — work-sure — Weekly health check: audit, clean-tree changes, status
+Tools called: ei_audit(`--since 7d`) · ei_changes · ei_status
+Correct? yes — audit listed the session's 2 calls (`100.5 ms` impact, `96.9 ms` search) and `Changed without prior ei_impact: none`; `ei_changes` on the clean tree reported `nothing changed` (`144 ms`); status honestly showed `8,434` scanned / `5` indexable / `15` orphan / `8,414` unindexed with reasons and `721` unresolved name matches
+Changed what the agent did? yes — confirmed the leading indicator (impact before edit) without hand-collection
+Latency felt: fine (`72 ms` / `144 ms`)
+Verdict given: n/a (health check)
+Missing: `721` unresolved name matches on a mostly-Rails repo reads as noise — wants a per-reason summary or quiet mode

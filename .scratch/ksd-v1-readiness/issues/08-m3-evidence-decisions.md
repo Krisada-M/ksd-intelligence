@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Start M3 dogfood on real repositories (and 2 weeks + ≥ 10 real logged tasks elapsed).
 
-**Status:** ready-for-agent (once ≥ 10 real tasks & 2 weeks are logged in `docs/dogfood-log.md`)
+**Status:** closed — M3 exit review delivered (`docs/research/m3-exit-review.md`, 10/10 tasks, 0 wrong `low`); the ≥14-day window was waived by the owner's 2026-11-23 close-out directive and all six exit decisions are recorded as D63 in `docs/DESIGN.md`.
 
 **Requirement:** REQ-08 in the [spec](../spec.md).
 
@@ -62,9 +62,9 @@ Wait for the owner to confirm each of the 6 decisions, then record them in `docs
 ---
 
 ## Acceptance Criteria
-- [ ] After two weeks and at least ten logged real tasks, with no open wrong `low`, summarize correctness, action changes, useful and noisy `unknown` reasons, latency, missed calls and rework. Separate measurements from owner impressions and do not invent retrospective audit data.
-- [ ] Use the [M3 exit table](../../../docs/briefs/M3-dogfood.md#exit) to review the daily-use limits recorded in ticket 03 against dogfood results. Record any owner-approved changes and the decisions on propagation, anonymous members, scoping and detector demand. Keep the dogfood log running through close-out.
-- [ ] Report each [optional gate](../../../docs/briefs/gated-M4b-M5-M6b.md#gate-check-round-agent-read-only) as met, not met or no data, with supporting entries or timings. A met gate is not approval to implement; M6b still needs separate owner approval. No optional build is required by this ticket.
+- [x] Exit summary with zero open wrong-`low` across 10 logged tasks; measurements kept separate from impressions (`ei audit` numbers quoted separately in `docs/research/m3-exit-review.md` §5); no retrospective audit numbers invented (the audit log did not exist before M2c for the 2026-11-22 tasks — stated, not backfilled).
+- [x] Six-row exit table reviewed and recorded (D63: advisory baselines, propagation unchanged, anonymous members stay unindexed, scoping unchanged, M4a SKIP ALL per D61, no optional milestone starts). Dogfood log stays open through close-out.
+- [x] Optional gates reported with evidence: M4b B3–B6 `no data`, M5 `not met`, M6b `not met`; none treated as approval to build.
 
 ## Common Traps to Avoid
 - Never treat a `met` gate as permission to start building `M4b`, `M5`, or `M6b`.
