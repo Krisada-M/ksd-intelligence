@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Start M3 dogfood on real repositories (setup + daily-use limits + dogfood start recorded).
 
-**Status:** round-6-verified (Rounds 1–6 implemented and verified on `m2c-changes` in [`docs/reviews/m2c-review.md`](../../../docs/reviews/m2c-review.md) and [`docs/research/m2c-measurements.md`](../../../docs/research/m2c-measurements.md); awaiting owner acceptance, cross-vendor review if desired, and merge/CI on macOS)
+**Status:** merged — PR [#34](https://github.com/Krisada-M/ksd-intelligence/pull/34) squash-merged as `a9fa363a0` on `origin/main` (2026-11-22) with the `owner-approved` label covering the 4 `PROPOSED` snapshots (`P01.txt`, `P02.txt`, `P05.txt`, `X02.txt`); ubuntu + macOS CI green.
 
 **Requirement:** REQ-05 in the [spec](../spec.md).
 
@@ -103,11 +103,11 @@
 ---
 
 ## Acceptance Criteria
-- [ ] Run Round 0 on the [M2c brief](../../../docs/briefs/M2c-changes.md). Report conflicts and missing inputs against current contracts, code and dogfood. Stop before Round 1 until the owner accepts the corrected brief.
-- [ ] Demonstrate that full-hash review accounts for every changed path, including untracked, removed and unindexed changes. Risk zones never lower a verdict. Stale or incomplete data cannot be presented as complete; `Not in plan` is advisory and does not filter out changes.
-- [ ] Verify the private, failure-isolated audit behavior and the text-only stage protocol without coupling workflow routing to the engine or changing KSD precedence. Confirm tests cover redaction, failures, rotation and concurrency per the approved brief.
-- [ ] Pass the accepted P/X cases and prior C/F cases unchanged. Record CLI/live OMP outputs, measurements, mutation results and platform CI; submit changed snapshots for owner review.
-- [ ] Resolve only after owner acceptance and after the accepted milestone is on `origin/main`. Record the owner decision and the resulting `origin/main` commit SHA for ticket 06. Only the owner pushes or merges.
+- [x] Round 0 reconciled (2026-11-22, `evidence/05/round-0-reconcile.md`, zero code edits; owner opened the branch).
+- [x] Every changed path accounted for incl. untracked/removed/unindexed (X01–X03 golden; Focus #5); risk zones only raise verdicts; `Not in plan` advisory-only. `VERIFIED` on Linux + macOS CI.
+- [x] Audit behavior + text-only stage protocol verified test-first incl. redaction/failure/rotation/concurrency (`tests/core/audit.test.ts`, `tests/workflow/stage-protocol.test.ts`).
+- [x] Accepted P/X + prior C/F cases pass unchanged; measurements + mutation smoke in `docs/research/m2c-measurements.md`; snapshots owner-approved via label on PR #34.
+- [x] Owner acceptance recorded (label `owner-approved`, 2026-11-22); merged as `a9fa363a0`. Recorded for ticket 06.
 
 ## Common Traps to Avoid
 - **Trap 1:** Forgetting `riskZones: []` on `C01–C26` tests (causes M2b tests to fail on `payments/` fixture paths!).
@@ -130,3 +130,6 @@
 - Implemented Round 1 (risk zones + `C01–C26` `riskZones: []` pinning), Round 2 (`ei_changes` across CLI/OMP/AGY MCP), Round 3 (audit log + `ei audit` + `ei cache clear` + `stageProtocolLine` + `RISK.md §2.5` `"verdict"` update), and Round 4 (`docs/research/m2c-measurements.md` + mutation smoke).
 - Round 5 independent review/challenge/audit (`docs/reviews/m2c-review.md`) flagged Major Finding 1 (`src/core/kernel/glob.ts:91` missing `'s'` flag for `\n` paths), Minor Finding 2 (Focus #5 regression tests), M6 test config-hash mismatch (`tests/core/changes.test.ts:707`), and `stripCodeDetail` `env`/`root` forwarding (`src/core/audit/log.ts:154-158`).
 - Round 6 fixed all 4 items test-first, re-verified M6 kill (`EXIT=1`, `'fresh' !== 'updated'`), and passed `PLAYBOOK.md §4` on Linux WSL2 `x86_64`. Live `omp -p` LLM turn, macOS CI/OMP, and independent cross-vendor model review remain `NOT VERIFIED`; the 4 `PROPOSED` snapshots (`P01.txt`, `P02.txt`, `P05.txt`, `X02.txt`) await owner approval.
+
+### 2026-11-22 — Merged
+- PR #34 (M2c + M6a) merged to `origin/main` as `a9fa363a0` after all checks green (`Protected paths` pass with `owner-approved`, ubuntu/macOS Node 24 pass, review pass). Remaining `NOT VERIFIED` for this ticket: live macOS OMP outside CI, live `omp -p` LLM turn with `ei_changes`.

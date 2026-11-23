@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Review the actual change with M2c (owner accepted and merged on `origin/main`).
 
-**Status:** Owner accepted the M6a `PROPOSED` set (D62: golden oracle, `RISK §6`, D60) and approved the `callers` distinct-source fix; Iteration 5 committed locally. Remaining before merge: `owner-approved` PR label (15 inherited protected paths) and macOS CI / live macOS OMP.
+**Status:** merged — PR [#34](https://github.com/Krisada-M/ksd-intelligence/pull/34) squash-merged as `a9fa363a0` on `origin/main` (2026-11-22) with the `owner-approved` label; ubuntu + macOS Node 24 CI green. Live macOS OMP outside CI remains `NOT VERIFIED`.
 
 **Requirement:** REQ-06 in the [spec](../spec.md).
 
@@ -68,11 +68,11 @@
 - [x] Iteration 4 regression test: the unmodified code passes; removing unary `+` fails with 551 materialized rows in the >500-match fixture.
 - [x] Iteration 4 local Challenger 2 recheck: 9/9 mutants killed (`M1`, `M3`–`M8`, `REG1`, `REG2`); schema-6 recall `17/20` and `20/20` top-8 with `0` missing, including `S06` rank 3.
 - [x] Iteration 5 hardening after the independent review: REG1 now also asserts each exact hit keeps `score > 1000`, killing the compound mutant (drop `+` **and** add `LIMIT`; `9/9` earlier kills plus compound `KILLED` with `exact hit score 1000 lost its BM25 component`); threshold comment ties the in-test `500` to `MAX_CANDIDATES`. Punctuation/operator probe on `7426969` (`!!!`, `NEAR OR (1)`, `signature: retry*`, …) returned clean `result` outcomes; whitespace-only rejected as `INVALID_INPUT`.
-- [ ] Post-fix Iteration 4 independent gate review and forensic audit (`NOT VERIFIED`; the cross-vendor review below is a separate, evidence-limited gate).
-- [ ] Protected-path PR gate failed on 15 inherited paths: 10 approved release footers, four proposed M2c snapshots, and the proposed search oracle. Iteration 4 changes none; the owner's PR label is still required.
+- [ ] Post-fix Iteration 4 independent gate review and forensic audit (`NOT VERIFIED`; the cross-vendor review below is a separate, evidence-limited gate; superseded in practice by the merged CI-green state).
+- [x] Protected-path PR gate: owner added the `owner-approved` label on 2026-11-22 (14 snapshots + the search oracle accepted under D62); the `Protected paths` check passed on the merged PR.
 - [x] Independent non-Gemini vendor review (`VERIFIED` for its scope): Anthropic `claude-opus-5` via `omp -p` (no tools, inline evidence) returned `APPROVE` — see `docs/reviews/m6a-review.md` §8 for findings and dispositions (zero-token crash ruled out; `callers` edge-vs-source counting, disabled-search `index-failed` code, `totalMatches` lower bound recorded as fix-forward; `indexState` fallthrough verified latent-only).
 - [x] Owner acceptance 2026-11-22 (D62): golden oracle `tests/golden/search-queries.md`, `RISK §6`, D60 decisions accepted; `callers` fix approved and landed (`COUNT(DISTINCT e.source)`, test 4b RED `2 !== 1` → GREEN; recall unchanged `17/20` + `20/20` top-8, `0` missing, `11/11` exact — `docs/reviews/m6a-review.md` §9).
-- [ ] macOS CI / live macOS OMP verification (`NOT VERIFIED` — Linux WSL2 `x86_64` host only).
+- [x] macOS CI: `Node 24 / macos-latest` pass on PR #34 (Focus #5 fixed in `16c1468`). Live macOS OMP outside CI remains `NOT VERIFIED`.
 
 ---
 
@@ -104,3 +104,6 @@
 - Iteration 2 reviewers (`teamwork_reviewer_m3_i2_1`, `teamwork_reviewer_m3_i2_2`) approved `bf715e8` with 2 minor observations (`SCAN d` on `COLLATE NOCASE`, single-hit buried `bm25Score = 0.0`), while `teamwork_auditor_m3_i2_1` issued **`INTEGRITY VIOLATION`** because `npm test` Run 1 failed (`305.90 ms >= 300 ms`) under parallel contention + unindexed `SCAN d`.
 - Iteration 3 eliminated `SCAN d` via Schema 6 partial `COLLATE NOCASE` indexes (`sqlite.ts`) + `IN`/`UNION` (`lexical.ts`), fixed SQLite FTS5 `+f.rowid IN` + buried single-hit `bm25Score`, added conditional `COUNT(*)`, reused `meta`/`scannedFiles` via `SearchSessionContext` (`session.ts`), added `hasGitAncestor` guard (`scan.ts`), added `EXPLAIN QUERY PLAN` non-`SCAN d` + strengthened Test 14 + v5->v6 rebuild tests, re-measured Schema 6 (`50k` isolated `p95 = 48.69 ms`, 3 consecutive `npm test` `727/727` pass with `p95 = 80.25 / 76.35 / 64.21 ms`, `S01–S20` `17/20`, `W01–W20` `20/20`, `0/40` missing), and re-verified `7/7` mutation kills (`M1`, `M3`–`M8`).
 - **Remaining Gates:** Post-fix Iteration 4 independent gate review, independent non-Gemini vendor review (`NOT VERIFIED`), macOS CI / live macOS OMP (`NOT VERIFIED`), and owner acceptance of `RISK §6` and `tests/golden/search-queries.md` (`PROPOSED`).
+
+### 2026-11-22 — Merged
+- PR #34 (M2c + M6a) merged to `origin/main` as `a9fa363a0` after `Protected paths` (with `owner-approved`), `Node 24 / ubuntu-latest`, `Node 24 / macos-latest`, and `review` all passed. Owner decisions D61 (M4a `SKIP ALL`) and D62 (M6a acceptance, distinct-caller `callers`) recorded in `docs/DESIGN.md`.
