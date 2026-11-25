@@ -43,9 +43,9 @@
     "prepare": "husky || true"
   },
   "bin": {
-    "ei": "./dist/adapters/cli/main.js",
-    "ksd-check-changed": "./dist/policy/check-changed.js",
-    "ksd-review-verdict": "./dist/policy/review-verdict.js"
+    "ei": "dist/adapters/cli/main.js",
+    "ksd-check-changed": "dist/policy/check-changed.js",
+    "ksd-review-verdict": "dist/policy/review-verdict.js"
   },
   "exports": {
     ".": "./dist/adapters/omp/extension.js",
