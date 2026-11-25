@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -161,6 +161,28 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const status = await c.request(3, 'tools/call', { ...meta, name: 'ei_status', arguments: {} });
     assert.match(status.result.content[0].text, /^STATUS degraded/);
     assert.equal(status.result.resultType, 'complete');
+  });
+
+  it('publishes the documented AGY descriptions for every tool', async (t) => {
+    const c = await start({ KSD_MCP_WORKFLOW: '1' });
+    t.after(c.stop);
+    const { result } = await c.request(1, 'tools/list', { _meta: modernMeta });
+    const docs = await readFile(new URL('../../docs/TOOLS.md', import.meta.url), 'utf8');
+    const sections = docs.split(/^## \d+\. /m).slice(1);
+    const documented = Object.fromEntries(
+      sections.flatMap((section) => {
+        const name = section.match(/^`(ei_\w+)`/)?.[1];
+        if (!name) return [];
+        const description =
+          section.match(/^\*\*Description \(AGY MCP\):\*\*\n> (.+)$/m)?.[1] ??
+          section.match(/^\*\*Description \(registered text\):\*\*\n> (.+)$/m)?.[1];
+        return [[name, description]];
+      }),
+    );
+    const registered = Object.fromEntries(
+      result.tools.map((tool) => [tool.name, tool.description]),
+    );
+    assert.deepEqual(registered, documented);
   });
 
   it('invalid inputs, unknown tool and unsupported protocol fail without access to arbitrary root', async (t) => {

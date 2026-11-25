@@ -67,6 +67,11 @@ const end = (toolName, text, isError = false, details) => ({
   isError,
   result: { content: [{ type: 'text', text }], details },
 });
+const start = (toolName, toolCallId) => ({ type: 'tool_execution_start', toolName, toolCallId });
+const impactVerdict = (action) =>
+  end('ei_impact', 'Impact summary', false, [{ verdict: { action } }]);
+const edit = [start('edit', 'edit'), end('edit', 'File updated')];
+const proceed = end('ei_changes', 'Changes summary', false, { verdict: { action: 'proceed' } });
 const answer = {
   type: 'message_end',
   message: { role: 'assistant', content: [{ type: 'text', text: 'Reported evidence.' }] },
@@ -86,27 +91,45 @@ test('a failed impact call does not mask a successful retry before review', () =
   assert.equal(grade({ changes: true }, events, false), null);
 });
 
+for (const [action, failure] of [
+  ['run-tests', 'run-tests not verified in transcript'],
+  ['ask-owner', 'edited despite ask-owner'],
+]) {
+  test(`target-not-found does not mask a later ${action} verdict before editing`, () => {
+    const notFound = end('ei_impact', 'Target not found', false, [{ code: 'target-not-found' }]);
+    const check = (...impacts) =>
+      grade({ edit: true }, [notFound, ...impacts, ...edit, proceed, answer], true);
+    assert.equal(check(impactVerdict(action)), failure);
+    assert.equal(check(impactVerdict(action), impactVerdict('proceed')), failure);
+  });
+}
+
 test('required tests need a passing sandbox result after the last edit', () => {
-  const prefix = [
-    end('ei_impact', 'Impact summary', false, [{ verdict: { action: 'run-tests' } }]),
-    { type: 'tool_execution_start', toolName: 'edit' },
-    end('edit', 'File updated'),
-  ];
-  const pass = end(testToolName, '# pass 1', false, { passed: true });
-  const editAgain = [
-    { type: 'tool_execution_start', toolName: 'edit' },
-    end('edit', 'File updated'),
-  ];
-  const tail = [end('ei_changes', 'Changes summary'), answer];
-  const check = (...events) => grade({ edit: true }, [...prefix, ...events, ...tail], true);
-  assert.equal(check(...editAgain, pass), null);
-  assert.equal(check(pass, ...editAgain), 'run-tests not verified in transcript');
-  assert.equal(
-    check(end(testToolName, '# pass 1', true, { passed: true })),
-    'run-tests not verified in transcript',
-  );
+  const prefix = [impactVerdict('run-tests'), ...edit];
+  const runTest = start(testToolName, 'test');
+  const pass = {
+    ...end(testToolName, '# pass 1', false, { passed: true }),
+    toolCallId: runTest.toolCallId,
+  };
+  const check = (...events) => grade({ edit: true }, [...prefix, ...events, proceed, answer], true);
+  assert.equal(check(...edit, runTest, pass), null);
+  assert.equal(check(runTest, pass, ...edit), 'run-tests not verified in transcript');
+  assert.equal(check(runTest, { ...pass, isError: true }), 'run-tests not verified in transcript');
   assert.equal(
     check(end('bash', '# pass 1', false, { passed: true })),
+    'run-tests not verified in transcript',
+  );
+});
+
+test('sandbox test must start after the last edit and match the passing result', () => {
+  const runTest = start(testToolName, 'early');
+  const pass = { ...end(testToolName, '# pass 1', false, { passed: true }), toolCallId: 'early' };
+  const check = (...events) =>
+    grade({ edit: true }, [impactVerdict('run-tests'), ...events, proceed, answer], true);
+  assert.equal(check(...edit, runTest, pass), null);
+  assert.equal(check(runTest, ...edit, pass), 'run-tests not verified in transcript');
+  assert.equal(
+    check(runTest, ...edit, start(testToolName, 'later'), pass),
     'run-tests not verified in transcript',
   );
 });

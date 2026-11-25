@@ -61,7 +61,7 @@ Linux WSL2 x86-64, Node `24.21.0`, npm `12.2.0`, OMP CLI `19.2.1`.
 | `npm run typecheck` | Exit 0; both source and test TypeScript checks ran. |
 | `npm run lint` | Exit 0. |
 | `npm run format:check` | `All matched files use Prettier code style!` |
-| `npm test` | 740 tests in 77 suites; 740 pass, 0 fail, 0 skipped. Includes v4/v5 → v6 clean rebuild and exact engine release stamp. |
+| `npm test` | 742 tests in 77 suites; 742 pass, 0 fail, 0 skipped after the review fixes. Includes v4/v5 → v6 clean rebuild, exact engine release stamp, and AGY tool description parity. |
 | `npm run check:dist` | Exit 0; rebuild reports no tracked drift or untracked outputs. |
 | `node --test tests/packaging/npm-tarball.test.js` | 1 pass, 0 fail; scoped npm package, three installed bin help paths, legacy policy delegation, and MCP initialization. |
 | `node dist/adapters/cli/main.js doctor --deep --differential 300` | `DOCTOR ok`; 0 graph and counter differences; 300 declarations, 1839/1839 references covered, 0 misses. Ran on this repository with a temporary cache and normal Git ignore rules. |

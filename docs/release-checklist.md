@@ -31,14 +31,14 @@ EI_EVAL_MODEL=openai-codex/gpt-6.2-sol node evals/run.mjs
 
 The 1.0.0 eval gate requires no unresolved checker bugs, tool guidance gaps, or tool errors, and at least 9 of all 10 cases passing on the strongest available model. Record the Luna rate without gating on it. An unscored case is not a pass. See [baseline transcript triage](research/v1-eval-followup.md).
 
-**Eval gate: VERIFIED.** Final guidance tested on Linux/WSL2 x86_64, Node 24.21.0, OMP 19.2.1, and Bubblewrap 0.11.1.
+**Eval gate: VERIFIED.** Review fixes tested on Linux/WSL2 x86_64, Node 24.21.0, OMP 19.2.1, and Bubblewrap 0.11.1.
 
 | Model | Pass rate | Transcript directory |
 | --- | --- | --- |
-| `openai-codex/gpt-5.6-luna` | 100% (10/10) | `/tmp/ksd-eval-16nkgH` |
-| `openai-codex/gpt-6.2-sol` (strong gate) | 100% (10/10) | `/tmp/ksd-eval-2Yftwi` |
+| `openai-codex/gpt-5.6-luna` | 90% (9/10) | `/tmp/ksd-eval-nug7du` |
+| `openai-codex/gpt-6.2-sol` (strong gate) | 100% (10/10) | `/tmp/ksd-eval-KTeYqT` |
 
-No unscored cases or unresolved checker, guidance, or tool failures in these runs. The eval gate does not replace either live product smoke.
+Both runs scored all 10 cases. Luna's `search-review` failed the existing ordering check: its concurrent `ei_changes` call finished before `ei_impact`, and it did not call `ei_changes` again before answering. The pre-review grader gives the same result on that transcript. The eval gate does not replace either live product smoke.
 
 After the local gate passes:
 
