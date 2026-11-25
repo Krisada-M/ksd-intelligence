@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { basename } from 'node:path';
 import { parseArgs } from 'node:util';
 import {
   auditFieldsForChanges,
@@ -24,6 +25,8 @@ import {
   setupTypescriptRuntime,
 } from '../../core/engine/typescript.js';
 import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
+import { readBuildHistory } from '../../core/indexing/ui-progress.js';
+import { isRecord } from '../../core/kernel/guards.js';
 import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
@@ -58,6 +61,8 @@ import {
   writeLock,
 } from '../../workflow/sources.js';
 import { WorkflowError } from '../../workflow/types.js';
+import { openHud, renderHudSummary, type Hud } from '../ui/hud.js';
+import { renderResultView, terminalViewOptions, type ResultView } from '../ui/tree.js';
 
 function doctorPassed(report: Record<string, unknown>): boolean {
   const differences = report.differences;
@@ -135,6 +140,30 @@ async function tryResolveCacheCli(
   }
 }
 
+async function duringHud<T>(hud: Hud | undefined, run: () => Promise<T>): Promise<T> {
+  if (hud === undefined) return run();
+  const interrupt = (): never => {
+    hud.close();
+    process.exit(130);
+  };
+  process.once('SIGINT', interrupt);
+  try {
+    return await run();
+  } finally {
+    process.removeListener('SIGINT', interrupt);
+    hud.close();
+  }
+}
+
+function phaseTimes(raw: unknown): { phase: string; durationMs: number }[] {
+  if (!isRecord(raw)) return [];
+  return Object.entries(raw).flatMap(([phase, durationMs]) =>
+    typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0
+      ? [{ phase, durationMs }]
+      : [],
+  );
+}
+
 async function run(argv: string[]): Promise<number> {
   const { values, positionals } = parseArgs({
     args: argv,
@@ -145,6 +174,8 @@ async function run(argv: string[]): Promise<number> {
       force: { type: 'boolean' },
       'dry-run': { type: 'boolean' },
       json: { type: 'boolean' },
+      plain: { type: 'boolean' },
+      all: { type: 'boolean' },
       task: { type: 'string' },
       stage: { type: 'string' },
       risk: { type: 'string' },
@@ -180,14 +211,51 @@ async function run(argv: string[]): Promise<number> {
   const [command, sub] = positionals;
   const lockPath = values.lock ?? defaultLockPath();
   const registryPath = values.registry ?? defaultRegistryPath();
+  const view = terminalViewOptions({
+    env: process.env,
+    columns: process.stdout.columns || 80,
+    isTTY: process.stdout.isTTY === true,
+    plain: values.plain === true,
+    json: values.json === true,
+    all: values.all === true,
+  });
+  const show = (input: ResultView, plain: () => string): void => {
+    console.log(view === undefined ? plain() : renderResultView(input, view).join('\n'));
+  };
+  const hudOptions = {
+    stream: process.stderr,
+    env: process.env,
+    plain: values.plain === true,
+    json: values.json === true,
+  };
 
   if (command === 'setup') {
     const version = pinnedTypescriptVersion();
-    // --check only reads files; plain setup is the one command that uses the network (D44).
-    const result =
-      values.check === true
-        ? await checkTypescriptRuntime({ version })
-        : await setupTypescriptRuntime({ version });
+    const started = performance.now();
+    const check = values.check === true;
+    const hud = check
+      ? undefined
+      : openHud({ ...hudOptions, command: 'setup', repo: basename(process.cwd()) });
+    const result = await duringHud(hud, () =>
+      check
+        ? checkTypescriptRuntime({ version })
+        : setupTypescriptRuntime({ version, onHudProgress: hud?.update }),
+    );
+    if (hud !== undefined && view !== undefined) {
+      console.log(
+        renderHudSummary({
+          ...view,
+          command: 'setup',
+          outcome: result.ok ? 'completed' : 'failed',
+          durationMs: performance.now() - started,
+          reason: result.ok
+            ? `typescript ${result.runtime.version} · ${result.runtime.path} · sha256 ${result.sha256}`
+            : result.reason,
+          next: result.ok ? 'ready for ei index' : result.fix,
+        }),
+      );
+      return result.ok ? 0 : 1;
+    }
     if (!result.ok) {
       console.log(`typescript ${version}: degraded (${result.reason}) · ${result.fix}`);
       return 1;
@@ -221,7 +289,8 @@ async function run(argv: string[]): Promise<number> {
     );
     const extraWarning = consumeAuditWarning(status.cacheDir);
     if (extraWarning !== null) status.auditWarning = extraWarning;
-    console.log(values.json === true ? JSON.stringify(status, null, 2) : renderStatus(status));
+    if (values.json === true) console.log(JSON.stringify(status, null, 2));
+    else show({ kind: 'status', value: status }, () => renderStatus(status));
     return status.state === 'ready' ? 0 : 1;
   }
 
@@ -241,9 +310,8 @@ async function run(argv: string[]): Promise<number> {
     const summary = summarizeAudit(cacheDir, {
       ...(sinceMs !== undefined ? { sinceMs, sinceLabel: values.since } : {}),
     });
-    console.log(
-      values.json === true ? JSON.stringify(summary, null, 2) : renderAuditSummary(summary),
-    );
+    if (values.json === true) console.log(JSON.stringify(summary, null, 2));
+    else show({ kind: 'audit', value: summary }, () => renderAuditSummary(summary));
     return 0;
   }
 
@@ -284,11 +352,40 @@ async function run(argv: string[]): Promise<number> {
   if (command === 'index') {
     const workspace = await loadWorkspace(values.root ?? process.cwd());
     const started = performance.now();
-    const outcome = await buildIndex(workspace, {
-      full: values.full === true,
-      onProgress: (message) => console.error(`ei index: ${message}`),
+    const previous =
+      view !== undefined && process.stderr.isTTY
+        ? readBuildHistory(workspace.cacheDir).at(-1)
+        : undefined;
+    const hud = openHud({
+      ...hudOptions,
+      command: 'index',
+      repo: basename(workspace.root),
+      previous,
     });
+    const outcome = await duringHud(hud, () =>
+      buildIndex(workspace, {
+        full: values.full === true,
+        onProgress:
+          hud === undefined ? (message) => console.error(`ei index: ${message}`) : undefined,
+        onHudProgress: hud?.update,
+      }),
+    );
     if (!outcome.ok) {
+      if (hud !== undefined && view !== undefined) {
+        const status = await workspaceStatus(workspace.root);
+        console.log(
+          renderHudSummary({
+            ...view,
+            command: 'index',
+            outcome: 'failed',
+            durationMs: performance.now() - started,
+            reason: `${outcome.code}: ${outcome.message}`,
+            activeIndex: status.index === null ? 'none' : homeRelative(status.index.path),
+            next: outcome.fix,
+          }),
+        );
+        return 1;
+      }
       console.log(`INDEX ${outcome.code}: ${outcome.message} · ${outcome.fix}`);
       return 1;
     }
@@ -296,8 +393,53 @@ async function run(argv: string[]): Promise<number> {
       console.log(JSON.stringify(outcome.value, null, 2));
       return outcome.value.action === 'failed' ? 1 : 0;
     }
-    const seconds = ((performance.now() - started) / 1000).toFixed(2);
+    const durationMs = performance.now() - started;
+    const seconds = (durationMs / 1000).toFixed(2);
     const { action, reason } = outcome.value;
+    if (
+      hud !== undefined &&
+      view !== undefined &&
+      (action === 'cold' || action === 'update' || action === 'unchanged' || action === 'failed')
+    ) {
+      const { index } = await workspaceStatus(workspace.root);
+      const problems = Array.isArray(outcome.value.problems)
+        ? outcome.value.problems.filter((value): value is string => typeof value === 'string')
+        : [];
+      const actionLabel = action === 'cold' ? 'built' : 'updated';
+      const activeIndex = index === null ? 'none' : homeRelative(index.path);
+      const drift = isRecord(outcome.value.drift) ? outcome.value.drift : {};
+      const coverage = index?.coverage;
+      const extraction = index?.graph.extraction;
+      console.log(
+        renderHudSummary({
+          ...view,
+          command: 'index',
+          outcome: action === 'failed' || action === 'unchanged' ? action : actionLabel,
+          kind: action === 'cold' || action === 'update' ? action : undefined,
+          durationMs,
+          previous,
+          reason:
+            problems.length === 0 ? String(reason) : `${String(reason)}: ${problems.join('; ')}`,
+          phases: phaseTimes(outcome.value.phases),
+          files: coverage?.scanned,
+          indexed: extraction === undefined ? undefined : (extraction.ok ?? 0),
+          outsideScope:
+            coverage?.reasons['outside-index-scope'] ?? (index === null ? undefined : 0),
+          errors:
+            extraction === undefined
+              ? undefined
+              : (extraction['parse-error'] ?? 0) + (extraction['not-in-program'] ?? 0),
+          drift:
+            action === 'update'
+              ? `+${String(drift.added)} · ~${String(drift.changed)} · −${String(drift.deleted)}`
+              : undefined,
+          activeIndex: action === 'failed' ? activeIndex : undefined,
+          throughput: hud.throughput,
+          next: action === 'failed' ? 'check ei status before retrying' : 'ready for ei impact',
+        }),
+      );
+      return action === 'failed' ? 1 : 0;
+    }
     console.log(`INDEX ${String(action)} in ${seconds} s (${String(reason)})`);
     console.log(renderStatus(await workspaceStatus(workspace.root)));
     return action === 'failed' ? 1 : 0;
@@ -347,9 +489,8 @@ async function run(argv: string[]): Promise<number> {
         ],
         index: { state: 'fresh' as const, updatedFiles: 0, driftedFiles: [] },
       };
-      console.log(
-        values.json === true ? JSON.stringify(batch.answers[0], null, 2) : renderImpact(batch),
-      );
+      if (values.json === true) console.log(JSON.stringify(batch.answers[0], null, 2));
+      else show({ kind: 'impact', value: batch }, () => renderImpact(batch));
       return 2;
     }
     const workspace = await loadWorkspace(values.root ?? process.cwd());
@@ -371,11 +512,11 @@ async function run(argv: string[]): Promise<number> {
       },
       { root: workspace.root },
     );
-    const details = impactDetails(batch);
-    if (values.json === true) {
+    const details = values.json === true ? impactDetails(batch) : undefined;
+    if (details !== undefined) {
       console.log(JSON.stringify(details.length === 1 ? details[0] : details, null, 2));
     } else {
-      console.log(renderImpact(batch));
+      show({ kind: 'impact', value: batch }, () => renderImpact(batch));
     }
     return batch.answers.some((answer) => answer.kind === 'failure') ? 1 : 0;
   }
@@ -418,9 +559,8 @@ async function run(argv: string[]): Promise<number> {
         code: 'INVALID_INPUT' as const,
         message: 'depth must be an integer 1–10',
       };
-      console.log(
-        values.json === true ? JSON.stringify(outcome, null, 2) : renderChangesOutcome(outcome),
-      );
+      if (values.json === true) console.log(JSON.stringify(outcome, null, 2));
+      else show({ kind: 'changes', value: outcome }, () => renderChangesOutcome(outcome));
       return 2;
     }
     const workspace = await loadWorkspace(values.root ?? process.cwd());
@@ -446,11 +586,10 @@ async function run(argv: string[]): Promise<number> {
       },
       { root: workspace.root },
     );
-    const rendered = renderChangesOutcome(outcome);
     if (values.json === true) {
       console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
     } else {
-      console.log(rendered);
+      show({ kind: 'changes', value: outcome }, () => renderChangesOutcome(outcome));
     }
     return outcome.kind === 'failure' ? 1 : 0;
   }
@@ -497,9 +636,8 @@ async function run(argv: string[]): Promise<number> {
         code: 'INVALID_INPUT' as const,
         message: valid.message,
       };
-      console.log(
-        values.json === true ? JSON.stringify(outcome, null, 2) : renderSearchOutcome(outcome),
-      );
+      if (values.json === true) console.log(JSON.stringify(outcome, null, 2));
+      else show({ kind: 'search', value: outcome }, () => renderSearchOutcome(outcome));
       return 2;
     }
     const workspace = await loadWorkspace(values.root ?? process.cwd());
@@ -524,11 +662,10 @@ async function run(argv: string[]): Promise<number> {
       },
       { root: workspace.root },
     );
-    const rendered = renderSearchOutcome(outcome);
     if (values.json === true) {
       console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
     } else {
-      console.log(rendered);
+      show({ kind: 'search', value: outcome }, () => renderSearchOutcome(outcome));
     }
     return outcome.kind === 'failure' ? 1 : 0;
   }
@@ -545,16 +682,68 @@ async function run(argv: string[]): Promise<number> {
       console.error(`--differential must be a number or "all", got ${raw}`);
       return 2;
     }
-    const outcome = await doctorDeep(workspace, {
-      differential,
-      onProgress: (message) => console.error(`ei doctor: ${message}`),
+    const started = performance.now();
+    const previous =
+      view !== undefined && process.stderr.isTTY
+        ? readBuildHistory(workspace.cacheDir).at(-1)
+        : undefined;
+    const hud = openHud({
+      ...hudOptions,
+      command: 'doctor',
+      repo: basename(workspace.root),
+      previous,
     });
+    const outcome = await duringHud(hud, () =>
+      doctorDeep(workspace, {
+        differential,
+        onProgress:
+          hud === undefined ? (message) => console.error(`ei doctor: ${message}`) : undefined,
+        onHudProgress: hud?.update,
+      }),
+    );
     if (!outcome.ok) {
+      if (hud !== undefined && view !== undefined) {
+        console.log(
+          renderHudSummary({
+            ...view,
+            command: 'doctor',
+            outcome: 'failed',
+            durationMs: performance.now() - started,
+            reason: `${outcome.code}: ${outcome.message}`,
+            next: outcome.fix,
+          }),
+        );
+        return 1;
+      }
       console.log(`DOCTOR ${outcome.code}: ${outcome.message} · ${outcome.fix}`);
       return 1;
     }
     if (values.json === true) {
       console.log(JSON.stringify(outcome.value, null, 2));
+    } else if (hud !== undefined && view !== undefined) {
+      const ok = doctorPassed(outcome.value);
+      const cold = isRecord(outcome.value.cold) ? outcome.value.cold : {};
+      const compared =
+        differential === 0
+          ? 'canonical differences'
+          : 'canonical differences or differential misses';
+      console.log(
+        renderHudSummary({
+          ...view,
+          command: 'doctor',
+          outcome: ok ? 'completed' : 'failed',
+          durationMs: performance.now() - started,
+          reason: ok ? `no ${compared}` : 'differences found',
+          phases: phaseTimes(cold.phases),
+          throughput: hud.throughput,
+          next: ok
+            ? 'ready for ei impact'
+            : 'check the reported differences before using this index',
+        }),
+      );
+      const note = counterNote(outcome.value);
+      if (!ok) console.log(renderDoctor(outcome.value));
+      else if (note !== '') console.log(note);
     } else {
       console.log(renderDoctor(outcome.value));
     }
@@ -704,6 +893,15 @@ async function run(argv: string[]): Promise<number> {
           null,
           2,
         ),
+      );
+      return sub === 'check' && totalIssues > 0 ? 1 : 0;
+    }
+    if (view !== undefined) {
+      console.log(
+        renderResultView(
+          { kind: 'skills', platform, discovery: result, registryIssues },
+          view,
+        ).join('\n'),
       );
       return sub === 'check' && totalIssues > 0 ? 1 : 0;
     }

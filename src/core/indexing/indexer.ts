@@ -53,6 +53,7 @@ import { scanLexically } from './lexical.js';
 import { extractSearchRows } from '../search/segments.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
 import { verifyIndex } from './verify.js';
+import { recordBuildHistory, type BuildProgress } from './ui-progress.js';
 
 export type Progress = (message: string, data?: unknown) => void;
 
@@ -63,6 +64,9 @@ export interface IndexRequest {
   /** `hash` reads every file (`ei index`, rebuilds); `stat` trusts unchanged size and mtime. */
   freshness?: 'hash' | 'stat';
   onProgress?: Progress;
+  onHudProgress?: (event: BuildProgress) => void;
+  /** Internal doctor rebuilds publish only to a temporary directory. */
+  recordHistory?: boolean;
 }
 
 export interface IndexerOptions {
@@ -321,6 +325,28 @@ export class Indexer {
 
   async index(request: IndexRequest): Promise<IndexReport> {
     const progress = request.onProgress ?? (() => undefined);
+    let lastHudPhase = '';
+    let lastHudTotal: number | undefined;
+    let lastHudAt = 0;
+    const hud = (event: BuildProgress): void => {
+      if (request.onHudProgress === undefined) return;
+      const now = performance.now();
+      if (
+        event.phase === lastHudPhase &&
+        event.total === lastHudTotal &&
+        (event.done === undefined || event.total === undefined || event.done !== event.total) &&
+        now - lastHudAt < 100
+      )
+        return;
+      lastHudAt = now;
+      lastHudPhase = event.phase;
+      lastHudTotal = event.total;
+      try {
+        request.onHudProgress(event);
+      } catch {
+        // Presentation cannot change the build outcome.
+      }
+    };
     const phases: PhaseTimes = {
       scan: 0,
       program: 0,
@@ -338,8 +364,10 @@ export class Indexer {
         ? new Map(published.files.map((file) => [file.path, file]))
         : undefined;
     progress('scan');
+    hud({ phase: 'scan' });
     const census = await scan(this.root, request.impact, this.ts, fingerprint);
     phases.scan = performance.now() - started;
+    hud({ phase: 'scan', done: census.records.length, total: census.records.length });
 
     const drift = published === null ? null : diffCensus(published.files, census.records);
     const coldReason = this.coldReason(request, stamp, published, drift);
@@ -351,23 +379,51 @@ export class Indexer {
         request,
         phases,
         progress,
+        hud,
+        started,
       );
     }
     const contentDrift = drift.added.size + drift.changed.size + drift.deleted.size;
     if (contentDrift === 0 && drift.touched === 0) {
+      hud({ phase: 'unchanged', kind: 'update' });
       return this.unchanged(census, phases);
     }
     if (contentDrift === 0) {
-      return this.update(census, drift, published, stamp, request, phases, progress, null);
+      return this.update(
+        census,
+        drift,
+        published,
+        stamp,
+        request,
+        phases,
+        progress,
+        hud,
+        started,
+        null,
+      );
     }
 
     const programStarted = performance.now();
     progress('program');
+    hud({ phase: 'program', kind: 'update' });
     const programs = this.createPrograms(census.records);
     const late = this.programLevelChange(programs.groups, drift, published);
     phases.program = performance.now() - programStarted;
-    if (late !== null) return this.cold(census, late, stamp, request, phases, progress);
-    return this.update(census, drift, published, stamp, request, phases, progress, programs);
+    if (late !== null) {
+      return this.cold(census, late, stamp, request, phases, progress, hud, started);
+    }
+    return this.update(
+      census,
+      drift,
+      published,
+      stamp,
+      request,
+      phases,
+      progress,
+      hud,
+      started,
+      programs,
+    );
   }
 
   private readPublished(): Published | null {
@@ -543,9 +599,12 @@ export class Indexer {
     request: IndexRequest,
     phases: PhaseTimes,
     progress: Progress,
+    hud: (event: BuildProgress) => void,
+    runStarted: number,
   ): IndexReport {
     let started = performance.now();
     progress('program');
+    hud({ phase: 'program', kind: 'cold', reason });
     const programs = this.createPrograms(census.records);
     phases.program += performance.now() - started;
 
@@ -563,30 +622,37 @@ export class Indexer {
 
     // EXTRACT-LOCAL: declarations from each file's syntax tree; their names scope the resolve.
     progress('extract', { files: indexable.length });
+    hud({ phase: 'extract', done: 0, total: indexable.length, kind: 'cold', reason });
     started = performance.now();
     const declarations = new Map<string, FileDeclarations>();
+    let extracted = 0;
     for (const path of indexable) {
       const sf = sourceFile(path);
-      if (sf === undefined) continue;
-      const found = fileDeclarations(this.ts, sf, path);
-      declarations.set(path, found);
-      for (const declaration of found.declarations) {
-        if (declaration.kind !== 'module') declarationNames.add(declaration.simple);
+      if (sf !== undefined) {
+        const found = fileDeclarations(this.ts, sf, path);
+        declarations.set(path, found);
+        for (const declaration of found.declarations) {
+          if (declaration.kind !== 'module') declarationNames.add(declaration.simple);
+        }
       }
+      hud({ phase: 'extract', done: ++extracted, total: indexable.length, file: path });
     }
     phases.extract = performance.now() - started;
 
     // RESOLVE one program at a time; a resolved program gives up its checker before the next.
     progress('resolve', { files: indexable.length });
+    hud({ phase: 'resolve', done: 0, total: indexable.length });
     started = performance.now();
     const db = beginBuild(this.cacheDir);
     try {
       writeFiles(db, census.records);
       const writer = recordWriter(db);
+      let resolved = 0;
       transaction(db, () => {
         for (const path of indexable) {
-          if (sourceFile(path) === undefined)
-            writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
+          if (sourceFile(path) !== undefined) continue;
+          writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
+          hud({ phase: 'resolve', done: ++resolved, total: indexable.length, file: path });
         }
         for (const group of programs.groups) {
           const resolver = new Resolver(this.ts, group.program, scope);
@@ -597,19 +663,32 @@ export class Indexer {
             writer.write(
               rowsOf(this.ts, path, sf, declarations.get(path), resolver.resolveFile(sf)),
             );
+            hud({ phase: 'resolve', done: ++resolved, total: indexable.length, file: path });
           }
           this.lighten(group);
         }
         this.writeOrphans(writer, census, declarationNames);
       });
       phases.resolve = performance.now() - started;
-      return this.finish(db, census, writer.inserted, stamp, request, phases, progress, programs, {
-        action: 'cold',
-        reason,
-        drift: { added: 0, changed: 0, deleted: 0 },
-        resolvedFiles: indexable.length,
-        programs: programs.groups.length,
-      });
+      return this.finish(
+        db,
+        census,
+        writer.inserted,
+        stamp,
+        request,
+        phases,
+        progress,
+        hud,
+        runStarted,
+        programs,
+        {
+          action: 'cold',
+          reason,
+          drift: { added: 0, changed: 0, deleted: 0 },
+          resolvedFiles: indexable.length,
+          programs: programs.groups.length,
+        },
+      );
     } catch (error) {
       discardBuild(db, this.cacheDir);
       throw error;
@@ -644,6 +723,8 @@ export class Indexer {
     request: IndexRequest,
     phases: PhaseTimes,
     progress: Progress,
+    hud: (event: BuildProgress) => void,
+    runStarted: number,
     programs: Programs | null,
   ): IndexReport {
     const indexableNow = new Set(
@@ -656,11 +737,21 @@ export class Indexer {
 
     const db = beginUpdate(this.cacheDir);
     if (db === null) {
-      return this.cold(census, 'published index unreadable', stamp, request, phases, progress);
+      return this.cold(
+        census,
+        'published index unreadable',
+        stamp,
+        request,
+        phases,
+        progress,
+        hud,
+        runStarted,
+      );
     }
     try {
       let started = performance.now();
       progress('extract', { files: changed.length });
+      hud({ phase: 'extract', kind: 'update', done: 0, total: changed.length });
       const before = tableCounts(db);
       const oldIndex = readFileIndex(db);
       const oldKeys = declarationNamesOf(db, [...changed, ...removed]);
@@ -679,13 +770,16 @@ export class Indexer {
       const sourceOf =
         programs === null ? () => undefined : this.sources(programs.groups, census.records, scope);
       const newKeys = new Map<string, string>();
+      let extracted = 0;
       for (const path of changed) {
         const source = sourceOf(path);
-        if (source === undefined) continue;
-        for (const declaration of source.resolver.declarationsOf(source.sf).declarations) {
-          newKeys.set(declaration.key, declaration.simple);
-          nameCounts.set(declaration.simple, (nameCounts.get(declaration.simple) ?? 0) + 1);
+        if (source !== undefined) {
+          for (const declaration of source.resolver.declarationsOf(source.sf).declarations) {
+            newKeys.set(declaration.key, declaration.simple);
+            nameCounts.set(declaration.simple, (nameCounts.get(declaration.simple) ?? 0) + 1);
+          }
         }
+        hud({ phase: 'extract', done: ++extracted, total: changed.length, file: path });
       }
       for (const [name, n] of nameCounts) {
         if (n > 0 && name !== '<module>') declarationNames.add(name);
@@ -726,6 +820,7 @@ export class Indexer {
       }
 
       progress('resolve', { files: pending.size });
+      hud({ phase: 'resolve' });
       const resolved = new Map<string, FileRows>();
       // A file's surface counts as changed when its text-derived surface differs, or when one of
       // its observable declarations (types written or inferred) has an edge into a file whose
@@ -791,6 +886,7 @@ export class Indexer {
                 resolution,
               ),
             );
+            hud({ phase: 'resolve', done: resolved.size, file: path });
             if (resolution === undefined) continue;
             observableKeysOf.set(path, resolution.observableKeys);
             if (oldIndex.get(path)?.surface !== resolution.surface || leaks(path)) {
@@ -828,17 +924,29 @@ export class Indexer {
         deleteOrphanSymbols(db);
       });
       phases.resolve = performance.now() - started;
-      return this.finish(db, census, expected, stamp, request, phases, progress, programs, {
-        action: 'update',
-        reason: `${changed.length} changed · ${removed.length} removed · ${resolved.size} resolved`,
-        drift: {
-          added: drift.added.size,
-          changed: drift.changed.size,
-          deleted: drift.deleted.size,
+      return this.finish(
+        db,
+        census,
+        expected,
+        stamp,
+        request,
+        phases,
+        progress,
+        hud,
+        runStarted,
+        programs,
+        {
+          action: 'update',
+          reason: `${changed.length} changed · ${removed.length} removed · ${resolved.size} resolved`,
+          drift: {
+            added: drift.added.size,
+            changed: drift.changed.size,
+            deleted: drift.deleted.size,
+          },
+          resolvedFiles: resolved.size,
+          programs: programs?.groups.length ?? Number(published.meta.programs ?? 0),
         },
-        resolvedFiles: resolved.size,
-        programs: programs?.groups.length ?? Number(published.meta.programs ?? 0),
-      });
+      );
     } catch (error) {
       discardBuild(db, this.cacheDir);
       throw error;
@@ -857,10 +965,13 @@ export class Indexer {
     request: IndexRequest,
     phases: PhaseTimes,
     progress: Progress,
+    hud: (event: BuildProgress) => void,
+    runStarted: number,
     programs: Programs | null,
     outcome: Outcome,
   ): IndexReport {
     progress('verify');
+    hud({ phase: 'verify' });
     let started = performance.now();
     const verify = this.options.verify ?? verifyIndex;
     const problems = verify(db, { ...produced, files: census.records.length });
@@ -880,6 +991,7 @@ export class Indexer {
       };
     }
     progress('publish');
+    hud({ phase: 'publish' });
     started = performance.now();
     const buildId = randomUUID();
     writeMeta(db, {
@@ -911,6 +1023,16 @@ export class Indexer {
     publishBuild(db, this.cacheDir);
     if (programs !== null) rmSync(join(this.cacheDir, FAILURE_FILE), { force: true });
     phases.publish = performance.now() - started;
+    if (request.recordHistory !== false) {
+      try {
+        recordBuildHistory(this.cacheDir, {
+          durationMs: Math.round(performance.now() - runStarted),
+          ...(outcome.action === 'cold' ? { reason: outcome.reason } : {}),
+        });
+      } catch {
+        // Optional history must not turn a published build into a failed build.
+      }
+    }
     return { ...outcome, census: census.summary, counts, problems, phases: roundPhases(phases) };
   }
 

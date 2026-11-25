@@ -62,7 +62,38 @@ async function runLocked(workspace, op, args, options) {
             root: workspace.root,
             cacheDir: workspace.cacheDir,
             typescriptPath: typescript.runtime.path,
-        }, { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS });
+            ...(options.onHudProgress === undefined ? {} : { hudProgress: true }),
+        }, {
+            onProgress: options.onHudProgress === undefined
+                ? options.onProgress
+                : (message, data) => {
+                    if (message === '__hud_progress__' &&
+                        isRecord(data) &&
+                        isRecord(data.hudProgress)) {
+                        const event = data.hudProgress;
+                        if (typeof event.phase === 'string') {
+                            try {
+                                options.onHudProgress?.({
+                                    phase: event.phase,
+                                    ...(typeof event.done === 'number' ? { done: event.done } : {}),
+                                    ...(typeof event.total === 'number' ? { total: event.total } : {}),
+                                    ...(typeof event.file === 'string' ? { file: event.file } : {}),
+                                    ...(event.kind === 'cold' || event.kind === 'update'
+                                        ? { kind: event.kind }
+                                        : {}),
+                                    ...(typeof event.reason === 'string' ? { reason: event.reason } : {}),
+                                });
+                            }
+                            catch {
+                                // Presentation cannot change the build outcome.
+                            }
+                        }
+                        return;
+                    }
+                    options.onProgress?.(message, data);
+                },
+            timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS,
+        });
         if (options.signal?.aborted) {
             return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };
         }

@@ -67,3 +67,15 @@ Engineering Proxy: <ON|OFF>; mode: <MODE> (<source>); project default: <MODE|UNS
 ```
 
 `tests/policy/contract.test.js:14–25` pins all `segment-*.txt` and `status-command-*.txt` fixtures byte for byte. `extension.test.js` also pins lifecycle and segment behavior; `global-config.test.js` pins override precedence; `performance.test.js` pins redraw/dedup behavior. Keep the existing plain channel and snapshots unchanged. Record every added human-facing representation in owner review notes; changing behavior is a hard stop.
+
+## Round 1 architecture decision
+
+**Usage.** `ei impact calculateFee` selects a terminal view from the existing typed batch. `ei impact calculateFee --plain` and `--json` use their existing encoders. A styled `ei index` opens one stderr HUD and feeds it observed engine phase events; the plain command still emits only the old progress messages. Later, OMP renders the same result view in `renderResult` without touching `content`.
+
+**Shape.** `renderResultView(input: ResultView, options: ViewOptions): string[]` accepts a discriminated union over existing result types. It owns role colours, tree-layout, display width, abbreviation collisions, and list folding. The CLI alone decides whether to use it. `openHud(options): Hud` owns redraw timing and cursor cleanup; it consumes typed phase observations, including indeterminate phases. Existing Core result and transport encoders stay separate. Only the engine publish owner can record successful build history; presentation reads it.
+
+**Synthesis.** GPT-6.2 Sol proposed surface-local renderers over existing result types. Gemini 3.8 Flash proposed a common semantic projection. Share the result view across human consumers as Gemini proposed, but take Sol's existing typed inputs and separate HUD lifecycle. Reject a second domain store, an opaque V1 payload, and any projection that serializes agent text.
+
+**Tradeoffs and risks.** A shared primitive tree carries only human rows, not Core semantics. Measured progress can be unavailable; a beam communicates work without inventing a total. Width calculations must not cut Thai, combining clusters, or a symbol name. Control characters from repository paths are inert in the styled view. OMP and AGY transport wiring wait for Rounds 2 and 3, respectively.
+
+**Next implementation step.** Add the consumer-visible terms, width, plain-output and HUD regressions, then wire the CLI against the view and event interfaces.

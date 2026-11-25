@@ -110,6 +110,15 @@ async function onPath(command, env) {
  * The only network use in the library; owner-run.
  */
 export async function setupTypescriptRuntime(options) {
+    const hud = (phase) => {
+        try {
+            options.onHudProgress?.({ phase });
+        }
+        catch {
+            // Presentation cannot change setup outcome.
+        }
+    };
+    hud('setup:prepare');
     const dir = typescriptRuntimeDir(options);
     const spec = options.spec ?? `typescript@${options.version}`;
     const installer = options.installer ?? ((await onPath('npm', options.env)) ? 'npm' : 'bun');
@@ -131,6 +140,7 @@ export async function setupTypescriptRuntime(options) {
             spec,
         ]
         : ['add', '--cwd', dir, '--exact', '--ignore-scripts', '--no-save', spec];
+    hud('setup:install');
     try {
         await run(installer, args, { env: options.env, maxBuffer: 16 * 2 ** 20 });
     }
@@ -142,6 +152,7 @@ export async function setupTypescriptRuntime(options) {
             fix: SETUP_FIX,
         };
     }
+    hud('setup:verify');
     const packageDir = join(dir, 'node_modules', 'typescript');
     const problem = inspectPackage(packageDir, options.version);
     if (problem !== null)
@@ -155,7 +166,10 @@ export async function setupTypescriptRuntime(options) {
     await writeFile(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
         mode: 0o600,
     });
-    return checkTypescriptRuntime(options);
+    const result = await checkTypescriptRuntime(options);
+    if (result.ok)
+        hud('setup:complete');
+    return result;
 }
 /**
  * The TypeScript the engine loads: the provisioned runtime, or only with

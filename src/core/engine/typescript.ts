@@ -8,6 +8,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { isRecord } from '../kernel/guards.js';
+import type { BuildProgress } from '../indexing/ui-progress.js';
 
 const run = promisify(execFile);
 
@@ -129,6 +130,7 @@ export interface SetupOptions extends RuntimeOptions {
   /** Defaults to npm when it is on PATH, else bun. */
   installer?: 'npm' | 'bun';
   env?: NodeJS.ProcessEnv;
+  onHudProgress?: (event: BuildProgress) => void;
 }
 
 async function onPath(command: string, env: NodeJS.ProcessEnv | undefined): Promise<boolean> {
@@ -146,6 +148,14 @@ async function onPath(command: string, env: NodeJS.ProcessEnv | undefined): Prom
  * The only network use in the library; owner-run.
  */
 export async function setupTypescriptRuntime(options: SetupOptions): Promise<TypescriptCheck> {
+  const hud = (phase: string): void => {
+    try {
+      options.onHudProgress?.({ phase });
+    } catch {
+      // Presentation cannot change setup outcome.
+    }
+  };
+  hud('setup:prepare');
   const dir = typescriptRuntimeDir(options);
   const spec = options.spec ?? `typescript@${options.version}`;
   const installer = options.installer ?? ((await onPath('npm', options.env)) ? 'npm' : 'bun');
@@ -169,6 +179,7 @@ export async function setupTypescriptRuntime(options: SetupOptions): Promise<Typ
           spec,
         ]
       : ['add', '--cwd', dir, '--exact', '--ignore-scripts', '--no-save', spec];
+  hud('setup:install');
   try {
     await run(installer, args, { env: options.env, maxBuffer: 16 * 2 ** 20 });
   } catch (error) {
@@ -180,6 +191,7 @@ export async function setupTypescriptRuntime(options: SetupOptions): Promise<Typ
     };
   }
 
+  hud('setup:verify');
   const packageDir = join(dir, 'node_modules', 'typescript');
   const problem = inspectPackage(packageDir, options.version);
   if (problem !== null) return { ok: false, reason: problem, fix: SETUP_FIX };
@@ -192,7 +204,9 @@ export async function setupTypescriptRuntime(options: SetupOptions): Promise<Typ
   await writeFile(join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, {
     mode: 0o600,
   });
-  return checkTypescriptRuntime(options);
+  const result = await checkTypescriptRuntime(options);
+  if (result.ok) hud('setup:complete');
+  return result;
 }
 
 /**

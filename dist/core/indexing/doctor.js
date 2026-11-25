@@ -22,8 +22,24 @@ function lines(cacheDir) {
  */
 export async function doctorDeep(ts, indexer, impact, options) {
     const progress = options.onProgress ?? (() => undefined);
+    const hud = (event) => {
+        try {
+            options.onHudProgress?.(event);
+        }
+        catch {
+            // Optional presentation must not change doctor results.
+        }
+    };
     progress('doctor: update active index');
-    const update = await indexer.index({ impact, freshness: 'hash', onProgress: progress });
+    hud({ phase: 'doctor:update' });
+    const update = await indexer.index({
+        impact,
+        freshness: 'hash',
+        onProgress: progress,
+        onHudProgress: options.onHudProgress === undefined
+            ? undefined
+            : (event) => hud({ ...event, phase: `doctor:update:${event.phase}` }),
+    });
     if (update.action === 'failed') {
         throw new Error(`doctor: active index verification failed: ${update.problems.join('; ')}`);
     }
@@ -37,7 +53,15 @@ export async function doctorDeep(ts, indexer, impact, options) {
     });
     try {
         progress('doctor: cold rebuild');
-        cold = await rebuild.index({ impact, full: true });
+        hud({ phase: 'doctor:rebuild', kind: 'cold' });
+        cold = await rebuild.index({
+            impact,
+            full: true,
+            recordHistory: false,
+            onHudProgress: options.onHudProgress === undefined
+                ? undefined
+                : (event) => hud({ ...event, phase: `doctor:rebuild:${event.phase}` }),
+        });
         if (cold.action === 'failed') {
             throw new Error(`doctor: cold rebuild verification failed: ${cold.problems.join('; ')}`);
         }
@@ -65,6 +89,7 @@ export async function doctorDeep(ts, indexer, impact, options) {
     let report = null;
     if (options.differential !== 0) {
         progress('doctor: differential');
+        hud({ phase: 'doctor:differential' });
         const db = openPublished(indexer.cacheDir);
         if (db === null)
             throw new Error(`doctor: no published index at ${indexPath(indexer.cacheDir)}`);
