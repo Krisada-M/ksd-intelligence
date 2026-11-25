@@ -1,3 +1,5 @@
+> **DROPPED (D67, 2026-11-26).** The owner removed the GitLab adapter from V2. Kept for history; do not build from this brief.
+
 # V2b — GitLab adapter, read-only, `ei_gitlab` (agent brief, DRAFT)
 
 Start with Round 0 (`README.md`). Read `docs/briefs/V2-README.md`, then `docs/DESIGN.md` §6.8, §9, §12 and D16; `docs/RISK.md` §5, §6.

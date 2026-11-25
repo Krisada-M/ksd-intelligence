@@ -21,7 +21,7 @@ For a fix round or a contingency, paste the findings or the log after that line.
 | 6b | M3b tool comparison (research, D66) | `M3b-compare.md` | 0–4 | ready; findings feed the close-out |
 | 7 | V1 close-out | `V1-closeout.md` | 1–2 | draft |
 
-V1 is finished when the close-out is accepted. After that, V2 (context packs, GitLab, verification, knowledge, compression) follows `V2-README.md`; the owner waived its entry gates (D64).
+V1 is finished when the close-out is accepted. After that, V2 (context packs, verification, knowledge, compression; GitLab dropped, D67) follows `V2-README.md`; the owner waived its entry gates (D64).
 
 **Draft briefs.** Briefs 3–7 were written before their predecessors were built. Each therefore starts with **Round 0 — reconcile**: the agent compares the brief with the code and documents as they are, reports every mismatch, and changes nothing. The owner (or the design reviewer) corrects the brief, and only then does Round 1 start.
 

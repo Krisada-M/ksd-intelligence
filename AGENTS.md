@@ -35,7 +35,6 @@ In scope, in order:
 | Order | Module | Goal | Brief |
 |---|---|---|---|
 | V2a | Context packs | `ei_context`: what to read for a task, suggest only | `docs/briefs/V2a-context.md` (draft) |
-| V2b | GitLab adapter | `ei_gitlab`: read-only issues, MRs, pipelines; first network code | `docs/briefs/V2b-gitlab.md` (draft) |
 | V2c | Verification evidence | `ei_verify`: run allowlisted checks or read results; never infer PASS | `docs/briefs/V2c-verify.md` (draft) |
 | V2d | Anchored knowledge | `ei_learning`: owner-approved learnings in `.ksd/learnings/` | `docs/briefs/V2d-knowledge.md` (draft) |
 | V2e | Recoverable compression | `ei_retrieve` + OMP hook if one exists; byte-exact recovery | `docs/briefs/V2e-compression.md` (draft) |
@@ -44,7 +43,7 @@ Order, the rules that replace the gates, and the V2 safety rules: `docs/briefs/V
 
 Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
 
-Out of scope until the owner says otherwise: MCP adapters other than the explicitly approved MAGY1 AGY stdio bridge, SBOM, visual QA adapter, graph database servers, external vector or embedding services, Rust. Compression, knowledge, verification and the GitLab adapter are in scope only as V2 modules under their briefs, after `v1.0.0`.
+Out of scope until the owner says otherwise: MCP adapters other than the explicitly approved MAGY1 AGY stdio bridge, SBOM, visual QA adapter, graph database servers, GitLab adapter (dropped, D67), external vector or embedding services, Rust. Compression, knowledge and verification are in scope only as V2 modules under their briefs, after `v1.0.0`.
 
 **Owner-directed integration exception (2026-11-19):** MAGY1 is approved as a self-contained adapter-only milestone with brief `docs/briefs/MAGY1-mcp.md`. It may reuse the existing compiled KSD Core but must not alter policy, OMP behavior, index contracts or golden results; it requires a Draft PR, the existing quality gates and five documented self-review passes. AGY live-host support remains NOT VERIFIED until a separate manual smoke check.
 
@@ -86,7 +85,7 @@ Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a base
 - Other code-intelligence tools (GitNexus, Graft, CodeGraph) may index this repo and write into it. (Owner: run GitNexus here with `gitnexus analyze --index-only` so it stops injecting into `AGENTS.md`/`CLAUDE.md`.) Never commit their edits: revert any block they inject into `AGENTS.md`, and put their local ignore patterns in `.git/info/exclude`, not in tracked files. Report such edits when you see them.
 
 - No `git push`, merge, tag, release or deploy. Commit locally only if the brief says so.
-- No network calls from library code. Upstream skill repos are cloned by the owner, not by the library. Exceptions: owner-run `ei setup`, and from V2b the GitLab adapter under `src/adapters/gitlab/` when enabled. From V2c, processes run only from the owner's check allowlist, without a shell. From V2d, the only repository writes are `.ksd/learnings/*.yaml` through the owner's `ei learning approve`.
+- No network calls from library code. Upstream skill repos are cloned by the owner, not by the library. The only exception is the owner-run `ei setup`. From V2c, processes run only from the owner's check allowlist, without a shell. From V2d, the only repository writes are `.ksd/learnings/*.yaml` through the owner's `ei learning approve`.
 - No secrets, tokens or personal paths committed. Use environment variables or a git-ignored local config.
 - No destructive filesystem operations outside the repo and the OS temp directory.
 

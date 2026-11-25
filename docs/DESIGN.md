@@ -280,7 +280,9 @@ KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one in
 
 **Interaction with the rest of the library:** the module reads its own config only. Workflow and impact may later read the effective KSD mode through the module's exported function (a direct import, not a bridge), only when the dogfood log shows a case for it. KSD config stays in its own files and is not folded into `ei.config.json`, so existing files keep working.
 
-### 6.8 GitLab adapter — PLANNED (V2)
+### 6.8 GitLab adapter — DROPPED (D67)
+
+The owner removed this module on 2026-11-26. The text below is kept for history.
 
 Read-only access to issues (requirements for `plan`), merge request diffs (scope for `review`/`impact`), and pipeline/job results (evidence for `verify`). Host and project from `ei.config.json`; token from env `GITLAB_TOKEN` only, never stored or logged. This is the only library code allowed network access, and only when enabled.
 
@@ -624,7 +626,7 @@ V1 analyzes locally with no telemetry. The owner-run `ei setup` invokes the pack
 | Knowledge | ≥ 2 logged cases of re-explaining the same project decision to the agent |
 | Compression | Measured context pressure with OMP compaction on, plus a fixture showing a safe saving |
 
-Delivery order: context → GitLab → verification → knowledge → compression.
+Delivery order: context → verification → knowledge → compression (GitLab dropped, D67).
 
 ## 14. Quality and testing
 
@@ -717,6 +719,7 @@ Delivery order: context → GitLab → verification → knowledge → compressio
 | D64 | **Owner decision 2026-11-25:** build all five V2 modules without waiting for the §13 entry gates. Order unchanged (context → GitLab → verification → knowledge → compression), starting after `v1.0.0`. Instead of gates, each module ships disabled, leaves V1 output byte-identical when disabled, and reports a before/after value check that the owner reads before enabling it. Compression is built only if the installed OMP exposes a hook that can replace another tool's result. Briefs: `docs/briefs/V2-README.md`, `V2a`–`V2e` | 2026-11-25 |
 | D65 | **Owner decision 2026-11-25: npm publishing.** The package is published as `@krisada-m/ksd-intelligence` (scoped, public) so AGY and CLI users can `npm install -g` it instead of cloning. OMP keeps installing from the marketplace (D40). (1) `files` whitelist: `dist/`, `scripts/agy-mcp.mjs`, `scripts/mcp/`, `skills/`, `skills.lock.json`, `skills.registry.json`, `LICENSE`, `README.md`; nothing from `tests/`, `docs/`, `src/`, `.scratch/`, `spikes/`. (2) Publishing runs only from CI on a `v*` tag that equals `package.json` version, through npm trusted publishing with provenance; no npm token is stored. (3) `tests/packaging/npm-tarball.test.js` packs, installs the tarball in an empty directory, runs `ei` and an MCP `initialize`. (4) `prepare` is `husky \|\| true` so a consumer or CI without husky does not fail. (5) No runtime dependency is added; upstream skill text is still read from the owner's checkouts (PROVENANCE). Use stays personal; MIT file added | 2026-11-25 |
 | D66 | **Owner request 2026-11-25: M3b comparison.** Before `v1.0.0`, compare `ksd` with the other code-intelligence tools the owner has installed (GitNexus, CodeGraph, Graft, any other he names) and with `ripgrep` and TypeScript `findReferences` baselines, on golden, dogfood, sampled-symbol, change and search task sets with a pooled, code-read oracle (`docs/briefs/M3b-compare.md`). Headline metric: false safe. Research only: no ksd code changes; defects go to the V1 close-out. Contestants run in throwaway clones; none runs on `work-sure` if it sends data off the machine unless the owner approves it by name. Answers open question 4. Outcome lines added when the owner decides on the recommendations | 2026-11-25 |
+| D67 | **Owner decision 2026-11-26:** the GitLab adapter (V2b, `ei_gitlab`) is dropped from V2. The library gets no network code beyond the owner-run `ei setup`; V2c reads only local results (allowlisted checks, JUnit/TAP files) and has no pipeline source. Supersedes D16 and the GitLab parts of D64. The `.gitlab-ci.yml` skill-update job is CI configuration, not library code, and is unaffected | 2026-11-26 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 
