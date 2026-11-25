@@ -462,6 +462,10 @@ interface VerificationReport {
   check: string; command?: string; revision: string; startedAt: string;
   status: 'PASS' | 'FAIL' | 'SKIPPED' | 'ERROR' | 'NOT_VERIFIED';
   exitCode?: number; artifacts: string[]; summary: string; redacted: boolean;
+  // V2c additions
+  source: 'check' | 'junit' | 'tap' | 'none'; dirty: boolean; treeState: string;
+  durationMs?: number; counts?: { tests: number; passed: number; failed: number; skipped: number };
+  failures: string[]; outputTail: string[];
 }
 ```
 
@@ -503,13 +507,13 @@ V1 exposes four tools, one per moment the agent already recognises (D27); `ei_se
 
 AGY's stdio server advertises status, impact, changes and search by default. Enable workflow explicitly.
 
-`ei_context`, `ei_gitlab`, `ei_verify`, `ei_learning`, and `ei_retrieve` are **PLANNED (V2)**, after 1.0.0 and subject to §13.
+`ei_verify` (V2c) is built and registered only when `verification.enabled` is true; it is the one tool that declares `exec` (for a `check` call). `ei_context`, `ei_learning`, and `ei_retrieve` are **PLANNED (V2)**; `ei_gitlab` is dropped (D67).
 
 V1 adds no automatic EI prompt hook; the frozen KSD policy module still registers its own hooks.
 
 ### 8.2 CLI (`ei`)
 
-Run `ei --help` for the shipped syntax. CLI-only commands: `init`, `setup`, `index`, `doctor --deep`, `audit`, `cache clear`, `route`, `sources check`, `skills list/check/diff/sync/publish/rollback`, and `mcp`. CLI counterparts to OMP tools: `load`, `status`, `impact`, `changes`, and `search`. They share the renderers; CLI waits for index work instead of returning interactive timeout guidance.
+Run `ei --help` for the shipped syntax. CLI-only commands: `init`, `setup`, `index`, `doctor --deep`, `audit`, `cache clear`, `route`, `sources check`, `skills list/check/diff/sync/publish/rollback`, and `mcp`. CLI counterparts to OMP tools: `load`, `status`, `impact`, `changes`, `search`, and `verify` (V2c). They share the renderers; CLI waits for index work instead of returning interactive timeout guidance.
 
 **PLANNED (V2):** `ei symbol`, `ei embeddings install/status/remove`, `ei cache list` and automatic pruning, and CLI equivalents of V2 tools. In V1, use `ei impact` for symbol guidance and `ei cache clear` for per-repository removal.
 
@@ -525,6 +529,7 @@ V1 reads project `ei.config.json` at the root discovered by `ei init`/`ei index`
 | `impact.useWorkspaceTypescript`, `impact.maxMemoryMb` | Runtime source and child memory bound |
 | `riskZones` | `"default"`, an explicit list, or `[]`; can only raise verdicts |
 | `search.enabled` | Existing search-only switch |
+| `verification.enabled`, `verification.checks`, `verification.reports` | V2c, off by default. `checks`: `{ name, command: string[], timeoutSec? (default 600, max 3600) }`, run without a shell; `reports`: `{ name, format: "junit" \| "tap", path, covers? }`. Invalid entries are dropped and reported |
 
 **PLANNED (V2):** global EI config/session precedence, general per-capability `enabled` flags, `impact.maxDepth` as a setting, `impact.watch`, `bridges.*`, `search.semantic`, and the five V2 module configurations. Some keys already appear in generated config and are accepted as placeholders. They do not activate these features. The frozen policy has its own separate config and precedence (§6.7).
 

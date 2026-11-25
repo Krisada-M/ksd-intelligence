@@ -39,9 +39,8 @@ describe('V2 safety sweep (V2-README "Safety rules")', () => {
   it('only src/core/verify/ runs configured checks', () => {
     const hits = sources(SRC).filter(
       (file) =>
-        /verification\.checks|runCheck\(/.test(readFileSync(file, 'utf8')) &&
-        !relative(SRC, file).startsWith('core/verify/') &&
-        relative(SRC, file) !== 'core/kernel/config.ts',
+        /\brunCheck\b|verify\/run\.js/.test(readFileSync(file, 'utf8')) &&
+        !relative(SRC, file).startsWith('core/verify/'),
     );
     assert.deepEqual(
       hits.map((file) => relative(SRC, file)),

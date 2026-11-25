@@ -4,10 +4,10 @@ import { redactSecrets } from '../audit/log.js';
 import { VERIFY_NAME_RE } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import { parseJunit, parseOutput, parseTap } from './parse.js';
-import { fileStatus, runStatus, tailLines, } from './report.js';
+import { fileStatus, runStatus, tailLines } from './report.js';
 import { newestCoveredChange, readRevision } from './revision.js';
 import { runCheck } from './run.js';
-import { saveReport } from './store.js';
+import { latestReports, saveReport } from './store.js';
 const CONFIG_FILE = 'ei.config.json';
 const MAX_REPORT_FILE_BYTES = 20 * 1024 * 1024;
 /** Accepts exactly one of `check` or `report`, each a bare configured name; nothing else. */
@@ -160,4 +160,14 @@ export async function runVerification(workspace, request, options = {}) {
 /** A stored report describes the current tree only when HEAD and every uncommitted byte match. */
 export function isCurrent(report, revision) {
     return report.revision === revision.sha && report.treeState === revision.treeState;
+}
+/** Stored reports and the current tree for `ei_changes`; undefined when verification is off. */
+export async function loadVerificationState(workspace) {
+    if (!workspace.config.verification.enabled)
+        return undefined;
+    return {
+        reports: latestReports(workspace.cacheDir),
+        revision: await readRevision(workspace.root),
+        checkNames: (workspace.config.verification.checks ?? []).map((check) => check.name),
+    };
 }

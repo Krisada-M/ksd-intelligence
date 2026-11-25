@@ -4,16 +4,10 @@ import { redactSecrets } from '../audit/log.js';
 import { VERIFY_NAME_RE, type ProjectConfig } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import { parseJunit, parseOutput, parseTap } from './parse.js';
-import {
-  fileStatus,
-  runStatus,
-  tailLines,
-  type VerificationReport,
-  type VerifyStatus,
-} from './report.js';
+import { fileStatus, runStatus, tailLines, type VerificationReport } from './report.js';
 import { newestCoveredChange, readRevision, type Revision } from './revision.js';
 import { runCheck, type CheckRun, type RunCheckOptions } from './run.js';
-import { saveReport } from './store.js';
+import { latestReports, saveReport } from './store.js';
 
 export type VerifyRequest = { check: string } | { report: string };
 
@@ -232,4 +226,16 @@ export function isCurrent(report: VerificationReport, revision: Revision): boole
   return report.revision === revision.sha && report.treeState === revision.treeState;
 }
 
-export type { VerifyStatus };
+/** Stored reports and the current tree for `ei_changes`; undefined when verification is off. */
+export async function loadVerificationState(
+  workspace: VerifyWorkspace,
+): Promise<
+  { reports: VerificationReport[]; revision: Revision; checkNames: string[] } | undefined
+> {
+  if (!workspace.config.verification.enabled) return undefined;
+  return {
+    reports: latestReports(workspace.cacheDir),
+    revision: await readRevision(workspace.root),
+    checkNames: (workspace.config.verification.checks ?? []).map((check) => check.name),
+  };
+}

@@ -18,12 +18,14 @@ import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { engineVersion } from '../../core/engine/typescript.js';
-import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
+import { loadWorkspace, readProjectConfigSync, resolveWorkspaceCache, } from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { isRecord } from '../../core/kernel/guards.js';
 import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
 import { renderSearchOutcome } from '../../core/search/render.js';
+import { changesVerificationNote, renderVerifyOutcome } from '../../core/verify/render.js';
+import { loadVerificationState, runVerification, validateVerifyInput, } from '../../core/verify/verify.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
@@ -384,7 +386,9 @@ function registerEiChanges(pi, deps, env, sessions) {
                 });
                 if (signal?.aborted)
                     return errorResult('Cancelled');
-                const text = renderChangesOutcome(outcome);
+                const verification = await loadVerificationState(workspace);
+                const text = renderChangesOutcome(outcome, undefined, verification &&
+                    changesVerificationNote(verification.reports, verification.revision, verification.checkNames));
                 if (text === 'Cancelled')
                     return errorResult('Cancelled');
                 recordAudit(workspace.cacheDir, {
@@ -530,6 +534,67 @@ function registerEiSearch(pi, deps, env, sessions) {
         },
     });
 }
+// A call naming a check runs a process, so it asks at OMP's `exec` tier; reading a file is `read`.
+function verifyApproval(args) {
+    if (isRecord(args) && typeof args.report === 'string' && args.check === undefined)
+        return 'read';
+    return 'exec';
+}
+function registerEiVerify(pi, deps, env, loadConfig) {
+    const z = pi.zod;
+    const checkNames = (loadConfig.verification.checks ?? []).map((check) => check.name);
+    const reportNames = (loadConfig.verification.reports ?? []).map((report) => report.name);
+    const configured = [
+        checkNames.length > 0 ? `Checks: ${checkNames.join(', ')}.` : 'No checks configured.',
+        reportNames.length > 0 ? `Result files: ${reportNames.join(', ')}.` : '',
+    ]
+        .filter((part) => part !== '')
+        .join(' ');
+    pi.registerTool({
+        name: 'ei_verify',
+        label: 'KSD Verification Evidence',
+        description: `Before you say tests, typecheck or lint pass, call this to get a recorded result. Pass \`check\` with a name the owner configured; it runs that exact command and returns PASS, FAIL, SKIPPED, ERROR or NOT_VERIFIED with the git revision. Pass \`report\` instead to read a configured JUnit/TAP file. Only a PASS result supports a claim that tests pass. Running a check asks for approval. ${configured}`.trim(),
+        parameters: z.object({
+            check: z.string().optional().describe('Name of an owner-configured check, e.g. "test"'),
+            report: z.string().optional().describe('Name of an owner-configured result file'),
+        }),
+        approval: verifyApproval,
+        formatApprovalDetails: (args) => {
+            if (!isRecord(args) || typeof args.check !== 'string')
+                return undefined;
+            const name = args.check;
+            // Show the argv that will run, read fresh from the committed config.
+            const config = readProjectConfigSync(deps.cwd ?? process.cwd());
+            const check = config?.verification.checks?.find((entry) => entry.name === name);
+            return check === undefined
+                ? [`Check "${name}" is not configured; nothing will run`]
+                : [`Command: ${check.command.join(' ')}`, `Timeout: ${check.timeoutSec} s`];
+        },
+        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+            if (signal?.aborted)
+                return errorResult('Cancelled');
+            try {
+                const valid = validateVerifyInput(params);
+                if (!valid.ok)
+                    return errorResult(`INVALID_INPUT: ${valid.message}`);
+                const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+                const outcome = await runVerification(workspace, valid.request, {
+                    env,
+                    signal,
+                    ...(deps.verifyRunner === undefined ? {} : { runner: deps.verifyRunner }),
+                });
+                const text = renderVerifyOutcome(outcome, engineVersion());
+                if (outcome.kind === 'failure')
+                    return errorResult(text);
+                return { content: [{ type: 'text', text }], details: outcome.value };
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                return errorResult(`NOT_VERIFIED: ei_verify could not complete (${message}). Do not claim tests pass.`);
+            }
+        },
+    });
+}
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(pi, deps = {}) {
     const env = deps.env ?? process.env;
@@ -572,5 +637,14 @@ export default function ksdIntelligenceExtension(pi, deps = {}) {
     }
     catch (error) {
         warnLoad('ei_search tool', error);
+    }
+    try {
+        const config = readProjectConfigSync(deps.cwd ?? process.cwd());
+        // Disabled (the default) means not registered: the agent's tool list stays V1's.
+        if (config?.verification.enabled === true)
+            registerEiVerify(pi, deps, env, config);
+    }
+    catch (error) {
+        warnLoad('ei_verify tool', error);
     }
 }

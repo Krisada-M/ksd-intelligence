@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { defaultConfig, parseProjectConfig } from '../kernel/config.js';
@@ -53,4 +53,20 @@ export async function loadWorkspace(start, cacheHome) {
         config,
         configErrors: errors,
     };
+}
+/**
+ * The project config that applies at `start`, read synchronously for load-time decisions
+ * (which V2 tools to register). Null when there is no `ei.config.json` or it cannot be read.
+ */
+export function readProjectConfigSync(start) {
+    try {
+        const real = realpathSync(start);
+        const root = findConfigRoot(real, findGitRoot(real));
+        if (root === null)
+            return null;
+        return parseProjectConfig(readFileSync(join(root, 'ei.config.json'), 'utf8')).config;
+    }
+    catch {
+        return null;
+    }
 }

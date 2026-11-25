@@ -126,7 +126,7 @@ function compactSection(title, items, maxItems = 3) {
         `${title} (${items.length.toLocaleString('en-US')}): ${shown.join('; ')} (+${(items.length - maxItems).toLocaleString('en-US')} more)`,
     ];
 }
-export function renderChangesOutcome(outcome, budget = CHANGES_BUDGET) {
+export function renderChangesOutcome(outcome, budget = CHANGES_BUDGET, extra) {
     if (outcome.kind === 'failure') {
         if (outcome.message === 'Cancelled')
             return 'Cancelled';
@@ -141,7 +141,7 @@ export function renderChangesOutcome(outcome, budget = CHANGES_BUDGET) {
     if (outcome.kind === 'guidance') {
         return 'INDEX BUILDING — index build still running after 60 s. Call again; the answer will use the finished index.'.slice(0, budget);
     }
-    return renderChanges(outcome.value, budget);
+    return renderChanges(outcome.value, budget, extra);
 }
 function formatUserLine(user) {
     const note = user.reason === 'unresolved-import'
@@ -155,7 +155,7 @@ function formatUserLine(user) {
                     : 'CALLS';
     return `    ${user.file}:${user.line}  ${shortSymbolName(user.source)}  ${note}`;
 }
-export function renderChanges(result, budget = CHANGES_BUDGET) {
+export function renderChanges(result, budget = CHANGES_BUDGET, extra) {
     const renderStart = performance.now();
     const finish = (text) => {
         if (result.timings !== undefined && !Object.isFrozen(result.timings)) {
@@ -275,9 +275,9 @@ export function renderChanges(result, budget = CHANGES_BUDGET) {
     const gapsLines = reasons.length === 0
         ? ['Gaps: none']
         : [`Gaps (${reasons.length.toLocaleString('en-US')})`, ...reasons.map((r) => `  ${r}`)];
-    const nextLine = formatNext(result);
+    const nextLine = `${formatNext(result)}${extra?.nextHint ?? ''}`;
     const footerLine = formatFooter(result);
-    const tailLines = [nextLine, footerLine];
+    const tailLines = extra?.line === undefined ? [nextLine, footerLine] : [extra.line, nextLine, footerLine];
     const assemble = (p, pl, sd, ui, ts, gp) => [...headerLines, ...p, ...pl, ...sd, ...ui, ...ts, ...gp, ...tailLines].join('\n');
     const full = assemble(priorityLines, planLines, symbolDetailLines, unindexedLines, testsLines, gapsLines);
     if (full.length <= budget)
@@ -346,7 +346,7 @@ export function renderChanges(result, budget = CHANGES_BUDGET) {
     if (text.length <= budget)
         return finish(text);
     // Last-resort hard cap: keep line1-3 + priorityLines as far as budget permits + tailLines.
-    const fixedTail = `\n${nextLine}\n${footerLine}`;
+    const fixedTail = `\n${tailLines.join('\n')}`;
     const fixedHead = `${line1}\n${line2}\n${line3}\n\n`;
     const remaining = Math.max(0, budget - fixedHead.length - fixedTail.length);
     const body = [...priorityLines, ...cPlan, ...cSummary].join('\n');

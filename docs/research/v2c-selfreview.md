@@ -26,3 +26,15 @@ Five questions per round (lane rules) plus the lane-B exec checks. Evidence is f
 - The agent can edit `package.json` scripts or test files, which the allowlisted check then executes. That is inherent to running tests; OMP's `exec` approval is the boundary, and the commit-before-run rule covers only `ei.config.json`.
 - A grandchild that calls `setsid` leaves the process group and survives the kill.
 - `execFile` named in V2-README is replaced by `spawn` without a shell (the primitive `execFile` wraps) to keep a 2 MB tail and a process-group kill; recorded in `v2c-round0.md`.
+
+## Round 2 — `ei_verify`, `ei verify`, `ei_changes` line, value check
+
+1. **Agent-facing text, golden case or snapshot changed?** No V1 text changes when verification is disabled. `ei_verify` is not registered (test "is not registered while verification is disabled": tool list equals a repo without the section). `renderChangesOutcome`/`renderChanges` take an optional third argument; adapters pass `undefined` when `loadVerificationState` returns undefined (disabled), and every existing changes snapshot test passes unchanged. `docs/TOOLS.md` rule 8 gains the `ei_verify` exception and §7a; an adapter test checks the registered description against §7a. `ei --help` gains one `verify` line (no test pins help text).
+2. **Feeds completeness, reach, factors or a verdict?** No. The `ei_changes` note is appended text (`ChangesExtraLines`) placed before `Next:`/after it; `formatNext`'s verdict branches are untouched and the note is computed from stored reports only.
+3. **Off by default, V1 byte-identical when off?** `defaultConfig()` unchanged; this repository's `ei.config.json` carries the owner allowlist (`test`, `typecheck`, `lint`) with `"enabled": false`. Tests: registration test above, full `npm test` 768/768.
+4. **Network, exec or repo write outside the V2 rules?** Exec only via `runCheck` (sweep test "only src/core/verify/ runs configured checks"). The OMP tool declares `exec` for `check`, `read` for `report` (test "declares exec for a check and read for a result file"); `formatApprovalDetails` shows the configured argv in the OMP prompt. No repository writes. `evals/v2c-value.mjs` is an owner/agent harness outside `src/` and the npm `files` list.
+5. **Secret or personal path in the diff?** None. Transcript path in the value-check note is a `/tmp` directory name only.
+
+Exec checks, re-run at the adapter: "agent input other than one configured name never reaches the runner" (`check: "test; rm -rf ~"`, an extra `command` field, `"npm test"`, an unknown name → `INVALID_INPUT` / `NOT_VERIFIED`, runner calls 0).
+
+Not done: audit-log entries for `ei_verify` (would change `AuditTool` and the audit summary; reports are stored in the cache instead). AGY MCP does not expose `ei_verify`.
