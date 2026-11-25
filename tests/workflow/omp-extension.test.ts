@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import extension, { type OmpExtensionApi } from '../../src/adapters/omp/extension.js';
 import { cleanup, emptyLock, FRONTMATTER_BODY, tempDir, writeSkillFile } from './fixtures.js';
-import { writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 interface MockSchema {
@@ -80,6 +80,18 @@ it('registers read-only ei_workflow, ei_status, ei_impact, ei_changes and ei_sea
   const searchParams = registered[4]?.parameters;
   assert.ok(searchParams && 'keys' in searchParams);
   assert.deepEqual(searchParams.keys, ['query', 'limit']);
+});
+
+it('documents the registered impact and changes descriptions verbatim', async () => {
+  const { pi, registered } = mockPi();
+  extension(pi, { env: {}, createPolicyExtension: noPolicy });
+  const docs = await readFile('docs/TOOLS.md', 'utf8');
+  for (const name of ['ei_impact', 'ei_changes']) {
+    const tool = registered.find((entry) => entry.name === name);
+    assert.ok(tool, `missing ${name} registration`);
+    const section = docs.split(new RegExp(`^## \\d+\\. \`${name}\`$`, 'm'))[1];
+    assert.equal(section?.match(/^> (.+)$/m)?.[1], tool.description, name);
+  }
 });
 
 it('EI_DISABLED=1 skips the ei_* tools only', () => {

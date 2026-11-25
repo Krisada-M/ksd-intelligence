@@ -1,38 +1,78 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { lstatSync, mkdirSync, mkdtempSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { cases } from './cases.mjs';
+import { grade } from './grade.mjs';
+import { testPath, testToolName } from './test-tool.mjs';
 
 const built = fileURLToPath(new URL('../dist/adapters/', import.meta.url));
-const model = 'openai-codex/gpt-5.6-luna';
-const preflight = spawnSync('omp', ['--version'], { encoding: 'utf8' });
+const model = process.env.EI_EVAL_MODEL ?? 'openai-codex/gpt-5.6-luna';
+const tempRoot = realpathSync(tmpdir());
+const scratch = mkdtempSync(join(tempRoot, 'ksd-eval-'));
+const overlay = join(scratch, 'omp-eval.yml');
+const testFile = join(scratch, 'subject.test.js');
+const testSource = `import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { evaluate } from './caller.ts';
+test('doubles the input', () => assert.equal(evaluate(3), 6));
+`;
+const requestedHome = process.env.EI_EVAL_HOME;
+const home = requestedHome === undefined ? join(scratch, 'home') : realpathSync(requestedHome);
+if (requestedHome === undefined) {
+  mkdirSync(home, { mode: 0o700 });
+} else {
+  const normalHome = realpathSync(homedir());
+  const dir = statSync(home);
+  if (
+    !home.startsWith(`${tempRoot}${sep}`) ||
+    home === normalHome ||
+    home.startsWith(`${normalHome}${sep}`) ||
+    normalHome.startsWith(`${home}${sep}`) ||
+    !dir.isDirectory() ||
+    dir.uid !== process.getuid?.() ||
+    (dir.mode & 0o077) !== 0 ||
+    ['.omp', '.omp/agent'].some((path) =>
+      lstatSync(join(home, path), { throwIfNoEntry: false })?.isSymbolicLink(),
+    )
+  ) {
+    console.error('EI_EVAL_HOME must be a dedicated private directory created with mktemp -d');
+    process.exit(2);
+  }
+}
+
+const env = {
+  ...process.env,
+  HOME: home,
+  USERPROFILE: home,
+  XDG_CONFIG_HOME: join(home, '.config'),
+  XDG_CACHE_HOME: join(home, '.cache'),
+  XDG_DATA_HOME: join(home, '.local/share'),
+  XDG_STATE_HOME: join(home, '.local/state'),
+  OMP_PROFILE: '',
+  PI_CODING_AGENT_DIR: join(home, '.omp/agent'),
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  EI_DISABLED: '',
+};
+const preflight = spawnSync('omp', ['--version'], { env, encoding: 'utf8' });
 if (preflight.error?.code === 'ENOENT') {
   console.log('NOT VERIFIED: omp not installed');
   process.exit(2);
 }
 if (preflight.status !== 0) throw new Error('omp --version failed');
 
-const scratch = mkdtempSync(join(tmpdir(), 'ksd-eval-'));
-const home = join(scratch, 'home');
-const env = {
-  ...process.env,
-  HOME: home,
-  XDG_CONFIG_HOME: join(home, '.config'),
-  XDG_CACHE_HOME: join(home, '.cache'),
-  XDG_DATA_HOME: join(home, '.local/share'),
-  PI_CODING_AGENT_DIR: join(home, '.omp/agent'),
-  GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_GLOBAL: '/dev/null',
-  EI_DISABLED: '',
-};
-mkdirSync(home);
 const setup = spawnSync(process.execPath, [join(built, 'cli/main.js'), 'setup'], {
   env,
   timeout: 60_000,
 });
 if (setup.status !== 0) throw new Error('ei setup in isolated HOME failed');
+
+// Authorize only the fixed sandbox, not OMP's general execution tools.
+writeFileSync(overlay, `tools:\n  approval:\n    ${testToolName}: allow\n`, { mode: 0o600 });
+writeFileSync(testFile, testSource, { mode: 0o600 });
+const node = realpathSync(process.execPath);
 
 function git(cwd, args) {
   return execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
@@ -58,10 +98,7 @@ function fixture(spec) {
       join(cwd, 'src/caller.ts'),
       `import { ${spec.symbol} } from './subject.ts';\nexport function evaluate(n: number): number { return ${spec.symbol}(n); }\n`,
     );
-    writeFileSync(
-      join(cwd, 'src/subject.test.js'),
-      `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { evaluate } from './caller.ts';\ntest('doubles the input', () => assert.equal(evaluate(3), 6));\n`,
-    );
+    writeFileSync(join(cwd, testPath), testSource);
   }
   git(cwd, ['init', '-q', '-b', 'main']);
   git(cwd, ['add', '.']);
@@ -85,61 +122,6 @@ function parseTranscript(stdout) {
   });
 }
 
-function toolText(event) {
-  return (event?.result?.content ?? []).map((part) => part.text ?? '').join('\n');
-}
-
-function grade(spec, events, changed) {
-  const first = (name) =>
-    events.findIndex((e) => e.type === 'tool_execution_start' && e.toolName === name);
-  const lastAnswer = events.findLastIndex(
-    (e) =>
-      e.type === 'message_end' &&
-      e.message?.role === 'assistant' &&
-      e.message.content?.some((part) => part.type === 'text'),
-  );
-  const impact = first('ei_impact');
-  const resultAt = events.findIndex(
-    (e) =>
-      e.type === 'tool_execution_end' && e.toolCallId === events[impact]?.toolCallId && !e.isError,
-  );
-  const result = toolText(events[resultAt]);
-  const action = result.match(/^ACTION (\S+)/m)?.[1];
-  const changes = events.findLastIndex(
-    (e) => e.type === 'tool_execution_end' && e.toolName === 'ei_changes' && !e.isError,
-  );
-  const edit = events.findIndex(
-    (e) => e.type === 'tool_execution_start' && ['edit', 'write'].includes(e.toolName),
-  );
-  if (impact < 0 || resultAt < 0) return 'no successful impact call';
-  if (lastAnswer <= resultAt) return 'no final answer after impact';
-  if (spec.search && (first('ei_search') < 0 || first('ei_search') > impact))
-    return 'no search before impact';
-  if (spec.blocked && (action !== 'ask-owner' || edit >= 0 || changed))
-    return 'ask-owner not respected';
-  if (!spec.edit && (changed || edit >= 0)) return 'unexpected edit';
-  if (spec.edit && (!changed || edit <= resultAt)) return 'no edit after impact';
-  if ((spec.edit || spec.changes) && (changes <= Math.max(edit, resultAt) || changes >= lastAnswer))
-    return 'no changes result before final answer';
-  if (spec.edit && action === 'ask-owner') return 'edited despite ask-owner';
-  if (spec.edit && action === 'run-tests') {
-    const verified = events.slice(edit + 1, lastAnswer).some((e) => {
-      if (e.type !== 'tool_execution_end' || e.toolName !== 'bash' || e.isError) return false;
-      const args = events.find(
-        (call) => call.type === 'tool_execution_start' && call.toolCallId === e.toolCallId,
-      )?.args;
-      return (
-        /\bnode --test\b.*subject\.test\.js/.test(args?.command ?? '') &&
-        /(?:#\s*pass|ℹ pass)\s+1\b/.test(toolText(e))
-      );
-    });
-    if (!verified) return 'run-tests not verified in transcript';
-  }
-  if (spec.path && !spec.blocked && !/NOT (INDEXED|FOUND)/.test(result))
-    return 'expected outside-scope guidance';
-  return null;
-}
-
 console.log(`${preflight.stdout.trim()} · model ${model} · transcripts ${scratch}`);
 let attempted = 0;
 let passed = 0;
@@ -156,6 +138,10 @@ for (const spec of cases) {
       'low',
       '-e',
       join(built, 'omp/extension.js'),
+      '-e',
+      fileURLToPath(new URL('./test-tool.mjs', import.meta.url)),
+      '--config',
+      overlay,
       '--mode',
       'json',
       '--no-extensions',
@@ -170,10 +156,16 @@ for (const spec of cases) {
       '--max-time',
       '45',
       '--tools',
-      'read,edit,bash,ei_impact,ei_changes,ei_search,ei_status',
-      `${spec.prompt}\nWork only in this disposable fixture. Follow the engineering tools' verdicts. If tests are required, use node --test src/subject.test.js. Do not install, stage, commit, use the network, or modify any path outside this fixture.`,
+      `read,edit,${testToolName},ei_impact,ei_changes,ei_search,ei_status`,
+      `${spec.prompt}\nWork only in this disposable fixture. Follow the engineering tools' verdicts. If tests are required, call ${testToolName}. Do not install, stage, commit, use the network, or modify any path outside this fixture.`,
     ],
-    { cwd, env, encoding: 'utf8', timeout: 55_000, maxBuffer: 8 * 1024 * 1024 },
+    {
+      cwd,
+      env: { ...env, EI_EVAL_FIXTURE: cwd, EI_EVAL_NODE: node, EI_EVAL_TEST_FILE: testFile },
+      encoding: 'utf8',
+      timeout: 55_000,
+      maxBuffer: 8 * 1024 * 1024,
+    },
   );
   const stdout = run.stdout ?? '';
   writeFileSync(join(scratch, `${spec.id}.jsonl`), stdout, { mode: 0o600 });
@@ -187,6 +179,9 @@ for (const spec of cases) {
     console.log(
       `NOT VERIFIED ${spec.id}: OMP exited ${run.status ?? run.error?.code ?? 'unknown'} before tool execution (${unavailable ? 'model unavailable' : 'startup failed'})`,
     );
+    if (unavailable && requestedHome === undefined) {
+      console.log('For Codex login, set EI_EVAL_HOME as shown in docs/release-checklist.md.');
+    }
     break;
   }
   attempted++;

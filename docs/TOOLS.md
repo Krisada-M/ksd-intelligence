@@ -48,7 +48,7 @@ Derived from this project's principles and from what a reference project measure
 ## 4. `ei_impact`
 
 **Description (registered text):**
-> Before you change a function, method, class, type or exported constant, call this to see what depends on it: callers by depth with file:line, how far the change reaches, the tests that reach it, and whether the picture is complete. Accepts up to 5 targets as names (`calculateFee`, `PaymentService.charge`), `path#name`, `path:line`, or a file path. Read-only.
+> Before editing a function, method, class, type or exported constant, call this even for comment-only edits. It shows callers by depth with file:line, how far the change reaches, the tests that reach it, and whether the picture is complete. Accepts up to 5 targets as names (`calculateFee`, `PaymentService.charge`), `path#name`, `path:line`, or a file path. Read-only.
 
 **Input**
 
@@ -123,7 +123,7 @@ In a batch, each target gets its own block; one ambiguous target does not block 
 ## 5. `ei_changes`
 
 **Description (registered text):**
-> After you have edited code and before you report the work as done, call this with no arguments. It reads your uncommitted changes, lists which symbols changed, what they affect, which tests to run, and any changed files it cannot analyse. Read-only.
+> Call with no arguments when asked to review the current diff, even if you did not edit or the working tree is clean. Also call after editing code, before reporting the work done. It reads uncommitted changes and lists changed symbols, their impact, tests to run, and files it cannot analyse. A post-edit result with no tests does not waive an earlier ei_impact run-tests verdict. Read-only.
 
 **Input**
 
@@ -236,8 +236,9 @@ Tool descriptions are a weak signal on their own. Two stronger, honest channels:
 
 ```markdown
 ## Code impact tools (ksd-intelligence)
-- Before changing a function, method, class, type or exported constant: call `ei_impact` with its name or `path#name`.
-- Before saying a change is done: call `ei_changes` (no arguments) and include its verdict.
+- Before editing a function, method, class, type or exported constant, even for a comment: call `ei_impact` with its name or `path#name`.
+- When asked to review the current diff, or after editing and before reporting done: call `ei_changes` (no arguments) and include its verdict.
+- Follow a pre-edit `ei_impact` `run-tests` verdict even if `ei_changes` lists no tests for the actual diff.
 - If the picture is `partial`, check the listed gap sites before relying on the caller list.
 - For an unknown implementation, use `ei_search`; if coverage looks wrong, use `ei_status`.
 ```

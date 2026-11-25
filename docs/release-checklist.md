@@ -13,13 +13,42 @@ npm run format:check
 npm test
 npm run check:dist
 node --test tests/packaging/npm-tarball.test.js
+node --test evals/run.test.mjs
+```
+
+Run agent evals on Linux with Node 24, OMP, and a working Bubblewrap (`bwrap`). The runner uses `--thinking low`, fresh fixtures, and a dedicated OMP home. The test tool cannot fall back to host execution. Log in once to the dedicated home; do not copy stored credentials into it. Run only one startup per eval home at a time: `ei setup` can fail when started concurrently. The following setup block uses a POSIX shell (`sh`), not fish:
+
+```sh
+export EI_EVAL_HOME="$(mktemp -d)"
+env HOME="$EI_EVAL_HOME" USERPROFILE="$EI_EVAL_HOME" \
+  XDG_CONFIG_HOME="$EI_EVAL_HOME/.config" XDG_CACHE_HOME="$EI_EVAL_HOME/.cache" \
+  XDG_DATA_HOME="$EI_EVAL_HOME/.local/share" XDG_STATE_HOME="$EI_EVAL_HOME/.local/state" \
+  PI_CODING_AGENT_DIR="$EI_EVAL_HOME/.omp/agent" OMP_PROFILE='' \
+  omp login openai-codex
 node evals/run.mjs
+EI_EVAL_MODEL=openai-codex/gpt-6.2-sol node evals/run.mjs
+```
+
+The 1.0.0 eval gate requires no unresolved checker bugs, tool guidance gaps, or tool errors, and at least 9 of all 10 cases passing on the strongest available model. Record the Luna rate without gating on it. An unscored case is not a pass. See [baseline transcript triage](research/v1-eval-followup.md).
+
+**Eval gate: VERIFIED.** Final guidance tested on Linux/WSL2 x86_64, Node 24.21.0, OMP 19.2.1, and Bubblewrap 0.11.1.
+
+| Model | Pass rate | Transcript directory |
+| --- | --- | --- |
+| `openai-codex/gpt-5.6-luna` | 100% (10/10) | `/tmp/ksd-eval-16nkgH` |
+| `openai-codex/gpt-6.2-sol` (strong gate) | 100% (10/10) | `/tmp/ksd-eval-2Yftwi` |
+
+No unscored cases or unresolved checker, guidance, or tool failures in these runs. The eval gate does not replace either live product smoke.
+
+After the local gate passes:
+
+```sh
 git push -u origin v1-closeout
 gh pr create --base main --head v1-closeout --title 'V1 close-out: 1.0.0 release candidate' --body 'Audit, CLI packaging, release notes, and owner gates: docs/release-checklist.md.'
 gh pr checks v1-closeout --watch
 ```
 
-Wait for both Node 24 OS jobs, independent review, no protected-path changes or unreviewed failures, and equivalent checks on the exact head. The eval runner uses `openai-codex/gpt-5.6-luna` with `--thinking low` in an isolated HOME. Use an environment already authorized for that model without relying on the normal OMP profile. Do not copy stored credentials into the rehearsal home. If no cases were scored, the gate remains unverified.
+Wait for both Node 24 OS jobs, independent review, no protected-path changes or unreviewed failures, and equivalent checks on the exact head.
 
 ## 2. Live smoke on macOS and Linux/WSL2
 
