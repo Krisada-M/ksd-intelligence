@@ -31,6 +31,138 @@ import { defaultLockPath, readLock } from '../../workflow/sources.js';
 import { RISKS, STAGES, TASK_TYPES, WorkflowError } from '../../workflow/types.js';
 import { createExtension as createPolicyExtension } from '../../policy/index.js';
 import { SECTION_KEY } from '../../policy/policy.js';
+import { renderResultView } from '../ui/tree.js';
+function isImpactResult(value) {
+    return (isRecord(value) &&
+        typeof value.target === 'string' &&
+        isRecord(value.verdict) &&
+        isRecord(value.reach) &&
+        isRecord(value.completeness) &&
+        Array.isArray(value.byDepth) &&
+        Array.isArray(value.bridged) &&
+        Array.isArray(value.tests) &&
+        Array.isArray(value.factors) &&
+        isRecord(value.engine));
+}
+function isWorkspaceStatus(value) {
+    return (isRecord(value) &&
+        (value.state === 'ready' || value.state === 'degraded') &&
+        isRecord(value.runtime) &&
+        isRecord(value.typescript) &&
+        isRecord(value.config));
+}
+function isChangesResult(value) {
+    return (isRecord(value) &&
+        Array.isArray(value.changedSymbols) &&
+        Array.isArray(value.changedFiles) &&
+        isRecord(value.impact) &&
+        isRecord(value.verdict) &&
+        isRecord(value.engine));
+}
+function isSearchResult(value) {
+    return (isRecord(value) &&
+        typeof value.query === 'string' &&
+        Array.isArray(value.hits) &&
+        typeof value.totalMatches === 'number' &&
+        isRecord(value.engine));
+}
+function impactView(details) {
+    if (!Array.isArray(details) || details.length === 0)
+        return undefined;
+    const first = details[0];
+    if (!isRecord(first) || !isRecord(first.presentationIndex))
+        return undefined;
+    const index = first.presentationIndex;
+    if (index.state !== 'fresh' &&
+        index.state !== 'updated' &&
+        index.state !== 'stale' &&
+        index.state !== 'building')
+        return undefined;
+    if (typeof index.updatedFiles !== 'number' || !Array.isArray(index.driftedFiles))
+        return undefined;
+    if (!details.every(isImpactResult))
+        return undefined;
+    const answers = details.map((value) => ({
+        kind: 'result',
+        input: value.target,
+        value,
+    }));
+    return {
+        kind: 'impact',
+        value: {
+            answers,
+            index: {
+                state: index.state,
+                updatedFiles: index.updatedFiles,
+                driftedFiles: index.driftedFiles,
+            },
+        },
+    };
+}
+function resultView(kind, details) {
+    if (kind === 'impact')
+        return impactView(details);
+    if (kind === 'status' && isWorkspaceStatus(details))
+        return { kind: 'status', value: details };
+    if (kind === 'changes' && isChangesResult(details))
+        return { kind: 'changes', value: { kind: 'result', value: details } };
+    if (kind === 'search' && isSearchResult(details))
+        return { kind: 'search', value: { kind: 'result', value: details } };
+    return undefined;
+}
+function displayText(text) {
+    return text.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '?').split('\n');
+}
+function renderToolResult(kind, result, options) {
+    return {
+        render(width) {
+            const view = !options.isPartial && !result.isError ? resultView(kind, result.details) : undefined;
+            if (view) {
+                try {
+                    return renderResultView(view, {
+                        columns: width,
+                        color: process.env.NO_COLOR === undefined && process.env.TERM !== 'dumb',
+                        ascii: process.env.EI_ASCII === '1' ||
+                            !/utf-?8/i.test(process.env.LC_ALL ?? process.env.LC_CTYPE ?? process.env.LANG ?? 'UTF-8'),
+                        collapsed: !options.expanded,
+                    });
+                }
+                catch {
+                    // Replayed results may have details from an older adapter.
+                }
+            }
+            let state = 'partial · details unavailable';
+            if (result.isError)
+                state = 'failed';
+            else if (options.isPartial)
+                state = 'in progress · partial';
+            const heading = `${result.isError ? '✗' : '?'} ${kind} ${state}`;
+            if (!options.expanded)
+                return [heading];
+            return [heading, ...result.content.flatMap((part) => displayText(part.text))];
+        },
+    };
+}
+function renderToolCall(kind, args, options) {
+    if (!options.expanded && !options.isPartial)
+        return undefined;
+    return {
+        render() {
+            if (!isRecord(args))
+                return [`ei_${kind}`];
+            let target = '';
+            if (kind === 'impact' && Array.isArray(args.targets))
+                target = args.targets
+                    .filter((value) => typeof value === 'string')
+                    .join(', ');
+            if (kind === 'search' && typeof args.query === 'string')
+                target = args.query;
+            if (kind === 'changes' && typeof args.base === 'string')
+                target = `vs ${args.base}`;
+            return [`ei_${kind}${target ? ` ${displayText(target).join(' ')}` : ''}`];
+        },
+    };
+}
 function errorResult(message) {
     return { isError: true, content: [{ type: 'text', text: message }] };
 }
@@ -141,6 +273,8 @@ function registerEiStatus(pi, deps, env) {
         // No input: nothing the agent passes can reach the engine or its environment.
         parameters: pi.zod.object({}),
         approval: 'read',
+        renderCall: (args, options) => renderToolCall('status', args, options),
+        renderResult: (result, options) => renderToolResult('status', result, options),
         async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
@@ -208,6 +342,8 @@ function registerEiImpact(pi, deps, env, sessions) {
             depth: depthSchema,
         }),
         approval: 'read',
+        renderCall: (args, options) => renderToolCall('impact', args, options),
+        renderResult: (result, options) => renderToolResult('impact', result, options),
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
@@ -273,6 +409,11 @@ function registerEiImpact(pi, deps, env, sessions) {
                     ...auditFieldsForImpact(batch, engineVersion()),
                 }, { env, root: workspace.root });
                 const details = impactDetails(batch);
+                const first = details[0];
+                if (first !== undefined) {
+                    const presented = { ...first, presentationIndex: batch.index };
+                    details[0] = presented;
+                }
                 const failed = batch.answers.some((answer) => answer.kind === 'failure');
                 if (failed) {
                     return { isError: true, content: [{ type: 'text', text }], details };
@@ -326,6 +467,8 @@ function registerEiChanges(pi, deps, env, sessions) {
             planned: plannedSchema,
         }),
         approval: 'read',
+        renderCall: (args, options) => renderToolCall('changes', args, options),
+        renderResult: (result, options) => renderToolResult('changes', result, options),
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');
@@ -443,6 +586,8 @@ function registerEiSearch(pi, deps, env, sessions) {
             limit: limitSchema,
         }),
         approval: 'read',
+        renderCall: (args, options) => renderToolCall('search', args, options),
+        renderResult: (result, options) => renderToolResult('search', result, options),
         async execute(_toolCallId, params, signal, onUpdate, ctx) {
             if (signal?.aborted)
                 return errorResult('Cancelled');

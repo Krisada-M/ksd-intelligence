@@ -79,3 +79,17 @@ Engineering Proxy: <ON|OFF>; mode: <MODE> (<source>); project default: <MODE|UNS
 **Tradeoffs and risks.** A shared primitive tree carries only human rows, not Core semantics. Measured progress can be unavailable; a beam communicates work without inventing a total. Width calculations must not cut Thai, combining clusters, or a symbol name. Control characters from repository paths are inert in the styled view. OMP and AGY transport wiring wait for Rounds 2 and 3, respectively.
 
 **Next implementation step.** Add the consumer-visible terms, width, plain-output and HUD regressions, then wire the CLI against the view and event interfaces.
+
+## Round 2 protected-path notes for the owner
+
+D68 status-only diff touches `src/policy/index.js`, `src/policy/src/runtime.ts`, its shipped runtime artifacts, and policy presentation assertions. Apply the `owner-approved` label before opening the protected-path gate. No snapshot updates.
+
+| Human-facing string | Themed display change |
+| --- | --- |
+| `○ 🛡 KSD: BALANCED` / `○ 🛡 KSD: ADAPTIVE` | Dim `KSD:` and the idle mode. Existing idle marker remains dim. |
+| `● 🛡 KSD: BALANCED` / `● 🛡 KSD: ADAPTIVE` | Dim `KSD:` and accent the active mode. Existing active marker remains accented. |
+| `⚠ KSD: <notice>` | Accent `⚠`, dim `KSD:`, preserve the exact notice. |
+| `/engineering-proxy status` labels | Dim `Engineering Proxy:`, `mode:`, `project default:`, `global default:`, `session:`, `Ponytail command:`, and `Ponytail mode:`. |
+| `/engineering-proxy status` values and warning | Accent `ON`, `OFF`, `BALANCED`, `ADAPTIVE`, `UNSET`, `INHERIT` in their fixed fields and accent `WARNING:`. Preserve values, punctuation, warnings, and notification severity. |
+
+Unstyled copy, disabled clear behavior, config, enforcement, and persistence are unchanged.
