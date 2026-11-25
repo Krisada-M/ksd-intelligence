@@ -448,7 +448,7 @@ interface CompressionResult {
 ```ts
 interface Learning {
   id: string; claim: string;
-  anchor: { kind: 'symbol' | 'file'; key: string; signatureHash?: string };
+  anchor: { kind: 'symbol' | 'file'; key: string; signatureHash?: string; contentHash?: string };   // V2d writes contentHash
   source: 'owner-confirmed' | 'code-observed' | 'test-verified' | 'model-inferred';
   status: 'active' | 'needs-review' | 'superseded';
   createdAt: string; reviewedAt?: string; supersedes?: string;
@@ -503,7 +503,7 @@ V1 exposes four tools, one per moment the agent already recognises (D27); `ei_se
 
 AGY's stdio server advertises status, impact, changes and search by default. Enable workflow explicitly.
 
-`ei_context`, `ei_gitlab`, `ei_verify`, `ei_learning`, and `ei_retrieve` are **PLANNED (V2)**, after 1.0.0 and subject to §13.
+`ei_learning` (V2d) is built and registered only when `knowledge.enabled` is true (`read` approval). `ei_context`, `ei_verify`, and `ei_retrieve` are **PLANNED (V2)**; `ei_gitlab` is dropped (D67).
 
 V1 adds no automatic EI prompt hook; the frozen KSD policy module still registers its own hooks.
 
@@ -525,6 +525,7 @@ V1 reads project `ei.config.json` at the root discovered by `ei init`/`ei index`
 | `impact.useWorkspaceTypescript`, `impact.maxMemoryMb` | Runtime source and child memory bound |
 | `riskZones` | `"default"`, an explicit list, or `[]`; can only raise verdicts |
 | `search.enabled` | Existing search-only switch |
+| `knowledge.enabled` | V2d, off by default: registers `ei_learning` and the `ei_impact` learnings line. Learnings live in `.ksd/learnings/*.yaml`; agent proposals in the cache |
 
 **PLANNED (V2):** global EI config/session precedence, general per-capability `enabled` flags, `impact.maxDepth` as a setting, `impact.watch`, `bridges.*`, `search.semantic`, and the five V2 module configurations. Some keys already appear in generated config and are accepted as placeholders. They do not activate these features. The frozen policy has its own separate config and precedence (§6.7).
 

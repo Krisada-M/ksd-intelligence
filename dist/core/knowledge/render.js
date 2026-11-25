@@ -48,13 +48,20 @@ export function renderLearningList(input) {
         ? text
         : `${text.slice(0, LEARNING_BUDGET - 40)}\n… (truncated: over budget)`;
 }
-/** Learnings whose anchor is one of `keys` (symbol) or the file of one of them. */
+/**
+ * Learnings for `keys`: a symbol key matches its own symbol anchor and its file's file anchor;
+ * a file path matches every anchor in that file.
+ */
 export function learningsFor(entries, keys) {
-    const files = new Set(keys.map((key) => (key.includes('#') ? key.slice(0, key.indexOf('#')) : key)));
+    const fileOf = (key) => key.includes('#') ? key.slice(0, key.indexOf('#')) : key;
+    const files = new Set(keys.map(fileOf));
+    const wholeFiles = new Set(keys.filter((key) => !key.includes('#')));
     const symbols = new Set(keys);
-    return entries.filter((entry) => entry.learning.anchor.kind === 'symbol'
-        ? symbols.has(entry.learning.anchor.key)
-        : files.has(entry.learning.anchor.key));
+    return entries.filter(({ learning: { anchor } }) => {
+        if (anchor.kind === 'file')
+            return files.has(anchor.key);
+        return symbols.has(anchor.key) || wholeFiles.has(fileOf(anchor.key));
+    });
 }
 /** The one line `ei_impact` adds; undefined when there is nothing for these targets. */
 export function impactLearningsLine(learnings, proposals) {

@@ -4,6 +4,7 @@ import { isRecord } from '../kernel/guards.js';
 import { anchorIndexFromDb, currentAnchorHash, evaluateLearnings, } from './anchors.js';
 import { MAX_CLAIM_CHARS } from './learning.js';
 import { newLearningId, readLearnings, readProposals, writeProposal } from './store.js';
+import { impactLearningsLine as learningsLine, learningsFor } from './render.js';
 /** Runs `fn` with an anchor index only when the index is current; otherwise with null. */
 export async function withAnchorIndex(provider, fn, signal) {
     const ctx = await provider.prepareForSearch({ signal });
@@ -76,4 +77,19 @@ export async function proposeLearning(ws, index, raw, now = new Date()) {
     };
     writeProposal(ws.cacheDir, learning);
     return { kind: 'result', value: learning };
+}
+/**
+ * The line `ei_impact` appends for these symbol keys, or undefined when knowledge is disabled
+ * or nothing is recorded for them (so the V1 text is unchanged).
+ */
+export async function impactLearningsLine(ws, provider, keys, signal) {
+    if (!ws.config.knowledge.enabled || keys.length === 0)
+        return undefined;
+    try {
+        const snap = await withAnchorIndex(provider, (index) => snapshot(ws, index), signal);
+        return learningsLine(learningsFor(snap.learnings, keys), learningsFor(snap.proposals, keys));
+    }
+    catch (error) {
+        return `Learnings: unavailable (${error instanceof Error ? error.message : String(error)}); call ei_learning list.`;
+    }
 }
