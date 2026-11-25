@@ -95,6 +95,50 @@ it('EI_DISABLED=1 skips the ei_* tools only', () => {
   assert.equal(registered.length, 0);
 });
 
+it('applies the two kill switches independently and together', async (t) => {
+  for (const [ei, policy] of [
+    [true, false],
+    [false, true],
+    [true, true],
+  ]) {
+    await t.test(
+      `EI_DISABLED=${Number(ei)}, ENGINEERING_PROXY_DISABLED=${Number(policy)}`,
+      async () => {
+        const previous = process.env.ENGINEERING_PROXY_DISABLED;
+        process.env.ENGINEERING_PROXY_DISABLED = policy ? '1' : '0';
+        try {
+          const { pi, registered } = mockPi();
+          const cwd = await tempDir('kill-switches');
+          try {
+            const handlers = new Map<string, (...args: unknown[]) => unknown>();
+            const host = {
+              ...pi,
+              on: (event: string, handler: (...args: unknown[]) => unknown) =>
+                handlers.set(event, handler),
+              registerCommand: () => {},
+            };
+            extension(host, { env: { EI_DISABLED: ei ? '1' : '0' } });
+            const start = handlers.get('before_agent_start');
+            assert.ok(start);
+            const sections: Record<string, string> = {};
+            await start({ systemPromptOptions: { sections } }, { cwd });
+            assert.equal(Object.hasOwn(sections, 'engineering-proxy'), !policy);
+            assert.equal(
+              registered.some((tool) => tool.name === 'ei_impact'),
+              !ei,
+            );
+          } finally {
+            await cleanup(cwd);
+          }
+        } finally {
+          if (previous === undefined) delete process.env.ENGINEERING_PROXY_DISABLED;
+          else process.env.ENGINEERING_PROXY_DISABLED = previous;
+        }
+      },
+    );
+  }
+});
+
 it('a failing policy module does not prevent the ei_* tools from registering', () => {
   const { pi, registered } = mockPi();
   extension(pi, {

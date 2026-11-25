@@ -140,6 +140,7 @@ async function run(argv: string[]): Promise<number> {
     args: argv,
     allowPositionals: true,
     options: {
+      help: { type: 'boolean', short: 'h' },
       root: { type: 'string' },
       force: { type: 'boolean' },
       'dry-run': { type: 'boolean' },
@@ -171,6 +172,11 @@ async function run(argv: string[]): Promise<number> {
       workflow: { type: 'boolean' },
     },
   });
+  if (values.help) {
+    console.log(USAGE.replaceAll('main.js ', 'ei '));
+    return 0;
+  }
+
   const [command, sub] = positionals;
   const lockPath = values.lock ?? defaultLockPath();
   const registryPath = values.registry ?? defaultRegistryPath();
