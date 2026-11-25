@@ -39,6 +39,8 @@ In scope, in order:
 | V2d | Anchored knowledge | `ei_learning`: owner-approved learnings in `.ksd/learnings/` | `docs/briefs/V2d-knowledge.md` (draft) |
 | V2e | Recoverable compression | `ei_retrieve` + OMP hook if one exists; byte-exact recovery | `docs/briefs/V2e-compression.md` (draft) |
 
+**UI polish (D68, `1.1.0`, independent of V2):** CLI, OMP tool results, KSD status and AGY presentation; the text the model reads stays byte-identical. Brief: `docs/briefs/UI-polish.md`.
+
 Order, the rules that replace the gates, and the V2 safety rules: `docs/briefs/V2-README.md`. Each module ships disabled and must leave V1 output unchanged when disabled.
 
 Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
