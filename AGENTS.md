@@ -22,6 +22,7 @@ In scope, in order:
 | 4 | M2a ✅ | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
 | 5 | M2b ✅ | `ei_impact` passing the engine golden cases (merged #32) | `docs/briefs/M2b-impact.md` |
 | 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | `docs/briefs/M3-dogfood.md` |
+| 6b | M3b | Measured comparison with other code-intelligence tools (research; no product code) | `docs/briefs/M3b-compare.md` (Round 0 first) |
 | 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | `docs/briefs/M2c-changes.md` (draft; Round 0 first) |
 | 8 | M6a | `ei_search`, lexical (no embedding dependency) | `docs/briefs/M6a-search.md` (draft; Round 0 first) |
 | 9 | M4a | Route detection (Next.js, Expo Router, Hono) | `docs/briefs/M4a-routes.md` (draft; gated per detector) |

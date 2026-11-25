@@ -18,6 +18,7 @@ For a fix round or a contingency, paste the findings or the log after that line.
 | 4 | M6a `ei_search`, lexical | `M6a-search.md` | 0–4 | draft |
 | 5 | M4a route detection | `M4a-routes.md` | 0–4 | draft, gated per detector |
 | 6 | M4b bridges · M5 watcher · M6b semantic search | `gated-M4b-M5-M6b.md` | gate check, then per item | gated; may never run |
+| 6b | M3b tool comparison (research, D66) | `M3b-compare.md` | 0–4 | ready; findings feed the close-out |
 | 7 | V1 close-out | `V1-closeout.md` | 1–2 | draft |
 
 V1 is finished when the close-out is accepted. Context packs, compression, knowledge store, verification adapters and the GitLab adapter are V2 and have entry gates in DESIGN §13; they are not part of this path.
