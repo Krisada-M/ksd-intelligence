@@ -1,0 +1,79 @@
+import { realpath, stat } from 'node:fs/promises';
+import { join, sep } from 'node:path';
+import { isRecord } from '../kernel/guards.js';
+import { anchorIndexFromDb, currentAnchorHash, evaluateLearnings, } from './anchors.js';
+import { MAX_CLAIM_CHARS } from './learning.js';
+import { newLearningId, readLearnings, readProposals, writeProposal } from './store.js';
+/** Runs `fn` with an anchor index only when the index is current; otherwise with null. */
+export async function withAnchorIndex(provider, fn, signal) {
+    const ctx = await provider.prepareForSearch({ signal });
+    try {
+        // A stale or failed index could point at the wrong lines; anchors then stay unchecked.
+        const current = ctx.db !== null && (ctx.indexState === 'fresh' || ctx.indexState === 'updated');
+        return await fn(current && ctx.db !== null ? anchorIndexFromDb(ctx.db) : null);
+    }
+    finally {
+        ctx.db?.close();
+    }
+}
+export async function snapshot(ws, index) {
+    const repo = readLearnings(ws.root);
+    const proposed = readProposals(ws.cacheDir);
+    return {
+        learnings: await evaluateLearnings(repo.learnings, ws.root, index),
+        proposals: await evaluateLearnings(proposed.learnings, ws.root, index),
+        problems: [...repo.problems, ...proposed.problems.map((problem) => `proposal ${problem}`)],
+    };
+}
+const PROPOSE_SOURCES = ['model-inferred', 'code-observed'];
+function invalid(message) {
+    return { kind: 'failure', code: 'INVALID_INPUT', message };
+}
+async function insideRoot(root, path) {
+    if (path === '' || path.startsWith('/') || path.split(/[\\/]/).includes('..'))
+        return false;
+    const rootReal = await realpath(root);
+    const real = await realpath(join(root, path)).catch(() => null);
+    if (real === null || !real.startsWith(`${rootReal}${sep}`))
+        return false;
+    return (await stat(real)).isFile();
+}
+/**
+ * Records an agent proposal in the cache. `target` is a symbol key (`path#name`) or a
+ * repository file path; the anchor hash is taken now, from the code as it is.
+ */
+export async function proposeLearning(ws, index, raw, now = new Date()) {
+    if (!isRecord(raw))
+        return invalid('expected { claim, target, source }');
+    const { claim, target, source } = raw;
+    if (typeof claim !== 'string' || claim.trim() === '' || claim.includes('\0')) {
+        return invalid('claim must be non-empty text');
+    }
+    if (claim.length > MAX_CLAIM_CHARS)
+        return invalid(`claim longer than ${MAX_CLAIM_CHARS} characters`);
+    const kind = PROPOSE_SOURCES.find((entry) => entry === source);
+    if (kind === undefined)
+        return invalid('source must be "model-inferred" or "code-observed"');
+    if (typeof target !== 'string' || target.trim() === '')
+        return invalid('target must be path#name or a file path');
+    const key = target.trim();
+    const anchorKind = key.includes('#') ? 'symbol' : 'file';
+    if (anchorKind === 'file' && !(await insideRoot(ws.root, key))) {
+        return invalid(`${key} is not a file in this repository`);
+    }
+    if (anchorKind === 'symbol' && index === null) {
+        return invalid('index not current; call again after ei_status shows it ready');
+    }
+    const hash = await currentAnchorHash(ws.root, { kind: anchorKind, key, contentHash: '' }, index);
+    if (hash === null || hash === 'unknown')
+        return invalid(`${key} not found in the index`);
+    const learning = {
+        id: newLearningId(claim),
+        claim: claim.trim(),
+        anchor: { kind: anchorKind, key, contentHash: hash },
+        source: kind,
+        createdAt: now.toISOString(),
+    };
+    writeProposal(ws.cacheDir, learning);
+    return { kind: 'result', value: learning };
+}

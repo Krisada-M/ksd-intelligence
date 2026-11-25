@@ -32,3 +32,7 @@ No entries about re-explained decisions. The value-check learnings are drafted f
 ## 5. Round plan
 
 Unchanged: Round 1 store, YAML subset, anchors, CLI; Round 2 tool, `ei_impact` line, value check. Round 3 review is outside this lane.
+
+## Addendum (Round 1)
+
+`docs/briefs/V2-README.md` says repository writes happen "only through `ei learning approve`", while the brief (`V2d-knowledge.md:17`) also defines owner-run `ei learning review`, which rewrites `anchor.contentHash` and `reviewedAt` in an existing `.ksd/learnings/<id>.yaml`. Both are owner CLI commands; Round 1 implements both and nothing else writes there. The OMP tool imports neither (Round 2 test).
