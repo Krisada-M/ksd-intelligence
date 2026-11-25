@@ -1,6 +1,6 @@
 {
   "name": "@krisada-m/ksd-intelligence",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
   "license": "MIT",

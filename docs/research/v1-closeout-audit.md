@@ -50,3 +50,71 @@ Test references identify coverage, not a claim of exhaustive or live verificatio
 - Secret-pattern scan by filename returned no conventional private-key or provider-token pattern in tracked files. This is not a full secret scan. Historical measurements, spikes and synthetic test values do contain absolute home paths; the npm whitelist excludes those files. Do not call historical repo contents path-free.
 - `releaseProgram` and `affected-set-supplemented` have no live references. Old README text about builder chaining was stale. Retain the two active shortcut comments (non-Git `.gitignore` grammar and Bun/macOS RSS unit) because each documents a real limit. No runtime export deletion justified.
 - The discovery block in TOOLS §9 follows tool descriptions: impact before edit, changes before completion, inspect partial gaps. Workflow text and some envelopes are not shared across every host; the audit distinguishes real OMP from a mock registration harness.
+
+## Round 2 — release gates
+
+Linux WSL2 x86-64, Node `24.21.0`, npm `12.2.0`, OMP CLI `19.2.1`.
+
+| Command | Observed output |
+|---|---|
+| `npm ci` | Added 100 packages. |
+| `npm run typecheck` | Exit 0; both source and test TypeScript checks ran. |
+| `npm run lint` | Exit 0. |
+| `npm run format:check` | `All matched files use Prettier code style!` |
+| `npm test` | 740 tests in 77 suites; 740 pass, 0 fail, 0 skipped. Includes v4/v5 → v6 clean rebuild and exact engine release stamp. |
+| `npm run check:dist` | Exit 0; rebuild reports no tracked drift or untracked outputs. |
+| `node --test tests/packaging/npm-tarball.test.js` | 1 pass, 0 fail; scoped npm package, three installed bin help paths, legacy policy delegation, and MCP initialization. |
+| `node dist/adapters/cli/main.js doctor --deep --differential 300` | `DOCTOR ok`; 0 graph and counter differences; 300 declarations, 1839/1839 references covered, 0 misses. Ran on this repository with a temporary cache and normal Git ignore rules. |
+| `node evals/run.mjs` | OMP exited 1 on the first case before tool execution: model unavailable in the isolated HOME. Exit 2 from runner; 0/10 scored, pass rate **NOT VERIFIED**, not 0%. |
+
+The first `npm test` at version 1.0.0 reported 735 pass / 5 fail. All five differences were the `engine 0.2.0` footer in historical snapshots. The harness substitutes only this historical version token in the expected footer with the exact version from the release manifest; actual text remains unmodified and all other bytes are still compared. The golden files and accepted snapshot files were not changed.
+
+### Mutation and upgrade rehearsals
+
+`node /tmp/tmp.QRWOpl0sJU/mutate.mjs` (temporary runner, copied compiled test tree): 11/11 killed by named assertions. Witnesses: D49 scan exclusions, unchanged-content touch probe, cache mode, C01–C03 call edges, old schema rebuild, C23 name check, critical verdict, P05 untracked SQL, hung child, audit truncation, lexical ranking. The first witness for the probe checked a different-size edit and allowed the mutant; the existing unchanged-size touch test killed it. No production or oracle files were mutated.
+
+A historical, unmodified engine from `git archive 'a9fa363^' dist package.json` (`ac3caaa`) wrote a real schema 4 index on a disposable `tests/fixtures/mono` copy. Candidate commands on the same root/cache:
+
+```text
+ei status → STATUS degraded (index schema 4, engine expects 6) · run: ei index
+ei index → INDEX cold in 0.73 s (index schema 4)
+STATUS ready
+Store … · 184 KB · schema 6
+ei search calculateFee --limit 1 → SEARCH "calculateFee" — 1 of 7 matches
+```
+
+Schema 5 was not a separate merged predecessor. `npm test` also verified the dedicated v5 fixture rebuilds to v6 with case-insensitive indexes and searchable rows.
+
+### Clean-home rehearsal
+
+`bash /tmp/tmp.QRWOpl0sJU/rehearse.sh "$PWD"` on Linux WSL2 x86-64. Clean local clone of `v1-closeout` at the initial Round 2 commit; no real `~/.omp` access. Marketplace source was the clone directory, not the unpublished GitHub branch. A live checkout fails if it contains an indexer's Unix socket; the clean clone had no socket. Cloning with `--no-hardlinks` avoided crossing the filesystem device.
+
+```text
+omp/19.2.1
+✔ Added marketplace: <temp>/candidate
+✔ Installed ksd-intelligence from ksd-intelligence (1.0.0)
+ksd-intelligence@ksd-intelligence (1.0.0) (user)
+npm pack . → krisada-m-ksd-intelligence-1.0.0.tgz
+npm install --global --prefix <temp>/npm-prefix … → added 1 package
+ei setup / ei setup --check → typescript 5.9.3: ready
+ei init → Project initialized; existing ei.config.json skipped
+ei index → INDEX cold in 5.04 s (no published index)
+STATUS ready
+Coverage 500 scanned · 113 indexable · 44 orphan · 343 unindexed
+Store … · 3,788 KB · schema 6
+```
+
+Verified invocation through the separately installed real OMP extension loader (`18.14.0`, Bun `1.4.2`), using the **marketplace-installed** `dist/adapters/omp/extension.js`, not a mock adapter:
+
+```text
+ei_status → STATUS ready
+ei_search → SEARCH "sanitize audit text" — 2 of 172 matches
+ei_impact → IMPACT matchGlob — src/core/kernel/glob.ts:96
+            ACTION check-gaps · level unknown · picture partial (2 gaps)
+ei_changes → CHANGES vs HEAD — nothing changed in the working tree.
+ei_workflow → # KSD Workflow
+              Type: bug (classifiedBy: caller)
+              Stage: investigate
+```
+
+**BLOCKED for live model invocation:** `omp -p --model claude-haiku-4-5 …` on CLI 19.2.1 exited `1` before calling any tool: `No API key found`. The loader result is real extension execution, not evidence of an LLM turn, a TUI policy indicator, or compatibility on macOS. See [handoff](v1-closeout-handoff.md).

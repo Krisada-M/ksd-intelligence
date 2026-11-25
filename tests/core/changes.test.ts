@@ -17,7 +17,7 @@ import { loadWorkspace } from '../../src/core/engine/workspace.js';
 import { ImpactSession } from '../../src/core/impact/session.js';
 import { Indexer } from '../../src/core/indexing/indexer.js';
 import type { ChangesResult } from '../../src/core/kernel/types.js';
-import { ensureRuntime, FIXTURE } from './index-helpers.js';
+import { ensureRuntime, FIXTURE, readReleaseSnapshot } from './index-helpers.js';
 
 const execFileAsync = promisify(execFile);
 const CLI_ENTRY = join(process.cwd(), 'dist/adapters/cli/main.js');
@@ -146,7 +146,7 @@ describe('M2c Round 2 — ei_changes', () => {
       );
       assert.match(text, /^Not analysed \(1\)/m);
       assert.match(text, /packages\/api\/migrations\/001\.sql/);
-      const snap = (await readFile(join(SNAP_DIR, 'P05.txt'), 'utf8')).trimEnd();
+      const snap = await readReleaseSnapshot(join(SNAP_DIR, 'P05.txt'));
       assert.equal(text, snap);
     } finally {
       await rm(work, { recursive: true, force: true });
@@ -217,7 +217,7 @@ describe('M2c Round 2 — ei_changes', () => {
       assert.equal(result.changedSymbols[0]?.change, 'signature-changed');
       assert.ok((result.changedSymbols[0]?.callers ?? 0) >= 4);
       assert.match(text, /^Signature changed, still called \(1\)/m);
-      const snap = (await readFile(join(SNAP_DIR, 'X02.txt'), 'utf8')).trimEnd();
+      const snap = await readReleaseSnapshot(join(SNAP_DIR, 'X02.txt'));
       assert.equal(text, snap);
     } finally {
       await rm(work, { recursive: true, force: true });

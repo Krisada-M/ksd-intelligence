@@ -2,8 +2,9 @@
 
 > **Status:** authoritative design, 2026-11-10; index lifecycle, tool surface and scope revised 2026-11-11 (D20–D28); senior-review decisions applied the same day (D29–D37); KSD merged into the library and packaging decided (D39–D40); M1b runtime facts applied 2026-11-12 (D43–D47). Supersedes the architecture sections of `docs/reference/knowledge-export.md` (which remains historical background).
 > **Owner/user:** one person, personal non-commercial use.
-> **Host:** Oh My Pi (OMP) 18.18.8 on WSL2 (verified 18.18.2 on 2026-11-09, re-verified 18.18.8 on 2026-11-11). Node >= 20 (owner runs v24). Owner shell: fish.
-> **Labels:** `DONE` = built and verified · `NEXT` = current or next milestone · `PLANNED` = designed; starts at its milestone (M4–M6, owner-directed) or when its entry gate is met (V2) · `NEVER` = explicitly out of scope.
+> **Host:** OMP marketplace or AGY over local MCP stdio. CLI and engine: Node ≥ 22.5 (ADR 0005; Node 24 recommended). Live host verification is separate from CI.
+> **Labels:** `DONE` = shipped and covered by tests · `NEXT` = current milestone · **PLANNED (V2)** = not shipped in 1.0.0 · `NEVER` = explicitly out of scope.
+> **Release status:** 1.0.0 candidate; [close-out audit](research/v1-closeout-audit.md) and [owner gates](release-checklist.md). Historical decisions remain in §15.
 > **Review record:** `docs/reviews/2026-11-11-senior-review.md`. Its decisions are applied here; what still needs measurement is gated by milestone M1b.
 
 ---
@@ -61,10 +62,9 @@ The library **informs**. The agent decides and acts. The owner approves anything
 
 | Tier | Contents |
 |---|---|
-| **V1** (M0–M3 plus M1d) | Skill workflow router · KSD policy module (M1c) · macOS/Linux CI baseline (M1d) · built-in SQLite store · whole-scope TS/JS index and impact engine · OMP adapter · CLI · golden, differential and freshness tests · dogfood log |
-| **V1.5** (M2c/M4/M5/M6a, delivery gated by dogfood) | Risk zones and changed-code review first · lexical search · framework route detection · evidence-scoped heuristic bridges · optional session watcher/worktree seeding when measured |
-| **Later, separately approved** | M6b local semantic search and embeddings; only if lexical search demonstrably misses required cases |
-| **V2** (each gated, §13) | Context packs (built on search) · GitLab adapter · verification adapters · anchored learnings · recoverable compression |
+| **V1** | KSD policy · skill workflow · TS/JS index, status, and impact · risk zones and changed-code review · audit · lexical search · OMP marketplace · AGY stdio/npm · CLI and platform CI |
+| **PLANNED (V2)** | Context packs, GitLab, verification, anchored knowledge, recoverable compression (§13); not enabled by the existing config placeholders |
+| **PLANNED (V2), conditional** | Automatic route detection (skipped in V1, D61), heuristic bridges, watcher/worktree seeding and local semantic search; dogfood evidence and separate owner approval still required |
 | **NEVER** | New agent runtime or model router · always-on proxy · graph DB server · external vector DB or embedding service · auto-merge/deploy · auto-promoting model guesses to knowledge · replacing KSD · running skill scripts |
 
 ## 5. Architecture
@@ -123,7 +123,7 @@ M0 placed workflow at `src/workflow/`; it stays there. `core/` is created in M2.
 
 ## 6. Capabilities
 
-### 6.1 Workflow router — `DONE` (M0), live smoke `NEXT` (M1)
+### 6.1 Workflow router — `DONE` (M0/M1; unified catalog #33)
 
 Selects one primary leaf skill per (task type × stage), plus at most one reviewer/verifier at `review`/`verify` when `risk: high`.
 
@@ -133,11 +133,11 @@ Selects one primary leaf skill per (task type × stage), plus at most one review
 - **Trust chain:** catalog allowlist → provider root from env → realpath inside root → regular file ≤ 64 KiB with frontmatter → sha256 equals `skills.lock.json` → delivered. Any failure gives a named error and no skill text.
 - **Output:** precedence header first (KSD + owner decisions outrank skill text; never merge/deploy), then type, `classifiedBy`, provenance, hash status, skill text. `mayMerge: false` and `mayDeploy: false` always.
 
-### 6.2 Impact engine — `NEXT` (M2)
+### 6.2 Impact engine — `DONE` (M2a/M2b/M2c)
 
 Answers "what is affected if this symbol changes?" for TS/JS workspaces.
 
-- **Semantic authority:** the TypeScript compiler API (program + type checker, with the builder program for incremental updates), using the library's **bundled, pinned** `typescript` by default; a project can opt in to its own copy with `impact.useWorkspaceTypescript: true` (D30). It handles paths, barrels, re-exports, aliases, overloads, type-only imports and allowJs. Tree-sitter is not used.
+- **Semantic authority:** the TypeScript compiler API (program + type checker; no chained builder). `ei setup` provisions the library's pinned TypeScript; a repository can opt into its own copy with `impact.useWorkspaceTypescript: true`. It handles paths, barrels, re-exports, aliases, overloads, type-only imports and `allowJs`. Tree-sitter is not used.
 - **Index lifecycle (D20):** an explicit initial **scan → extract → verify → publish** builds a whole-scope index before any impact answer is given; queries then read the index. Details in §6.2.1.
 - **Freshness:** every query checks the working tree (tracked, modified, untracked within scope) with the two-level scheme in §6.2.1 and updates the index for changed files before answering. The session watcher (M5) is an optimisation, never the authority.
 - **Traversal:** resolve target (or return guidance `ambiguous-target` / `target-not-found`) → BFS over incoming edges to closure (node budget 50,000; D55) → attach tests → assess completeness → compute reach and factors → derive the verdict.
@@ -151,7 +151,7 @@ Answers "what is affected if this symbol changes?" for TS/JS workspaces.
 
 **Why a full index, not lazy per-target queries:** completeness rules need a census of the whole scope. A parse error, a computed dynamic import or an orphan file can only be reported if every file was looked at. A full index also makes queries graph lookups, and is the base for `ei_changes`, the name cross-check and (V2) context ranking.
 
-**Shape of the pipeline (D21):** per-file work that depends only on that file's bytes is cached; cross-file resolution is recomputed for exactly the files TypeScript reports as affected. Nothing patches individual edges in place. This is what keeps "incremental == full rebuild" true by construction instead of by bookkeeping. Background and sources: `docs/research/index-techniques.md`.
+**Shape of the pipeline (D21, D50):** cache per-file records by content and extractor stamp; re-resolve the conservative affected set below. Verify the staging database before publishing; tests and `ei doctor --deep` compare incremental and cold graphs.
 
 ```text
 1 SCAN           disk is the truth. Git only supplies the visible set (tracked + untracked − ignored);
@@ -207,19 +207,19 @@ The fingerprint (path → size, mtime, hash) is the `files` table of the reposit
 | Trigger | What happens |
 |---|---|
 | `ei index` (CLI, owner) | Full scan and build. Reports progress and a scan summary |
-| First query with no active index | Build starts in the worker; the call **blocks for up to 60 s, streaming progress** through the tool's update callback, and returns the real answer. Only a build that exceeds 60 s returns guidance `index-building` (D35) |
+| First query with no active index | A child process builds the index; interactive tools can stream progress and report `index-building` after the build wait (D35) |
 | Query, index present, probe clean | Answer from the active index |
 | Query, index present, drift found | Update: re-extract changed files, re-resolve the affected set, verify, publish, then answer |
 | New session, fingerprint unchanged | Load the published index from disk; no rebuild |
 | New session, files changed since last publish | Load the published index; create the compiler program (3–12 s measured on oh-my-pi), then re-extract and re-resolve only the changed and affected files. TypeScript build-info persistence is **not** used (D47): writing it needs a full check (223 s on oh-my-pi) and it saves only the diagnostics pass, not program creation |
 | `ei index --full` | Full rebuild on demand, ignoring caches |
-| Git worktree with no index (M5) | Seed from the main checkout's published index and records, then treat the difference as ordinary drift |
+| Git worktree with no index | Builds a separate index. Seeding from the main checkout is **PLANNED (V2)**, conditional on evidence (M5) |
 
 **Concurrency and failure**
 
 - One builder at a time per repo, guarded by a lock file in the cache dir. **Only the lock holder builds or updates.** Another session or sub-agent that sees drift does not start its own compiler: it waits within its budget for the holder to publish, otherwise answers from the published index marked `stale-index` with the drift list (D35).
 - A failed update never breaks a query: the previous published index answers, with status `partial`, reason `stale-index`, and the list of drifted files. It is never presented as current.
-- `ei doctor --deep` rebuilds from scratch and diffs against the active index; any difference is a bug report and sets the engine to `degraded`.
+- `ei doctor --deep` rebuilds from scratch and compares against the published index. The optional `--differential` also checks TypeScript references. A mismatch fails the command; it does not persist a degradation flag.
 
 **Scan summary** (shown by `ei index` and `ei_status`): files scanned / indexed / orphan / unindexed, packages and tsconfigs found, extraction failures by reason, unresolved-use counts by reason, gap-site counts by code, `incompleteReasons`, per-phase durations, fingerprint, TypeScript version and extractor stamp, time of last full build. This is the owner's first look at how much of a repo the engine can actually see.
 
@@ -231,7 +231,7 @@ The fingerprint (path → size, mtime, hash) is the `files` table of the reposit
 - The child runs on `node` (≥ 22.5) from `PATH` when available, else on OMP's own Bun runtime. Measured cold build: **28.5 s on Node, 83 s on Bun**, at 5–5.3 GB RSS.
 - Memory: under Node the child gets `--max-old-space-size` from `impact.maxMemoryMb` (default: the smaller of 8,192 MB and half of physical RAM); under Bun, which has no such flag, the parent polls the child's RSS every second and kills it above the same limit. M1b's smallest passing heap for oh-my-pi was 6 GB (1.5, 3 and 4.6 GB failed).
 - One program for the whole index scope, built from the root configuration with project references followed. Per-package sequential builds were measured **worse** (44–48 s, up to 7.9 GB), so they are only a fallback for packages whose compiler options conflict.
-- The child exits after 10 minutes without a request, releasing memory; the next update pays program creation again (3–12 s). Only the lock holder runs a child (D35), so there is at most one engine process per repository.
+- The build/update child exits after each build or update (D50); the lock holder owns the build. The transport idle timeout is not a guarantee of a warm compiler.
 - TypeScript is loaded by absolute path (a bare `import('typescript')` failed inside the worker in M1b).
 
 **Measured cost.** First rows: sandbox, 2 cores, TypeScript 6.0.3, no `node_modules` (external types unresolved). Last row: M1b, macOS arm64, 10 cores, 17 GB RAM, TypeScript 5.9.3, dependencies installed.
@@ -244,23 +244,23 @@ The fingerprint (path → size, mtime, hash) is the `files` table of the reposit
 
 So a large real workspace costs tens of seconds and several gigabytes on a cold build. This is why the engine is a separate, killable process, why it publishes an index that later sessions load without a compiler, and why warm updates re-resolve only affected files. The probe stays cheap: listing and stat-ing 10,502 files took 94 ms on Bun and 220 ms on Node.
 
-### 6.3 Context packs — `PLANNED` (V2)
+### 6.3 Context packs — PLANNED (V2)
 
 Selection-first: given a task, return the smallest set of files/spans the agent should read, ranked by exact symbol match, impact proximity, test adjacency, recent edits and lexical relevance, within a token budget. Returns spans plus why each was chosen. **Suggest only.** No automatic injection until an A/B in the dogfood log shows benefit.
 
-### 6.4 Recoverable compression — `PLANNED` (V2, last)
+### 6.4 Recoverable compression — PLANNED (V2, last)
 
 Only for tool outputs (logs, test output, large JSON) and only if OMP's own compaction proves insufficient. Persist the exact original to CAS **before** emitting the compressed view and a retrieval handle; on any failure, pass the original through. 100% byte-exact recovery is a hard gate. Never compress source code under edit, errors the agent must act on, or secrets.
 
-### 6.5 Anchored knowledge — `PLANNED` (V2)
+### 6.5 Anchored knowledge — PLANNED (V2)
 
 Learnings are reviewable claims anchored to a symbol or file, stored in the repo at `.ksd/learnings/*.yaml` so they are versioned with the code. Source kinds are kept distinct: `owner-confirmed · code-observed · test-verified · model-inferred`. A changed or missing anchor moves a learning to `needs-review`; stale learnings are never surfaced as fact. Writes always need owner approval; nothing is auto-saved.
 
-### 6.6 Verification evidence — `PLANNED` (V2)
+### 6.6 Verification evidence — PLANNED (V2)
 
 Runs or reads existing tools (repo test/lint scripts, `tsc`, GitLab pipeline results, uiMatch) and returns what actually happened: command, revision, exit code, artifacts, timestamp, and `PASS · FAIL · SKIPPED · ERROR · NOT_VERIFIED`. Never infers PASS. Running commands goes through OMP's approval.
 
-### 6.7 KSD policy module — `NEXT` (M1c, D39)
+### 6.7 KSD policy module — `DONE` (M1c, D39)
 
 KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one install provides the skill router, the code intelligence tools and the personal engineering policy. The move is a migration, not a rewrite: what the owner sees and types does not change.
 
@@ -280,11 +280,13 @@ KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one in
 
 **Interaction with the rest of the library:** the module reads its own config only. Workflow and impact may later read the effective KSD mode through the module's exported function (a direct import, not a bridge), only when the dogfood log shows a case for it. KSD config stays in its own files and is not folded into `ei.config.json`, so existing files keep working.
 
-### 6.8 GitLab adapter — `PLANNED` (V2)
+### 6.8 GitLab adapter — PLANNED (V2)
 
 Read-only access to issues (requirements for `plan`), merge request diffs (scope for `review`/`impact`), and pipeline/job results (evidence for `verify`). Host and project from `ei.config.json`; token from env `GITLAB_TOKEN` only, never stored or logged. This is the only library code allowed network access, and only when enabled.
 
-### 6.9 Framework routes and heuristic bridges — `PLANNED` (M4a routes after M2c/M6a; M4b bridges gated by dogfood evidence; D28, D48)
+### 6.9 Framework routes and heuristic bridges — PLANNED (V2, conditional; D61/D63)
+
+V1 only applies manual `impact.routes` globs. The detectors below were skipped, and heuristic bridges did not meet their dogfood gates.
 
 Static analysis stops at dynamic dispatch: a route file the framework calls, a `fetch('/api/charge')` that reaches a handler, an event name that links emitter to listener. Without bridges these become gap sites and many answers are `unknown`. Bridges add the likely edges, clearly marked.
 
@@ -312,7 +314,7 @@ Static analysis stops at dynamic dispatch: a route file the framework calls, a `
 
 Tool text shows them as a separate section, `Possible (heuristic)`, after compiler-grade callers (see `docs/TOOLS.md`).
 
-### 6.10 Session file watcher — `PLANNED` (M5, optional, only on measured need; D28, D48)
+### 6.10 Session file watcher — PLANNED (V2, conditional)
 
 An optimisation, never the authority. Inside the OMP session (no daemon), a recursive watcher on the index scope records changed paths and, after a debounce, starts the update in the worker so the next query is already fresh.
 
@@ -320,15 +322,12 @@ An optimisation, never the authority. Inside the OMP session (no daemon), a recu
 - Auto-disables, with a line in `ei_status`, when the platform cannot watch reliably (for example a Windows-mounted path under WSL2, or the inotify limit is hit). Queries then use the probe as before.
 - `impact.watch: false` turns it off. No watcher exists outside a running session.
 
-### 6.11 Code search — `PLANNED` (M6a lexical after M2c; M6b semantic deferred to separate owner approval; D28, D48)
+### 6.11 Code search — lexical `DONE` (M6a); semantic PLANNED (V2, conditional)
 
 Answers "where is the code that does X?" with ranked symbols and `path:line`, for the moment the agent would otherwise grep around.
 
-- **Lexical tier (always on, no dependency):** full-text index over symbol names (split into identifier segments), signatures and doc comments, ranked with BM25, boosted by exact-name match, export status and graph proximity to symbols named in the query.
-- **Semantic tier (optional):** embeddings of declaration text from a small **local** model, stored locally and searched by brute-force cosine (adequate below roughly 100k vectors). Incremental by content hash; computed in the background worker; never blocks other tools.
-  - Needs a one-time model install by the owner (`ei embeddings install`), which is the only network action and is never triggered by the agent. Without it, search is lexical only and says so.
-  - The runtime library and model are an **optional** dependency chosen in M6 after measuring size, speed and licence on the owner's machine. Nothing here is decided by this document beyond "local, optional, replaceable".
-- **Labels:** every hit is marked `exact`, `lexical` or `semantic`. A semantic hit is a suggestion of where to look, not evidence about behaviour; it never feeds risk or completeness.
+- **Lexical tier:** SQLite FTS5 over names, identifier segments, signatures and JSDoc. Ranking uses BM25, exact matches, export status and distinct caller counts.
+- **PLANNED (V2):** graph-proximity boosting, local embeddings, `ei embeddings install/status/remove`, and the `semantic` hit label. V1 has no embedding dependency or download.
 - Tool: `ei_search` (fifth tool, `docs/TOOLS.md`). V2 context packs are built on this ranking.
 
 ## 7. Contracts
@@ -380,7 +379,7 @@ interface Verdict {
 4. Risk zones (M2c, `docs/RISK.md`) raise the level to `high` or `critical` and strengthen the action; nothing lowers it.
 
 Factor codes: `public-export-surface · route · cross-package · many-callers` (total ≥ `impact.manyCallers`, default 10) `· common-name` (name shared by more than `impact.commonName` declarations, default 10, with name-match sites; D56) `· boundary:sql · boundary:native`.
-Reason codes: `dynamic-import · computed-member-access · interface-dispatch · parse-error · unsupported-syntax · cjs-require · unresolved-import · unresolved-name-match · string-name-match · outside-index-scope · depth-limit · stale-index · engine-self-check-failed`.
+Reason codes: `dynamic-import · computed-member-access · interface-dispatch · parse-error · cjs-require · unresolved-import · unresolved-name-match · string-name-match · outside-index-scope · depth-limit · stale-index`. `depth-limit` denotes the traversal node budget. A separate `unsupported-syntax` detector and `engine-self-check-failed` are **PLANNED (V2)**; V1 uses `parse-error` for TypeScript parse failures.
 Error codes (workflow): `INVALID_INPUT · NOT_ALLOWLISTED · LOCK_INVALID · PROVIDER_ROOT_MISSING · PROVIDER_ROOT_NOT_FOUND · SKILL_NOT_FOUND · PATH_ESCAPE · INVALID_SKILL · HASH_MISMATCH · SKILLS_UNAVAILABLE`; `sources check` only: `NOT_A_GIT_CHECKOUT · COMMIT_MISMATCH`.
 Guidance codes (impact): `index-building · ambiguous-target · target-not-found`. Failure codes (impact): `index-failed`.
 
@@ -474,29 +473,15 @@ Every engine call ends in one of three outcomes (D24). The adapter maps them; ca
 | `guidance` | Expected, recoverable condition the agent can act on: `index-building`, `ambiguous-target` (with candidates), `target-not-found` (with nearest names) | **Success-shaped**: `{ content: [text with code + what to do next], details: { guidance: code, … } }` |
 | `failure` | Real malfunction or trust failure: `index-failed`, `INVALID_INPUT`, `HASH_MISMATCH`, `PATH_ESCAPE`, `LOCK_INVALID` | `{ isError: true, content: [text: '<CODE>: <message>'] }`; malfunctions add "retry once" |
 
-Reason: a reference project's maintainers report that one or two error results early in a session make an agent stop calling the tool family altogether. That is their observation, not our measurement, so it is applied to the impact tools (not yet built) and watched in the dogfood log. `ei_workflow` keeps its M0 behaviour (errors for unavailable skills) until the log shows a problem.
+This follows a reference project's observation, not our measurement: early tool failures can discourage repeat calls. `ei_workflow` reports unavailable required skills as an error.
 
 In the golden cases, C15's "error `ambiguous-target`" is the engine's `guidance` outcome with that code; the expectation (no merged result, exact candidate list) is unchanged.
 
 The text form is for the agent; `details` is for tests and future UIs.
 
-### 7.10 Public API (`src/index.ts`)
+### 7.10 Library entry points
 
-```ts
-routeTask(req): RouteResult
-prepareWorkflow(req): Promise<WorkflowPlan>
-openWorkspace(root, config?): Promise<Workspace>
-
-interface Workspace {
-  index(opts?): Promise<ScanSummary>;
-  impact(q): Promise<Outcome<ImpactResult[]>>;
-  symbol(q): Promise<Outcome<SymbolResult>>;
-  status(): Promise<WorkspaceStatus>;
-  changes(q?): Promise<Outcome<ChangesResult>>;      // M2c
-  search(q): Promise<Outcome<SearchResult>>;          // M6
-  // V2: context(), compress(), retrieve(), learnings(), verify()
-}
-```
+The npm package root exports the OMP extension. `@krisada-m/ksd-intelligence/eslint` exports the frozen policy rules. `src/index.ts` is the internal TypeScript barrel for workflow, workspace, audit, changes and lexical search; the earlier proposed `openWorkspace()` public API and its `symbol()` method are **PLANNED (V2)**, not npm exports.
 
 ## 8. Interfaces
 
@@ -508,71 +493,38 @@ V1 exposes four tools, one per moment the agent already recognises (D27); `ei_se
 
 | Tool | Moment | Input | Status |
 |---|---|---|---|
-| `ei_workflow` | Starting a stage | `task, stage, type?, risk?` | DONE (prototype verified live; TS port M1) |
-| `ei_impact` | About to change symbols | `targets[1..5], depth?` | M2b |
-| `ei_changes` | Finished changing | none required (`base?`, `depth?`) | M2c |
-| `ei_status` | A result looks wrong or stale | none | M2a |
-| `ei_search` | Looking for where something is implemented | `query, limit?` | M6 |
+| `ei_workflow` | Starting a stage | `task`, `stage`, optional `type`, `risk`, `potetoMode` | `DONE` |
+| `ei_impact` | About to change symbols | `targets` (1–5), optional `depth` | `DONE` |
+| `ei_changes` | Finished changing | optional `base`, `depth`, `planned` | `DONE` |
+| `ei_status` | A result looks wrong or stale | none | `DONE` |
+| `ei_search` | Looking for an implementation | `query`, optional `limit` | `DONE` |
 
-Not tools in V1, CLI only: index, symbol lookup, doctor, audit, sources check. Symbol lookup is folded into `ei_impact` (an ambiguous or unknown name returns candidates). Indexing is automatic on first query and explicit for the owner through `ei index`.
+AGY's stdio server advertises status, impact, changes and search by default. Enable workflow explicitly.
 
-Planned behind their gates (§13): `ei_context` (built on `ei_search`), `ei_verify`, `ei_learning`, `ei_gitlab`, `ei_retrieve`. Each must first show there is a moment the agent recognises and input it already has; a capability that can ride on an existing tool's output does that instead of becoming a tool.
+`ei_context`, `ei_gitlab`, `ei_verify`, `ei_learning`, and `ei_retrieve` are **PLANNED (V2)**, after 1.0.0 and subject to §13.
 
-No OMP hooks in V1. A `before_agent_start` hint ("ei tools available for this repo") is the only hook ever considered, and only with A/B evidence.
+V1 adds no automatic EI prompt hook; the frozen KSD policy module still registers its own hooks.
 
 ### 8.2 CLI (`ei`)
 
-```text
-ei route   --task … --stage … [--type …] [--risk high]      DONE
-ei load    --task … --stage … [--type …] [--risk high]      DONE
-ei sources check [--write]                                 DONE
-ei init   [--force] [--dry-run]                           M2 (pre-index; landed early in #8)
-ei setup   [--check]                                       M2a.1 (installs the pinned TypeScript runtime; owner-run, network once; D44)
-ei index   [--full]                                        M2
-ei impact  <target…> [--depth N] [--json]                  M2
-ei symbol  <query>                                         M2   (CLI only)
-ei status                                                  M2
-ei doctor  [--deep]                                        M2
-ei changes [--base REF] [--json]                           M2c
-ei search  <query> [--limit N]                             M6
-ei embeddings install | status | remove                    M6
-ei audit   [--since 7d]                                    M2c
-ei cache clear                                             M2
-ei context · ei retrieve · ei learn · ei verify            V2
-```
+Run `ei --help` for the shipped syntax. CLI-only commands: `init`, `setup`, `index`, `doctor --deep`, `audit`, `cache clear`, `route`, `sources check`, `skills list/check/diff/sync/publish/rollback`, and `mcp`. CLI counterparts to OMP tools: `load`, `status`, `impact`, `changes`, and `search`. They share the renderers; CLI waits for index work instead of returning interactive timeout guidance.
 
-The CLI and OMP tools call the same functions and print the same text. Any behaviour difference is a bug.
+**PLANNED (V2):** `ei symbol`, `ei embeddings install/status/remove`, `ei cache list` and automatic pruning, and CLI equivalents of V2 tools. In V1, use `ei impact` for symbol guidance and `ei cache clear` for per-repository removal.
 
 ## 9. Configuration
 
-One schema, three scopes, same precedence as KSD: **session > project > global > defaults**.
+V1 reads project `ei.config.json` at the root discovered by `ei init`/`ei index`. `ei init` writes it only on explicit invocation, skips existing files unless `--force`, and accepts `--dry-run`. Invalid values fall back and are reported by status.
 
-| Scope | Location |
+| Shipped settings | Effect |
 |---|---|
-| Project | `<repo>/ei.config.json` (committed) |
-| Global | `~/.config/ksd-intelligence/config.json` |
-| Secrets | env only (`GITLAB_TOKEN`, `EI_*_ROOT`) |
+| `impact.include`, `impact.exclude`, `impact.routes` | Index scope and explicit route globs |
+| `impact.freshness` | `stat` (default) or `hash`; changes uses hash |
+| `impact.manyCallers`, `impact.commonName` | Verdict thresholds; defaults 10 |
+| `impact.useWorkspaceTypescript`, `impact.maxMemoryMb` | Runtime source and child memory bound |
+| `riskZones` | `"default"`, an explicit list, or `[]`; can only raise verdicts |
+| `search.enabled` | Existing search-only switch |
 
-```jsonc
-{
-  "skills":   { "enabled": true },
-  "impact":   { "enabled": true, "include": ["packages/**", "apps/**"], "exclude": ["**/dist/**"],
-                "routes": ["packages/api/src/routes.ts"], "maxDepth": 10,
-                "freshness": "stat", "watch": true,                         // watch: M5
-                "manyCallers": 10, "commonName": 10, "useWorkspaceTypescript": false,
-                "maxMemoryMb": null },                                    // null = min(8192, half of RAM); D45
-  "bridges":  { "B1": true, "B2": true, "B3": true, "B4": true, "B5": true, "B6": true },   // M4
-  "search":   { "enabled": true, "semantic": false },                       // M6
-  "riskZones": "default",                                                   // M2c; "default" = the four zones in docs/RISK.md, or a list, or []
-  "context":  { "enabled": false },
-  "compression": { "enabled": false },
-  "knowledge":   { "enabled": false },
-  "verification":{ "enabled": false },
-  "gitlab":   { "enabled": false, "host": "https://gitlab.example.com", "project": "group/repo" }
-}
-```
-
-Invalid config: log the error, fall back to defaults for that section, keep running. Config is never rewritten by the library.
+**PLANNED (V2):** global EI config/session precedence, general per-capability `enabled` flags, `impact.maxDepth` as a setting, `impact.watch`, `bridges.*`, `search.semantic`, and the five V2 module configurations. Some keys already appear in generated config and are accepted as placeholders. They do not activate these features. The frozen policy has its own separate config and precedence (§6.7).
 
 ## 10. Integrations
 
@@ -613,9 +565,9 @@ Merged as the policy module (§6.7). The extension entry registers the KSD hooks
 | Learnings | n/a | `.ksd/learnings/*.yaml` in the repo | **no**; versioned with code |
 | Verification reports | n/a | cache dir, last N per check | yes |
 
-Nothing the library generates is written into the repo except learnings the owner approved.
+The owner-run `ei init` can write `ei.config.json`; analysis does not modify source. Owner-run skill and policy configuration commands are separate (§§6.1, 6.7).
 
-`<repo-id>` is the first 16 hex characters of the SHA-256 of the repository root's real path. `ei init` creates this directory (mode `0700`) and writes a starting `ei.config.json` from the detected layout: detected route directories become file globs, and no route is assumed when none is found. `ei cache list` shows each cache with its size and last use; caches unused for 30 days are pruned on the next `ei index`.
+`<repo-id>` is derived from the repository root's real path. `ei init` creates the private cache and infers proposed include/route globs. `ei cache clear` removes that repository's index and audit, not the shared TypeScript runtime.
 
 **SQLite (D46):** `node:sqlite` is the store. M1b verified it inside OMP (SQLite 3.54.0, FTS5, WAL) and under Node 24, so it works in either engine runtime. The sharded-JSON fallback and the SQLite entry gate are dropped. `bun:sqlite` is not used because it does not exist under Node.
 
@@ -635,11 +587,11 @@ Publish path (measured in M2a.1 on a 221 MB database, Linux): a full build publi
 | Parse error in a file | Results still returned; `partial` + `parse-error`; level `unknown` |
 | Ambiguous symbol | Guidance `ambiguous-target` with candidates; never merge results |
 | Config invalid | Defaults for that section; warning in `ei_status` |
-| GitLab unreachable / no token | `NOT_VERIFIED` with reason; never cached as PASS |
-| Compression store write fails | Pass the original through uncompressed |
+| GitLab unreachable / no token | PLANNED (V2): no inferred PASS |
+| Compression store write fails | PLANNED (V2): pass original through uncompressed |
 | Skill text says "ignore policy / deploy" | No effect on flags or header order; library never executes instructions |
 
-Hard rules: no writes outside the cache dir (and approved learnings); no network except the GitLab adapter when enabled and the owner-run `ei embeddings install`; no secrets in logs, reports or caches; no `git` write commands.
+V1 analyzes locally with no telemetry. The owner-run `ei setup` invokes the package manager to provision TypeScript. The future GitLab and embeddings exceptions are **PLANNED (V2)**. See RISK §§4–6 for timeouts, private cache modes and the trust boundary.
 
 ## 13. Roadmap and gates
 
@@ -652,22 +604,19 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | 3c | **M1d** | Portable baseline: macOS/Linux CI, canonical-path checks, OS/arch evidence (`docs/briefs/M1d-platform-baseline.md`) | Matrix checks pass on both OS families; OS/arch recorded; real OMP smoke on each OS family remains a separate manual gate |
 | 4 | **M2a.1** ✅ | Engine host (child process, runtime choice, memory watchdog, idle exit, lock) · TypeScript provisioning (`ei setup`) · SQLite store · scan · fingerprint and probe · `ei index` (scan only), `ei_status` (`docs/briefs/M2a-index.md`, part 1) | Scan census accounts for every fixture file; probe and lock behaviour tested; child is killed above its memory limit; status reports runtime, TypeScript and store |
 | 4b | **M2a.2** ✅ (with M2a.3 review fixes, D50–D51) | Extract-local · resolve (ADR 0002/0003, D43 options) · verify · publish · incremental update · `ei doctor --deep` (`docs/briefs/M2a-index.md`, part 2) | Randomised incremental == full passes; differential test against TypeScript find-references passes on the fixture and on oh-my-pi; cold build and one-file update measured on oh-my-pi |
-| 5 | **M2b** | `ei_impact`: targets, guidance, reach, factors, base verdict, name cross-check, text per `docs/TOOLS.md` | All confirmed engine golden and freshness cases pass; rendering snapshots reviewed by owner; mutation smoke |
-| 6 | **M3** | Dogfood on oh-my-pi repo + one real GitLab project (read-only clone). Starts when M2b is accepted and continues alongside later milestones | 2 weeks of `docs/dogfood-log.md`; ≥ 10 real tasks logged |
-| 7 | **M2c** | Risk zones, `ei_changes`, audit log and stage protocol | Changed-code golden cases pass; no file omitted silently; unknown/reachable gaps are explicit |
-| 8 | **M6a** | `ei_search`, lexical only | Fixed query set reviewed on the two M3 repositories; results carry provenance and freshness |
-| 9 | **M4a** | Route detection for Next.js, Expo Router and Hono | At least one real workflow justifies each detector; route fixture and negative tests pass |
-| 10 | **M4b** | Heuristic bridges, one evidenced flow at a time | Each bridge has a dogfood case and a full fixture flow; heuristic reach never counted as compiler evidence |
-| 11 | **M5** (optional) | Session watcher and worktree seeding | Measured repeated probe overhead or cold-index duplication justifies implementation; watcher off/on has identical correctness |
-| 12 | **M6b** (deferred) | Local semantic search | Only starts with separate owner approval after lexical recall/failure data; offline and graceful-degradation tests |
-
-**Delivery order (D48, accepted by the owner 2026-11-12):** finish the correctness baseline and M3 dogfood before investing in advanced graph/AI features. D28 still records intended optional capabilities, but its unconditional scheduling is superseded for M4b, M5 and M6b. M2c precedes route detection because checking the actual diff is the first production workflow. Do not claim M1d CI proves engine or live OMP compatibility.
+| 5 | **M2b** `DONE` | `ei_impact`, reference edges, gaps and verdict | #32; owner golden cases |
+| 6 | **M3** `DONE` | Dogfood and exit review | D63 waived the 14-day window; keep logging |
+| 7 | **M2c** `DONE` | Risk zones, `ei_changes`, audit and stage protocol | #34; changed-file census and golden cases |
+| 8 | **M6a** `DONE` | `ei_search`, lexical | #34 and D62; query oracle and parity |
+| 9 | **MAGY1 / D65** `DONE` | AGY stdio/npm packaging | Protocol/tarball tests; live host smoke separate |
+| 10 | **V1 close-out** `NEXT` | 1.0.0 release candidate | Owner gates in `docs/release-checklist.md` |
+| Later | **M4a / M4b / M5 / M6b** | **PLANNED (V2)**, conditional; M4a skipped in V1 | D61/D63; no qualifying detector, bridge, watcher or semantic evidence |
 
 **Dogfood log entry:** task · tools called · was the answer correct (owner judges) · did it change what the agent did · latency · any false `low`. A single false `low` on a real change stops the roadmap until fixed.
 
-**V2 entry gates (build a module only when its gate is met):** waived by the owner (D64); kept for the record. The value checks in `docs/briefs/V2-README.md` replace them.
+**V2 starts after `v1.0.0`.** The table records historical, waived entry gates (D64). Each module ships disabled with byte-identical V1 output and a measured value check before the owner enables it. Compression also needs an installed OMP hook capable of replacing tool output. See `docs/briefs/V2-README.md`.
 
-| Module | Gate (from the dogfood log) |
+| Module | Historical gate (waived, D64) |
 |---|---|
 | Context packs | ≥ 3 logged tasks where the agent read clearly irrelevant files or missed a relevant one that impact knew about |
 | GitLab adapter | Real work is on GitLab MRs and copying MR/pipeline info by hand is logged as friction |
@@ -675,7 +624,7 @@ Hard rules: no writes outside the cache dir (and approved learnings); no network
 | Knowledge | ≥ 2 logged cases of re-explaining the same project decision to the agent |
 | Compression | Measured context pressure with OMP compaction on, plus a fixture showing a safe saving |
 
-Order if several gates pass: context → GitLab → verification → knowledge → compression.
+Delivery order: context → GitLab → verification → knowledge → compression.
 
 ## 14. Quality and testing
 
@@ -688,20 +637,15 @@ Order if several gates pass: context → GitLab → verification → knowledge �
 | Randomised | Random sequences of edits, renames, adds and deletes on the fixture; after each, incremental index == cold build. Seeded, so a failure reproduces | every `npm test` (short run); nightly-style long run on demand |
 | Platform CI | Node 24 on macOS and Linux: typecheck, lint, tests, dist drift; record OS and architecture | every PR and merge to main (M1d) |
 | Runtime/OS integration | Real OMP adapter smoke on both OS families; engine process, memory enforcement, SQLite locking/recovery and cancellation after M2a | release gate per supported OS family; manual until automated |
-| Live smoke | OMP scenarios S1–S7 (+ impact scenarios after M2) | after each milestone and each OMP upgrade |
+| Live smoke | OMP scenarios S1–S8, all five tools and KSD policy; AGY stdio host separately | release and OMP upgrades |
 | Dogfood | Real tasks, owner-judged | M3 onward |
 
 **Performance targets (D52, revised after M2a; set build targets in M3):**
 
-- Gates: an `ei_impact` query with a clean probe p95 < 300 ms (no child process; status read measured 187 ms p95 on oh-my-pi); `ei_workflow` < 50 ms excluding file I/O; peak engine memory reported by `ei_status`.
+- Warm impact p95 < 300 ms and workflow < 50 ms excluding I/O are targets, not claims about all repositories.
 - Reference, not a gate — oh-my-pi (6,761 indexable files, 2.27M lines, Linux, Node 24, new process per command, median of 3): cold build 145 s; one-file body edit 25 s; signature edit 124 s (4,837 files re-resolved); add file 58 s; peak RSS 7.1 GB. The resolve phase dominates because TypeScript checks lazily while symbols are resolved. A repository of this size needs Node ≥ 22.5; no Bun build completed within the memory limit.
 - Build and update targets for daily use are set from the owner's own repositories during M3. The earlier figures (cold < 60 s, update < 3 s, first query with drift < 15 s) came from M1b measurements that did not include full resolution, and are withdrawn.
-- **PROPOSED daily-use limits (Linux WSL2 `x86_64`, Node 24, pending owner confirmation in M3 exit):** derived from real Setup Round medians on `work-sure` (8,435 scanned, 5 indexable TS files: cold `2.14 s`, body edit `2.34 s`, signature edit `2.11 s`, add file `2.21 s`, warm no-drift `ei_impact` p50 `66.1 ms` / p95 `75.5 ms`, peak RSS `243 MB`) and `ksd-intelligence` (436 scanned, 93 indexable TS files: cold `2.96 s`, body edit `1.26 s`, signature edit `2.44 s`, add file `1.76 s`, warm no-drift `ei_impact` p50 `11.2 ms` / p95 `12.8 ms`, peak RSS `463 MB`):
-  - **Cold build (`index --full`):** `< 10 s` (median across small-to-medium daily TS repos; observed `2.14 s` on `work-sure`, `2.96 s` on `ksd-intelligence`).
-  - **One-file body edit update:** `< 5 s` (observed `2.34 s` on `work-sure` due to `8.4k`-file `scan`, `1.26 s` on `ksd-intelligence`).
-  - **Export signature edit update:** `< 6 s` (observed `2.11 s` on `work-sure`, `2.44 s` on `ksd-intelligence`).
-  - **Add new `.ts` file update:** `< 5 s` (observed `2.21 s` on `work-sure`, `1.76 s` on `ksd-intelligence`).
-  - **Clean-probe `ei_impact` p95 / `ei_workflow`:** retain `< 300 ms` p95 (`ei_impact`, observed `75.5 ms` on `work-sure` and `12.8 ms` on `ksd-intelligence`) and `< 50 ms` (`ei_workflow` excluding file I/O).
+- D63 adopted advisory daily-use baselines: cold ≤ 5 s on this repo or ≤ 30 s on large daily repositories, drift update ≤ 3 s, warm impact p95 ≤ 300 ms. The much larger oh-my-pi index above demonstrates why these are not guarantees.
 
 ## 15. Decision log
 
@@ -778,18 +722,14 @@ Each decision gets a short ADR in `docs/adr/` when the milestone that depends on
 
 ## 16. Open questions
 
-1. Answered by M1c: default-branch head, versioned by the catalog (§10.1).
-7. Follow-ups from M1c, folded into the M2a brief: (a) KSD's TypeScript sources in `src/policy/src/` are excluded from this repo's build and its committed runtime ships as is; add a drift check that rebuilds them with KSD's pinned compiler (5.8.3) and compares, so an edit to the sources cannot silently diverge from what runs; (b) slash commands produce no output under `omp -p`, so `/engineering-proxy status` and the `🛡 KSD` segment are verified by the owner in the TUI after cut-over.
-2. Answered by M1b (D43–D47). Still open from it: progress visibility in the interactive TUI, Bun runs above 1.5 GB, the exact memory floor between 4.6 and 6 GB for oh-my-pi, TypeScript 6/7 behaviour (oh-my-pi itself ships 7.x).
-3. Which real GitLab project to clone read-only for M3 dogfooding.
-4. Whether GitNexus is active for repos the owner works in; if so, how its answers compare on the same M3 tasks.
-5. Upstream skill content review: the owner reads the 15 pinned SKILL.md files once and re-reads diffs on each update.
-6. Whether 10 is the right `manyCallers` threshold, and 4,000 characters the right per-target budget (dogfood log).
+- **Closed for V1:** default-branch marketplace (D40/D41); child-process layout and TypeScript/SQLite runtime (D43–D47); dogfood reference projects and scope (D63); npm packaging (D65). A wrong `low` still stops release or roadmap work.
+- **Owner release verification:** repeat S1–S8, policy status and all five tools on macOS and Linux. Review skill sources at their pins and whenever updating them.
+- **PLANNED (V2):** doctor golden canary and `engine-self-check-failed`, OMP version warning, general per-capability switches, `ei symbol` and hard 5 s per-query budget. Review limits, noise presentation and upstream tool comparison when there is evidence; D64's module conditions are in §13.
 
 ## Owner-directed exception — Antigravity MCP adapter (2026-11-19)
 
 The owner has explicitly authorized **MAGY1** as a standalone adapter-only integration milestone, superseding the earlier general MCP deferral for this narrow read-only local transport only. Scope, tests and manual host gate: `docs/briefs/MAGY1-mcp.md`. Installation and configuration: `docs/integrations/antigravity.md`.
 
-Antigravity is a **consumer of the existing KSD Core**, not a second index or an alternative agent runtime: `AGY -> local MCP stdio -> KSD dist/core`; OMP remains unchanged and continues to own KSD policy injection, its approvals and commands. MAGY1 ships `ei_status` and `ei_impact` by default; the pinned `ei_workflow` reader is opt-in. Source-code writes, auto-merge, scripts from skills and AGY Engineering Policy injection are not provided.
+Antigravity consumes the existing KSD Core through local MCP stdio. Its default tools are `ei_status`, `ei_impact`, `ei_changes`, and `ei_search`; workflow is opt-in. It does not install the OMP policy, run skill scripts, edit source code, or merge.
 
 No other MCP host adapter, AGY native plugin/skill packaging or policy migration is authorized by this exception. Existing roadmaps and acceptance criteria for M2b/M3/M2c remain unchanged. Green mock/protocol tests on CI do **not** prove compatibility in live AGY; a macOS/Linux runtime smoke must be separately recorded before making that claim.
