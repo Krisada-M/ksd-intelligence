@@ -129,6 +129,9 @@ export function groupPrograms(ts, root, owners) {
 }
 // Default library files never change for one TypeScript install; programs share them.
 const libraryFiles = new Map();
+function isRedirectedSourceFile(sf) {
+    return 'redirectInfo' in sf && sf.redirectInfo !== undefined;
+}
 /**
  * A compiler host that returns the previous program's source file for every file it holds, so a
  * new program over the same files parses nothing again and has no checker yet. Library files are
@@ -142,8 +145,11 @@ export function createAnalysisHost(ts, options, previous) {
     // program, and its checker, alive for as long as the new one.
     const caseKey = (fileName) => ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase();
     const reusable = new Map();
-    for (const sf of previous?.getSourceFiles() ?? [])
-        reusable.set(caseKey(sf.fileName), sf);
+    for (const sf of previous?.getSourceFiles() ?? []) {
+        // TypeScript owns package redirects and expects the original parsed file from the host.
+        const parsed = isRedirectedSourceFile(sf) ? sf.redirectInfo.unredirected : sf;
+        reusable.set(caseKey(sf.fileName), parsed);
+    }
     host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) => {
         const old = reusable.get(caseKey(fileName));
         if (old !== undefined)

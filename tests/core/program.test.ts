@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import ts from 'typescript';
-import { groupPrograms, splitBy } from '../../src/core/indexing/program.js';
+import { createAnalysisHost, groupPrograms, splitBy } from '../../src/core/indexing/program.js';
 
 describe('analysis programs (D43, DESIGN §6.2.1)', () => {
   let root = '';
@@ -56,5 +56,38 @@ describe('analysis programs (D43, DESIGN §6.2.1)', () => {
     );
     assert.deepEqual(groups, []);
     assert.deepEqual(errors, ['missing/tsconfig.json: cannot be read or parsed']);
+  });
+
+  it('refreshes a program that resolves duplicate copies of the same dependency', async () => {
+    const rootNames = ['a', 'b'].map((app) => join(root, app, 'main.ts'));
+    for (const app of ['a', 'b']) {
+      const dependency = join(root, app, 'node_modules', 'dep');
+      await mkdir(dependency, { recursive: true });
+      await writeFile(
+        join(dependency, 'package.json'),
+        JSON.stringify({ name: 'dep', version: '1.0.0', types: 'index.d.ts' }),
+      );
+      await writeFile(join(dependency, 'index.d.ts'), "export declare const value: 'ok';\n");
+      await writeFile(
+        join(root, app, 'main.ts'),
+        "import { value } from 'dep';\nexport const result: 'ok' = value;\n",
+      );
+    }
+
+    const options = { module: ts.ModuleKind.Node16, types: [], noEmit: true };
+    const oldProgram = ts.createProgram({
+      rootNames,
+      options,
+      host: createAnalysisHost(ts, options, undefined),
+    });
+    oldProgram.getTypeChecker();
+    const refreshed = ts.createProgram({
+      rootNames,
+      options,
+      host: createAnalysisHost(ts, options, oldProgram),
+      oldProgram,
+    });
+
+    assert.deepEqual(refreshed.getSemanticDiagnostics(), []);
   });
 });
