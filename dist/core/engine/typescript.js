@@ -20,7 +20,8 @@ function ownPackage() {
     for (;;) {
         const file = join(dir, 'package.json');
         const pkg = existsSync(file) ? readJson(file) : null;
-        if (isRecord(pkg) && pkg.name === 'ksd-intelligence')
+        if (isRecord(pkg) &&
+            (pkg.name === 'ksd-intelligence' || pkg.name === '@krisada-m/ksd-intelligence'))
             return { file, pkg };
         const parent = dirname(dir);
         if (parent === dir)

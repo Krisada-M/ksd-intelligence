@@ -1,10 +1,32 @@
 {
-  "name": "ksd-intelligence",
+  "name": "@krisada-m/ksd-intelligence",
   "version": "0.2.0",
-  "private": true,
   "type": "module",
   "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
   "license": "MIT",
+  "author": "Krisada M. (https://github.com/Krisada-M)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Krisada-M/ksd-intelligence.git"
+  },
+  "homepage": "https://github.com/Krisada-M/ksd-intelligence#readme",
+  "bugs": {
+    "url": "https://github.com/Krisada-M/ksd-intelligence/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "files": [
+    "dist/",
+    "scripts/agy-mcp.mjs",
+    "scripts/mcp/",
+    "skills/",
+    "skills.lock.json",
+    "skills.registry.json",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=22.5"
   },
@@ -18,7 +40,7 @@
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "bin": {
     "ei": "./dist/adapters/cli/main.js",
