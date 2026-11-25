@@ -6,8 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { cases } from './cases.mjs';
 
 const built = fileURLToPath(new URL('../dist/adapters/', import.meta.url));
-// OMP resolves the local Ollama tag by suffix; the fully qualified tag is not accepted.
-const model = 'gpt-6-luna';
+const model = 'openai-codex/gpt-5.6-luna';
 const preflight = spawnSync('omp', ['--version'], { encoding: 'utf8' });
 if (preflight.error?.code === 'ENOENT') {
   console.log('NOT VERIFIED: omp not installed');
@@ -153,6 +152,8 @@ for (const spec of cases) {
       '-p',
       '--model',
       model,
+      '--thinking',
+      'low',
       '-e',
       join(built, 'omp/extension.js'),
       '--mode',
