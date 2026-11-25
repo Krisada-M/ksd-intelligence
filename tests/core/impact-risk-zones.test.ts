@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendFile, chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, chmod, mkdir, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
@@ -20,7 +20,13 @@ import {
 } from '../../src/core/kernel/verdict.js';
 import { kindOf, neverReadOf } from '../../src/core/workspace/scan.js';
 import { openPublished } from '../../src/storage/sqlite.js';
-import { ensureRuntime, fixtureRepo, impactOf, riskZonesOf } from './index-helpers.js';
+import {
+  ensureRuntime,
+  fixtureRepo,
+  impactOf,
+  readReleaseSnapshot,
+  riskZonesOf,
+} from './index-helpers.js';
 
 before(ensureRuntime);
 
@@ -479,8 +485,8 @@ describe('M2c Round 1 — risk zones and verdict escalation', () => {
         'default',
       ),
     });
-    assert.equal(p01, (await readFile(join(SNAP_DIR, 'P01.txt'), 'utf8')).trimEnd());
-    assert.equal(p02, (await readFile(join(SNAP_DIR, 'P02.txt'), 'utf8')).trimEnd());
+    assert.equal(p01, await readReleaseSnapshot(join(SNAP_DIR, 'P01.txt')));
+    assert.equal(p02, await readReleaseSnapshot(join(SNAP_DIR, 'P02.txt')));
   });
 
   it('matchedRiskZones and neverReadOf handle paths containing newline characters', () => {

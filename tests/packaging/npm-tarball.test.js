@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,12 +24,18 @@ describe('npm tarball (D65)', () => {
     assert.notEqual(manifest.private, true, 'private package cannot be published');
     assert.equal(manifest.publishConfig?.access, 'public');
 
-    const packed = JSON.parse(
-      execFileSync('npm', ['pack', '--json', '--ignore-scripts', '--pack-destination', packDir], {
-        cwd: repo,
-        encoding: 'utf8',
-      }),
-    )[0];
+    const packResult = JSON.parse(
+      execFileSync(
+        'npm',
+        ['pack', '.', '--json', '--ignore-scripts', '--pack-destination', packDir],
+        {
+          cwd: repo,
+          encoding: 'utf8',
+        },
+      ),
+    );
+    const packed = Array.isArray(packResult) ? packResult[0] : packResult[scope];
+    assert.equal(packed?.name, scope, 'npm pack must describe the local package');
     const paths = packed.files.map((file) => file.path);
     for (const required of ['LICENSE', 'README.md', 'dist/adapters/cli/main.js']) {
       assert.ok(paths.includes(required), `tarball lacks ${required}`);
@@ -48,6 +54,28 @@ describe('npm tarball (D65)', () => {
       { cwd: project, stdio: 'pipe' },
     );
     const ei = join(project, 'node_modules', '.bin', 'ei');
+    const binDir = join(project, 'node_modules', '.bin');
+    const help = [
+      ['ei', /usage:[\s\S]*mcp\s+--root/],
+      ['ksd-check-changed', /usage:.*--diff.*--eslint-report/i],
+      ['ksd-review-verdict', /usage:.*--report/i],
+    ].map(([name, usage]) => ({
+      name,
+      usage,
+      ...spawnSync(join(binDir, name), ['--help'], { encoding: 'utf8', cwd: target }),
+    }));
+    assert.deepEqual(
+      help.map(({ name, status, stderr }) => ({ name, status, stderr })),
+      help.map(({ name }) => ({ name, status: 0, stderr: '' })),
+    );
+    for (const { stdout, usage } of help) assert.match(stdout, usage);
+
+    // The npm launchers still delegate non-help invocations to the frozen policy bins.
+    for (const name of ['ksd-check-changed', 'ksd-review-verdict']) {
+      const result = spawnSync(join(binDir, name), [], { encoding: 'utf8', cwd: target });
+      assert.equal(result.status, 2);
+      assert.match(result.stderr, /Usage:/);
+    }
 
     // `ei` with no arguments prints usage and exits 2; it must not crash on a missing file.
     let usage = '';

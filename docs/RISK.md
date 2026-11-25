@@ -9,9 +9,9 @@
 
 The library is advisory and read-only, so it cannot stop a bad edit. It limits risk in three ways:
 
-1. **Never overstate what it knows.** Two independent methods must agree before a result is called complete (§3.1).
-2. **Turn knowledge into a required action.** Every impact answer carries one verdict: a level and one of four actions, from "proceed" to "ask the owner first" (§2). The base verdict comes from completeness and factors; risk zones can only raise it.
-3. **Leave a trail.** Every tool call is logged without source text, so the owner can see afterwards what the agent checked and catch any wrong `low` (§5).
+1. **Never overstate what it knows.** Semantic traversal and the name cross-check expose gaps (§3.1); neither can prove runtime coverage.
+2. **Turn knowledge into an action.** Every resolved impact answer carries a verdict (§2). Risk zones can only raise it.
+3. **Leave a trail.** Calls across OMP, CLI and AGY are logged without source text (§5). Audit failures are advisory and do not stop analysis.
 
 Enforcement stays where it already is: OMP approvals, KSD policy, and the owner.
 
@@ -60,7 +60,7 @@ Base verdict (no zone): picture incomplete → `unknown`; complete with a factor
 
 Several zones: take the strongest action. The verdict is the first line of the tool result.
 
-The agent cannot override a verdict. The owner can, by saying so in the session; the library does not track acknowledgements (it is stateless), the audit log records the verdict that was given.
+The verdict is advisory. Agents are instructed to follow it; only host permissions and the owner can stop actual edits. The audit log records the verdict given, not approval acknowledgements.
 
 ### 2.4 `ei_changes`: impact of what was actually changed
 
@@ -122,23 +122,23 @@ The tool result states the limit in plain words when a boundary factor is presen
 
 ### 3.3 Other correctness guards
 
-- **Freshness on every query** by content hash (already in DESIGN).
-- **Version stamp** in every result: engine version and TypeScript version used.
-- **TypeScript source (R5, amended by DESIGN D30):** the library's bundled, pinned `typescript` by default, so no code from the analysed repository runs inside OMP and results do not vary by repo. A project can opt in to its own copy with `impact.useWorkspaceTypescript: true`. Syntax the bundled version cannot parse is reported as `unsupported-syntax`.
-- **`ei doctor` canary:** runs the golden fixture against the TypeScript version in use; a failing case marks the engine `degraded` in `ei_status`, and every impact result then carries status `partial` with reason `engine-self-check-failed`.
-- **False-low stop rule** (already in DESIGN §13): one wrong `low` on a real change halts the roadmap until fixed and a regression case is added to the golden file.
+- **Freshness:** stat probe by default; content hash for changes, explicit index/doctor operations, or `impact.freshness: "hash"`.
+- **Version stamp:** engine and TypeScript versions on indexed analysis results.
+- **TypeScript:** `ei setup` installs the pinned runtime. `impact.useWorkspaceTypescript: true` explicitly trusts the project copy. V1 reports parser failures as `parse-error`; `unsupported-syntax` detection is **PLANNED (V2)**.
+- **PLANNED (V2): `ei doctor` canary** and `engine-self-check-failed`. V1 `ei doctor --deep [--differential N]` compares the published index with a cold build and optional compiler references; it does not run a golden canary or set persistent degradation.
+- **False-low stop rule** (DESIGN §13): one wrong `low` on a real change stops release or roadmap work until fixed and covered by an owner-approved regression.
 
 ## 4. Limiting integration and runtime risk
 
 | Risk | Mechanism |
 |---|---|
-| Index work freezes the OMP session | Engine runs in a **child process** (DESIGN D45); the OMP process only sends requests. Verified need: Bun ignores worker memory limits (M1b) |
-| A query hangs | Per-call budget (5 s query; first build blocks up to 60 s with progress, D35). On expiry: stop waiting, keep the child building in the background, return guidance; a child that stops responding is killed and restarted lazily. Session continues |
-| Memory growth on a large repo | `impact.maxMemoryMb` (default min(8 GB, half of RAM)); Node child gets the heap flag, Bun child is killed by the parent's RSS watchdog; on exceed, `index-failed` plus `ei_status` advice to narrow `impact.include` or raise the limit. oh-my-pi needed 6 GB heap (M1b) |
-| Library must be turned off fast | `EI_DISABLED=1` → extension registers no tools. Per-capability `enabled` flags in config. Either works without uninstalling |
-| Work in progress breaks daily use | **Stable channel:** daily OMP loads the extension from a git worktree checked out at the last accepted milestone tag (`m0`, `m1`, …). Development builds are loaded only with an explicit `--extension` path |
-| OMP upgrade changes the extension API | `ei_status` compares the running OMP version with the last smoke-verified version recorded in the repo and warns on mismatch; re-run the M1 scenarios |
-| KSD and library disagree | Precedence header (KSD wins) stays first in every result; the library never injects per-turn text |
+| Index work freezes the OMP session | Engine in a **child process** (D45/D50); the OMP process sends requests. Bun ignored worker memory limits in M1b |
+| A query hangs | Bounded index-build wait with progress and guidance or explicitly stale results. A hard **5 s query budget is PLANNED (V2)** |
+| Memory growth on a large repo | `impact.maxMemoryMb` (default smaller of 8192 MiB and half of RAM); Node child heap flag, Bun RSS watchdog. Use `ei_status` to narrow `impact.include` or raise the limit |
+| Library must be turned off fast | `EI_DISABLED=1` disables EI tools; `ENGINEERING_PROXY_DISABLED=1` controls policy injection and delegated review. General per-capability `enabled` flags are **PLANNED (V2)**; `search.enabled` already controls search |
+| Work in progress breaks daily use | Stable OMP channel is the accepted `main` marketplace catalog (D40/D41); npm publishes only on matching version tags (D65) |
+| OMP upgrade changes the extension API | Re-run M1 scenarios. An OMP-version warning in `ei_status` is **PLANNED (V2)** |
+| KSD and library disagree | KSD policy outranks skill text; the workflow tool always puts the precedence header first |
 
 Every `execute` is wrapped: any thrown error becomes an `isError` result with a code. Nothing propagates into OMP.
 
@@ -160,9 +160,9 @@ Append-only JSON Lines at `~/.cache/ksd-intelligence/<repo-id>/audit.jsonl`, dir
 
 **Skills** (in addition to the trust chain in DESIGN §6.1):
 
-- `sources check --write` prints a **content lint** for each SKILL.md about to be pinned: shell pipes to interpreters (`curl … | sh`), instructions to skip tests or approvals, "ignore previous" phrasing, external URLs, references to scripts. It is a reading aid for the owner; it does not block, and it is never described as detecting prompt injection.
-- Updating a pin always goes: pull → read the diff of changed SKILL.md files → lint → `--write` → commit the lock.
-- `ei_status` shows lock state; any `HASH_MISMATCH` or `COMMIT_MISMATCH` is shown at the top.
+- Skill content lint is included in local skill lifecycle checks (`ei skills …`). It is a reading aid, not prompt-injection detection.
+- Review the updated local checkout before repinning it. `ei sources check` compares reviewed commits and hashes; `--write` explicitly updates the lock.
+- Per-provider pin status in `ei_status` is **PLANNED (V2)**; use `ei sources check` in V1.
 
 **Data:**
 
@@ -171,10 +171,10 @@ Append-only JSON Lines at `~/.cache/ksd-intelligence/<repo-id>/audit.jsonl`, dir
   - **Excluded by name only when the file is not code:** `**/*credentials*`, `**/secrets/**`. Code kinds (`ts`, `tsx`, `js`, `jsx`, `mjs`, `cjs`, `d.ts`) are never excluded by these name patterns. Reason: on oh-my-pi the name patterns removed 17 real source files (credential and secret handling code), which is a blind spot exactly where a wrong impact answer costs most. Files of kind `json` and `other` matching these names stay excluded and their content is never read.
   - The owner can still exclude any path, code included, with `impact.exclude`.
   - Excluded files still count for zone matching by path, never by content. The scan summary and `ei_status` report the number of files excluded by the secret rules.
-- Cache holds symbol tables and edges, not file contents (beyond what TypeScript keeps in memory). **PROPOSED exception (M6a, `D60`):** For **indexable code files that parse cleanly (`extraction = 'ok'`) only**, the FTS5 search table (`declarations_fts`) stores each non-module declaration's whitespace-collapsed signature text (capped at `400` characters) and the first paragraph of its JSDoc comment (capped at `400` characters). Full file contents, function/class bodies beyond those caps, `.env*`/`*.pem`/`*.key`, excluded directories, non-code secret files, and `parse-error`/`lexical`/`not-in-program` files are never stored. The cache directory and SQLite file remain `0700`/`0600`.
-- Cache and audit directories are created `0700`. `ei cache clear` removes everything for a repo.
-- GitLab token: env only, never logged, never cached; responses cached only as verification reports with status, not bodies.
-- No telemetry, no network from library code except the GitLab adapter when enabled.
+- SQLite stores symbol tables and edges, not full files. Accepted M6a exception (D60/D62): FTS5 stores whitespace-collapsed declaration signatures and the first JSDoc paragraph, each capped at 400 characters, from successful indexing only. Do not put secrets in ordinary source, signatures, or comments.
+- Per-repository cache directory: `0700`; index and audit file: `0600`. `ei cache clear` removes that repository's index and audit, not the shared runtime.
+- **PLANNED (V2):** GitLab adapter and its env-only token rules; standalone `ei symbol`.
+- V1 has no telemetry. The owner-run `ei setup` can contact the package registry. The local MCP server does not listen on a network port.
 
 ## 7. Limiting the risk of an agent building this library
 
@@ -185,27 +185,27 @@ The prototype already showed the failure mode: a test whose name claimed a branc
 3. **Independent review.** Each milestone report is reviewed by someone other than the implementing agent before the tag is cut.
 4. **One milestone at a time, tagged.** Accepted work gets a tag; the stable channel only moves on a tag.
 5. **Evidence labels** (`VERIFIED / MOCK-ONLY / NOT VERIFIED`) on every claim, with commands and output.
-6. **Gated growth.** V2 modules start only when their dogfood-log gate is met (DESIGN §13).
+6. **Gated growth.** D64 replaced the original five V2 entry gates with disabled-by-default shipping and measured value checks. Conditional M4–M6 candidates still need separate evidence.
 
 ## 8. Risk register
 
 | # | Risk | Main mechanism | Lands in | Residual risk |
 |---|---|---|---|---|
-| 1 | Result marked complete but misses a caller | Name cross-check §3.1; golden + freshness tests; canary | M2 | Callers with a different name reached only at runtime (reflection, DI containers) |
-| 2 | Stale answer | Content-hash freshness per query; incremental == full test | M2 | None known within index scope |
+| 1 | Result marked complete but misses a caller | Name cross-check, golden and freshness tests; canary **PLANNED (V2)** | M2 | Runtime reflection and DI |
+| 2 | Stale answer | Stat probe, full-hash review, incremental == full | M2 | Same-size/restored-mtime edits can evade the stat probe |
 | 3 | Agent trusts `low` in a dangerous area | Risk zones + action table §2 | M2b | Zone globs wrong or missing for a project |
 | 4 | Schema / native change analysed as safe | Boundary factors; `unindexedChanges`; migration zone → `ask-owner` | M2b | Column-level effects still not analysed, only flagged |
 | 5 | Review misses what the diff affects | `ei_changes` §2.4 | M2b | Agent does not call it (visible in audit) |
 | 6 | Agent ignores the verdict | Verdict first in result; stage protocol; audit trail | M2b | Advisory only; OMP approvals and owner are the real stop |
 | 7 | Tampered or changed skill text | sha256 + commit lock; lint on re-pin | Done / M2b | Malicious text present at first pin and not noticed by the owner |
-| 8 | Library freezes or crashes OMP | Worker thread, budgets, wrapped execute, kill switch | M2 | Worker support on OMP runtime unverified until M2 |
-| 9 | Dev build breaks daily work | Stable channel on tags | M1 | Owner loads a dev build by hand |
+| 8 | Library freezes or crashes OMP | Contained child, existing time/memory limits, wrapped execute, kill switch | M2 | Hard 5 s per-query budget **PLANNED (V2)** |
+| 9 | Dev build breaks daily work | Stable marketplace `main` and matching npm tags | M1c/D65 | Owner loads a dev build by hand |
 | 10 | Secrets in cache or logs | Excludes, no-content cache, redacted audit, env-only token | M2 | Secrets hard-coded in ordinary source files are indexed as code |
 | 11 | Vacuous tests, self-graded work | Owner oracle, mutation smoke, independent review | M2 onward | Mutations list is finite |
-| 12 | OMP upgrade breaks the adapter | Version check in `ei_status`; re-run smoke | M1 | Silent behavioural change with same API |
+| 12 | OMP upgrade breaks the adapter | Re-run live smoke; version check **PLANNED (V2)** | V1/V2 | Silent behavioural change with same API |
 | 13 | Scope creep for a solo owner | V2 gates; out-of-scope list | Now | Owner overrides the gates |
 
-Added with the owner's decision to bring six items forward (DESIGN D28):
+The following are **PLANNED (V2)** conditional designs, except SQLite (D46 chose built-in SQLite and dropped the fallback):
 
 | # | Risk | Main mechanism | Lands in | Residual risk |
 |---|---|---|---|---|
@@ -214,7 +214,7 @@ Added with the owner's decision to bring six items forward (DESIGN D28):
 | 16 | Watcher misses an event and an answer is stale | Watcher is never the authority: probe on overflow/error/start/interval; `ei_changes` and rebuilds full-hash; identical-results test with watcher on and off | M5 | Up to one probe interval of extra latency, never a wrong answer |
 | 17 | Semantic search hit taken as fact | `semantic` label on every such hit; search never feeds risk or completeness | M6 | Agent edits the wrong function suggested by similarity; `ei_impact` on it still shows real callers |
 | 18 | Embedding model adds a heavy dependency, a download, or a licence problem | Optional; owner-run install only; local and replaceable; lexical tier works without it; choice made in M6 after measuring | M6 | Model quality on mixed Thai/English identifiers unknown until tried |
-| 19 | Built-in SQLite unavailable or different on OMP's runtime | Checked first in M2a; storage interface with sharded-JSON fallback | M2a | Two storage paths to maintain if the fallback is needed |
+| 19 | Built-in SQLite unavailable or different across runtimes | Node ≥ 22.5 or OMP's compatible Bun host; version/status checks (D46) | M2a | An unsupported runtime must report degradation |
 | 20 | Scope growth overwhelms a solo owner | M4–M6 are separate milestones with their own exit gates; dogfooding starts after M2b and can reorder them | Now | Review load: six more milestone reports to check |
 
 **Not addressed by design:** concurrency and runtime bugs, business-logic correctness, effects on external consumers of public packages (flagged, not analysed), and anything the agent does outside these tools.
@@ -226,11 +226,11 @@ Added with the owner's decision to bring six items forward (DESIGN D28):
 | R1 | One verdict (level + four actions) derived from completeness and factors, raised by risk zones | Confirmed (as reframed by DESIGN D32) |
 | R2 | Ship the four default risk zones (payments, auth, migrations, prod-config), editable per project | Confirmed |
 | R3 | Add `ei_changes`; base defaults to merge-base with the default branch | Confirmed |
-| R4 | Name cross-check with new reason codes `unresolved-name-match`, `string-name-match`, and `engine-self-check-failed` | Confirmed |
-| R5 | `typescript` becomes a runtime dependency: **bundled and pinned by default, workspace copy by opt-in** (amended) | Confirmed as amended |
-| R6 | Impact engine in a worker thread with time and memory budgets | Confirmed |
+| R4 | Name cross-check with `unresolved-name-match` and `string-name-match`; `engine-self-check-failed` **PLANNED (V2)** | Confirmed; canary not shipped |
+| R5 | Use pinned TypeScript provisioned by `ei setup`; workspace copy by opt-in (D44) | Confirmed as amended |
+| R6 | Engine child process, not worker thread (D45/D50) | Confirmed as amended |
 | R7 | Audit log as specified (no source text), with `ei audit` | Confirmed |
-| R8 | Stable channel: daily OMP loads from the last accepted tag | Confirmed |
+| R8 | Stable marketplace on accepted `main`; matching tags publish npm (D40/D41/D65) | Confirmed as amended |
 | R9 | Mutation smoke in every milestone's acceptance from M2 on | Confirmed |
 
 Also confirmed: route patterns in `impact.routes` accept globs.
@@ -239,11 +239,11 @@ Also confirmed: route patterns in `impact.routes` accept globs.
 
 | Milestone | Mechanisms |
 |---|---|
-| M1 | `ei_status` OMP version check noted for M2a; stable channel set up after acceptance |
-| M1b | Worker, memory and runtime facts measured |
-| M2a | Worker + budgets, kill switch, default excludes, version stamp, canary, differential and randomised tests |
-| M2b | Name cross-check, boundary factors, route globs, reach and base verdict, mutation smoke |
-| M2c | Risk zones, `ei_changes`, stage-protocol lines in workflow header, audit log + `ei audit`, skill content lint |
+| M1 / M1c | Marketplace stable channel; OMP version warning **PLANNED (V2)** |
+| M1b | Runtime spike, including rejected worker memory limit |
+| M2a | Child process, kill switch, default excludes, stamps, differential and randomized tests; canary **PLANNED (V2)** |
+| M2b | Name cross-check, boundary factors, manual route globs, reach and base verdict |
+| M2c / M6a | Risk zones, `ei_changes`, stage protocol, audit, and lexical search |
 | M3 | Dogfood with audit summaries; false-low stop rule in force |
 
 ## Appendix A. Golden cases

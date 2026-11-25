@@ -44,7 +44,7 @@ export const BASE_TOOLS = Object.freeze([
   {
     name: 'ei_impact',
     description:
-      'Read-only TS/JS symbol impact with provenance, callers, completeness and recommended next checks. An incomplete result is not evidence of safety. The repository root is fixed by server configuration.',
+      'Before editing a function, method, class, type or exported constant, call this even for comment-only edits. It shows callers by depth with file:line, how far the change reaches, the tests that reach it, and whether the picture is complete. Accepts up to 5 targets as names (`calculateFee`, `PaymentService.charge`), `path#name`, `path:line`, or a file path. Read-only. An incomplete result is not evidence of safety. The repository root is fixed by server configuration.',
     inputSchema: objectSchema(
       {
         targets: {
@@ -73,7 +73,7 @@ export const BASE_TOOLS = Object.freeze([
   {
     name: 'ei_changes',
     description:
-      'Read-only TS/JS diff impact: compares uncommitted working-tree changes against the merge-base with the default branch (or an explicit base ref), lists changed symbols, callers, tests, unindexed changes and one verdict. The repository root is fixed by server configuration.',
+      'Call with no arguments when asked to review the current diff, even if you did not edit or the working tree is clean. Also call after editing code, before reporting the work done. It reads uncommitted changes and lists changed symbols, their impact, tests to run, and files it cannot analyse. A post-edit result with no tests does not waive an earlier ei_impact run-tests verdict. Read-only. The repository root is fixed by server configuration.',
     inputSchema: objectSchema({
       base: {
         type: 'string',

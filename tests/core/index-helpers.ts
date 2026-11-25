@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { cpSync, readFileSync } from 'node:fs';
-import { mkdtemp, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -21,6 +21,20 @@ import { openPublished } from '../../src/storage/sqlite.js';
 const run = promisify(execFile);
 
 export const FIXTURE = fileURLToPath(new URL('../../../tests/fixtures/mono', import.meta.url));
+
+export async function readReleaseSnapshot(path: string): Promise<string> {
+  const manifest: unknown = JSON.parse(
+    await readFile(new URL('../../../package.json', import.meta.url), 'utf8'),
+  );
+  assert.ok(manifest && typeof manifest === 'object' && 'version' in manifest);
+  const { version } = manifest;
+  assert.ok(typeof version === 'string');
+  const snapshot = await readFile(path, 'utf8');
+  // Keep accepted bytes unchanged while still requiring the exact release stamp in rendered output.
+  return snapshot
+    .trimEnd()
+    .replace(/^(— index [^\n]+ · engine )0\.2\.0$/gm, (_, prefix: string) => prefix + version);
+}
 
 /**
  * The pinned TypeScript runtime in this process's HOME, which `npm test` isolates per file.

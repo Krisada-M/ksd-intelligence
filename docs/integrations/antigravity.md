@@ -1,6 +1,6 @@
 # Antigravity (AGY) — local MCP integration
 
-**Status:** MCP stdio adapter merged to `main`. Live AGY on Linux **VERIFIED**; live AGY on macOS **NOT VERIFIED**. This adapter does not transfer KSD's OMP policy injection, slash commands, approval rules or model routing into Antigravity.
+**Status:** MCP stdio adapter merged to `main`. Earlier schema 4 build: live AGY on Linux **VERIFIED** ([MAGY1 record](../reviews/MAGY1-self-review.md)). Live AGY on the 1.0.0 candidate and live AGY on macOS are **NOT VERIFIED**. This adapter does not transfer OMP policy, commands or approvals into Antigravity.
 
 ## Architecture
 
@@ -49,8 +49,8 @@ Avoid relying on the IDE's process working directory: it may be different from t
 |---|---|---|
 | `ei_status` | Default | Read-only index status and setup guidance |
 | `ei_impact` | Default | Same core query and evidence-based rendering used in OMP |
-| `ei_changes` | Needs `enabledTools` | Changed-code review (M2c) |
-| `ei_search` | Needs `enabledTools` | Lexical declaration search (M6a) |
+| `ei_changes` | Default | Changed-code review (M2c) |
+| `ei_search` | Default | Lexical declaration search (M6a) |
 | `ei_workflow` | **Opt-in only** via `KSD_MCP_WORKFLOW=1` in the server's `env` | Loads strictly pinned local SKILL.md sources; no scripts are executed |
 
 For `ei_workflow`, configure the reviewed `EI_MATT_ROOT`, `EI_POTETO_ROOT`, and `EI_OSMANI_ROOT` environment variables for the local checkouts. Pass `potetoMode: true` only when the user explicitly opts into deep multi-phase mode; `poteto-mode` is never enabled automatically. Do not enable a second automatic upstream skills router; KSD stays the primary orchestrator. Pinned skills can still contain untrusted instructions.

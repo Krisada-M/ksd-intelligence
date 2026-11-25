@@ -18,18 +18,17 @@ In scope, in order:
 | 2 | M1 ✅ | `ei_workflow` smoke-tested in the real installed OMP | `docs/briefs/M1-omp-smoke.md` |
 | 3 | M1b ✅ | Runtime spike: facts only, no product code | `docs/briefs/M1b-runtime-spike.md` |
 | 3b | M1c ✅ | Merge KSD Engineering Proxy as `src/policy/`; one plugin; marketplace packaging | `docs/briefs/M1c-ksd-merge.md` |
-| 3c | M1d | macOS + Linux CI baseline and platform compatibility gates (no engine code) | `docs/briefs/M1d-platform-baseline.md` |
+| 3c | M1d ✅ | macOS + Linux CI baseline; live smoke remains a separate release gate | `docs/briefs/M1d-platform-baseline.md` |
 | 4 | M2a ✅ | Engine host, store, scan, index, `ei_status` (two parts, stop between) | `docs/briefs/M2a-index.md` |
 | 5 | M2b ✅ | `ei_impact` passing the engine golden cases (merged #32) | `docs/briefs/M2b-impact.md` |
-| 6 | M3 | Dogfood on real repositories (owner-led, continues alongside later milestones) | `docs/briefs/M3-dogfood.md` |
-| 6b | M3b | Measured comparison with other code-intelligence tools (research; no product code) | `docs/briefs/M3b-compare.md` (Round 0 first) |
-| 7 | M2c | Risk zones, `ei_changes`, audit log (prioritize changed-code review) | `docs/briefs/M2c-changes.md` (draft; Round 0 first) |
-| 8 | M6a | `ei_search`, lexical (no embedding dependency) | `docs/briefs/M6a-search.md` (draft; Round 0 first) |
-| 9 | M4a | Route detection (Next.js, Expo Router, Hono) | `docs/briefs/M4a-routes.md` (draft; gated per detector) |
-| 10 | M4b | Heuristic bridges, one proven flow at a time | `docs/briefs/gated-M4b-M5-M6b.md`; gated by dogfood evidence |
-| 11 | M5 | Session watcher, worktree seeding | same file; optional, gated by measured need |
-| 12 | M6b | Semantic search (optional local embeddings) | same file; deferred, separate owner approval |
-| 13 | V1 close-out | Audit claims against code, release candidate, fresh-install rehearsal | `docs/briefs/V1-closeout.md` (draft) |
+| 6 | M3 ✅ | Exit decisions recorded (D63); owner-led dogfood continues | `docs/briefs/M3-dogfood.md` |
+| 6b | M3b | Comparative research only; no findings used for this candidate | `docs/briefs/M3b-compare.md` |
+| 7 | M2c ✅ | Risk zones, `ei_changes`, audit log and stage protocol (#34) | `docs/briefs/M2c-changes.md` |
+| 8 | M6a ✅ | `ei_search`, lexical only (#34, D62) | `docs/briefs/M6a-search.md` |
+| 9 | M4a | Framework route detection skipped for V1 (D61) | `docs/briefs/M4a-routes.md` |
+| 10 | M4b · M5 · M6b | PLANNED (V2); gates not met (D63) | `docs/briefs/gated-M4b-M5-M6b.md` |
+| 11 | MAGY1 ✅ | Local AGY stdio bridge; live host acceptance tracked separately | `docs/briefs/MAGY1-mcp.md` |
+| 12 | V1 close-out | 1.0.0 candidate; owner release gates remain | `docs/briefs/V1-closeout.md`, `docs/release-checklist.md` |
 
 ## V2 (owner override of the entry gates, D64; starts after `v1.0.0`)
 

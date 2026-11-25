@@ -329,7 +329,7 @@ function registerEiImpact(
     name: 'ei_impact',
     label: 'KSD Code Impact',
     description:
-      'Before you change a function, method, class, type or exported constant, call this to see what depends on it: callers by depth with file:line, how far the change reaches, the tests that reach it, and whether the picture is complete. Accepts up to 5 targets as names (`calculateFee`, `PaymentService.charge`), `path#name`, `path:line`, or a file path. Read-only.',
+      'Before editing a function, method, class, type or exported constant, call this even for comment-only edits. It shows callers by depth with file:line, how far the change reaches, the tests that reach it, and whether the picture is complete. Accepts up to 5 targets as names (`calculateFee`, `PaymentService.charge`), `path#name`, `path:line`, or a file path. Read-only.',
     parameters: z.object({
       targets: targetsSchema,
       depth: depthSchema,
@@ -472,7 +472,7 @@ function registerEiChanges(
     name: 'ei_changes',
     label: 'KSD Changed Code Impact',
     description:
-      'After you have edited code and before you report the work as done, call this with no arguments. It reads your uncommitted changes, lists which symbols changed, what they affect, which tests to run, and any changed files it cannot analyse. Read-only.',
+      'Call with no arguments when asked to review the current diff, even if you did not edit or the working tree is clean. Also call after editing code, before reporting the work done. It reads uncommitted changes and lists changed symbols, their impact, tests to run, and files it cannot analyse. A post-edit result with no tests does not waive an earlier ei_impact run-tests verdict. Read-only.',
     parameters: z.object({
       base: baseSchema,
       depth: depthSchema,

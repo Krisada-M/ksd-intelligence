@@ -605,4 +605,55 @@ describe('M2c Round 3 — audit log, ei audit, ei cache clear', () => {
       await cleanup(work);
     }
   });
+
+  it('prints the same text from CLI and registered OMP handlers', async (t) => {
+    const work = await realpath(await mkdtemp(join(tmpdir(), 'ei-tool-parity-')));
+    t.after(() => cleanup(work));
+    const repo = join(work, 'mono');
+    cpSync(FIXTURE, repo, { recursive: true });
+    const git = (args: string[]) => execFileAsync('git', args, { cwd: repo });
+    await git(['init', '-q', '-b', 'main']);
+    await git(['add', '.']);
+    await git([
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.invalid',
+      'commit',
+      '-qm',
+      'base',
+    ]);
+    const lockPath = join(work, 'skills.lock.json');
+    await writeFile(lockPath, JSON.stringify(emptyLock()));
+    await writeSkillFile(work, 'matt:diagnosing-bugs', FRONTMATTER_BODY('diagnosing-bugs', 'BODY'));
+    const env = { ...process.env, EI_MATT_ROOT: work };
+    const { pi, registered } = mockPi();
+    extension(pi, { env, lockPath, createPolicyExtension: () => {} });
+    const runCli = (args: string[]) =>
+      execFileAsync(process.execPath, [CLI_ENTRY, ...args], { cwd: repo, env });
+    await runCli(['index']);
+    const task = 'fix bug';
+    const stage = 'investigate';
+    const type = 'bug';
+    const checks = [
+      { name: 'impact', params: { targets: ['calculateFee'] }, args: ['impact', 'calculateFee'] },
+      { name: 'changes', params: {}, args: ['changes'] },
+      { name: 'search', params: { query: 'calculateFee' }, args: ['search', 'calculateFee'] },
+      { name: 'status', params: {}, args: ['status'] },
+      {
+        name: 'workflow',
+        params: { task, stage, type },
+        args: ['load', '--task', task, '--stage', stage, '--type', type, '--lock', lockPath],
+      },
+    ];
+    for (const { name, params, args } of checks) {
+      await t.test(name, async () => {
+        const tool = registered.find((candidate) => candidate.name === `ei_${name}`);
+        assert.ok(tool);
+        const result = await tool.execute(name, params, undefined, undefined, { cwd: repo });
+        assert.notEqual(result.isError, true);
+        assert.equal((await runCli(args)).stdout.trimEnd(), result.content[0]?.text.trimEnd());
+      });
+    }
+  });
 });

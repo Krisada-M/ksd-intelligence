@@ -1,6 +1,6 @@
 {
   "name": "@krisada-m/ksd-intelligence",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "type": "module",
   "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
   "license": "MIT",
@@ -44,8 +44,8 @@
   },
   "bin": {
     "ei": "dist/adapters/cli/main.js",
-    "ksd-check-changed": "dist/policy/check-changed.js",
-    "ksd-review-verdict": "dist/policy/review-verdict.js"
+    "ksd-check-changed": "dist/adapters/cli/check-changed.js",
+    "ksd-review-verdict": "dist/adapters/cli/review-verdict.js"
   },
   "exports": {
     ".": "./dist/adapters/omp/extension.js",

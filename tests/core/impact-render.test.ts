@@ -19,7 +19,7 @@ import { ImpactSession } from '../../src/core/impact/session.js';
 import { loadWorkspace } from '../../src/core/engine/workspace.js';
 import type { ImpactNode, ImpactResult } from '../../src/core/kernel/types.js';
 import { openPublished } from '../../src/storage/sqlite.js';
-import { fixtureRepo, impactOf } from './index-helpers.js';
+import { fixtureRepo, impactOf, readReleaseSnapshot } from './index-helpers.js';
 
 const execFileAsync = promisify(execFile);
 const SNAP_DIR = join(process.cwd(), 'tests/snapshots/impact');
@@ -102,7 +102,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       ],
     ];
     for (const [file, rendered] of cases) {
-      const expected = (await readFile(join(SNAP_DIR, file), 'utf8')).trimEnd();
+      const expected = await readReleaseSnapshot(join(SNAP_DIR, file));
       assert.equal(rendered, expected, `snapshot ${file}`);
       assertNoEnvironmentLeak(rendered, repo, file);
       if (file !== 'C15.txt' && file !== 'batch-3.txt') {
@@ -132,7 +132,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
             'packages/shared/src/many.ts#tiny',
           ),
         );
-        const expected = (await readFile(join(SNAP_DIR, 'C26.txt'), 'utf8')).trimEnd();
+        const expected = await readReleaseSnapshot(join(SNAP_DIR, 'C26.txt'));
         assert.equal(rendered, expected, 'C26.txt');
         assertOneVerdict(rendered, 'C26.txt');
       } finally {
@@ -160,7 +160,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
         const rendered = renderAnswer(
           new ImpactQuery(d51Db, impactOf(d51Repo), { riskZones: [] }).query('Usage.cost.input'),
         );
-        const expected = (await readFile(join(SNAP_DIR, 'd51-parent.txt'), 'utf8')).trimEnd();
+        const expected = await readReleaseSnapshot(join(SNAP_DIR, 'd51-parent.txt'));
         assert.equal(rendered, expected, 'd51-parent.txt');
         assertOneVerdict(rendered, 'd51-parent.txt');
       } finally {
@@ -205,7 +205,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
             3,
           ),
         );
-        const expected = (await readFile(join(SNAP_DIR, 'over-budget.txt'), 'utf8')).trimEnd();
+        const expected = await readReleaseSnapshot(join(SNAP_DIR, 'over-budget.txt'));
         assert.equal(rendered, expected, 'over-budget.txt');
         assert.ok(rendered.length <= TARGET_BUDGET);
         assertOneVerdict(rendered, 'over-budget.txt');
@@ -236,7 +236,7 @@ describe('M2b Step 3.1 — impact rendering and snapshots', () => {
       });
       const batch = await session.query(['packages/payments/src/fee.ts#calculateFee']);
       const rendered = renderImpact(batch);
-      const expected = (await readFile(join(SNAP_DIR, 'stale-index.txt'), 'utf8')).trimEnd();
+      const expected = await readReleaseSnapshot(join(SNAP_DIR, 'stale-index.txt'));
       assert.equal(rendered, expected, 'stale-index.txt');
       assertOneVerdict(rendered, 'stale-index.txt');
     } finally {

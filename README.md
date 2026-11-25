@@ -1,156 +1,168 @@
 # ksd-intelligence
 
-Personal, local-first Engineering Intelligence Library for Oh My Pi (OMP). The implemented foundation includes the skill router (`M0`), OMP adapter (`M1`), workspace initialization and the merged KSD policy module. The TypeScript code index (`M2a`) is built and queried through the CLI and `ei_status`; the impact tools (`ei_impact`, `M2b`) are **not yet implemented**. A macOS/Linux CI baseline (`M1d`) runs every test. Current scope and gates: `AGENTS.md`, `docs/DESIGN.md`, `docs/briefs/M1d-platform-baseline.md` and `docs/reviews/2026-11-12-practical-roadmap.md`. The library reads allowlisted skills from local checkouts; upstream skill content is not copied into this repo.
+KSD helps you find TypeScript and JavaScript code, see what depends on a symbol before editing it, and review what an actual Git diff affects. It builds a private local SQLite index. It suggests checks; it does not run your tests, edit source, approve changes, or deploy. In Oh My Pi (OMP) it also supplies the KSD engineering policy and a skill workflow. Antigravity (AGY) uses the same analysis through local MCP stdio, without the OMP policy.
 
-The router only reads Markdown. It never executes skill scripts, edits code, merges or deploys: every route result has `mayMerge: false` and `mayDeploy: false`.
+## Install
 
-## 1. Clone the skill sources
+Requirements: Git and **Node ≥ 22.5**; use Node 24 LTS. On Node 22.5–22.12 or 23.0–23.3, `node:sqlite` requires `NODE_OPTIONS=--experimental-sqlite`. Install project dependencies before indexing if the code relies on their types.
 
-Clone them yourself; the library never clones or fetches. Check out the commit you reviewed.
+### OMP: marketplace
 
-```bash
-mkdir -p "$HOME/ei-skill-sources" && cd "$HOME/ei-skill-sources"
-git clone https://github.com/mattpocock/skills.git matt
-git clone https://github.com/addyosmani/agent-skills.git osmani
-git clone --filter=blob:none --sparse https://github.com/cursor/plugins.git cursor-plugins
-git -C cursor-plugins sparse-checkout set pstack
+If you already use `engineering-proxy@engineering-proxy`, uninstall it first (`omp plugin uninstall engineering-proxy@engineering-proxy`). Running both plugins can inject the policy twice.
+
+```sh
+omp plugin marketplace add Krisada-M/ksd-intelligence
+omp plugin install ksd-intelligence@ksd-intelligence
+omp plugin list
 ```
 
-Each env var points at the **git top level of its checkout**. Skills are looked up under a fixed `rootSubpath` below that root (recorded in `skills.lock.json`):
+Restart OMP. Run `/engineering-proxy status` and check the KSD status segment. To get the `ei` shell command, install the npm package below; it does not replace the marketplace install. From a built checkout you can instead run `node dist/adapters/cli/main.js` in place of `ei`.
 
-| Provider | Env var | Points at | `rootSubpath` | Skill file |
-|---|---|---|---|---|
-| matt | `EI_MATT_ROOT` | `~/ei-skill-sources/matt` | `skills/engineering` | `<root>/skills/engineering/<skill>/SKILL.md` |
-| poteto | `EI_POTETO_ROOT` | `~/ei-skill-sources/cursor-plugins` | `pstack/skills` | `<root>/pstack/skills/<skill>/SKILL.md` |
-| osmani | `EI_OSMANI_ROOT` | `~/ei-skill-sources/osmani` | `skills` | `<root>/skills/<skill>/SKILL.md` |
+### AGY and terminal: npm
 
-```bash
+After 1.0.0 is published:
+
+```sh
+npm install -g @krisada-m/ksd-intelligence
+ei setup
+```
+
+The setup command provisions a pinned TypeScript runtime in your user cache and may contact the package registry. Verify it later with `ei setup --check`.
+
+Configure AGY to launch `ei mcp --root /absolute/path/to/project`. In AGY's MCP settings, use:
+
+```json
+{
+  "mcpServers": {
+    "ksd-intelligence": {
+      "command": "ei",
+      "args": ["mcp", "--root", "/absolute/path/to/project"],
+      "enabledTools": ["ei_status", "ei_impact", "ei_changes", "ei_search"]
+    }
+  }
+}
+```
+
+Use the absolute path to `ei` if AGY does not inherit your npm bin `PATH`. This is a stdio process, not an HTTP server. The root cannot change through a tool call; use a separate server entry for each project. To expose workflow, append `--workflow`, add `ei_workflow` to `enabledTools`, and set the skill roots below. See the [AGY guide](https://github.com/Krisada-M/ksd-intelligence/blob/main/docs/integrations/antigravity.md).
+
+## Set up a repository
+
+Run from the project root:
+
+```sh
+ei setup                # once per runtime version
+ei init --dry-run        # inspect proposed paths and tsconfig coverage
+ei init                  # skip existing config; review any new ei.config.json
+ei index                 # publish first index
+ei status
+```
+
+The nearest `ei.config.json` sets the root; otherwise KSD uses the Git worktree root. Status reports the scanned/indexed/orphan/unindexed counts. An orphan has no owning TypeScript project. Edit `impact.include` to cover your sources **and tests**; add an appropriate `tsconfig.json` or `jsconfig.json` for unowned code. Review any extra paths before committing configuration.
+
+### Workflow skill sources
+
+`ei_workflow` reads approved `SKILL.md` files from local checkouts; it does not fetch repositories or run skill scripts. Clone, inspect, and pin the sources yourself before enabling the workflow:
+
+```sh
+mkdir -p "$HOME/ei-skill-sources"
+git clone https://github.com/mattpocock/skills.git "$HOME/ei-skill-sources/matt"
+git clone https://github.com/cursor/plugins.git "$HOME/ei-skill-sources/cursor-plugins"
+git clone https://github.com/addyosmani/agent-skills.git "$HOME/ei-skill-sources/osmani"
+git -C "$HOME/ei-skill-sources/matt" checkout 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
+git -C "$HOME/ei-skill-sources/cursor-plugins" checkout 6b0300214a09fd6029cfb7077043125758cd1fd2
+git -C "$HOME/ei-skill-sources/osmani" checkout 301b02b12bff98e4688e6984af6556802322bbde
 export EI_MATT_ROOT="$HOME/ei-skill-sources/matt"
-export EI_POTETO_ROOT="$HOME/ei-skill-sources/cursor-plugins"   # the repo root, NOT .../pstack or .../plugins
+export EI_POTETO_ROOT="$HOME/ei-skill-sources/cursor-plugins"
 export EI_OSMANI_ROOT="$HOME/ei-skill-sources/osmani"
+ei sources check
 ```
 
-The prototype's README pointed `EI_POTETO_ROOT` at `cursor-plugins/plugins` while sparse-checking out `pstack` at the repo top, so the loader looked in a directory that does not exist. The layout above matches the checkout on the author's machine, confirmed by `sources check` (pstack's real location can still change upstream; re-run `sources check` after any update).
+Set the variables in the host's environment and restart the host. Each points to a checkout root, not a `skills` directory. Treat skill text as untrusted instructions. Do not enable a second automatic workflow router.
 
-## 2. Build and test
+## Five tools
 
-Node >= 22.5 (`node:sqlite`, ADR 0005). Dev dependencies are `typescript` and `@types/node` only; there are no runtime dependencies. The engine loads its own pinned TypeScript (`package.json#eiRuntime`) by absolute path, provisioned once by `ei setup`.
+Actual output excerpts from the installed marketplace extension, invoked directly through OMP's extension loader. The CLI provides the same analysis and has the equivalents below. AGY exposes workflow only when opted in. See the [tool contract](https://github.com/Krisada-M/ksd-intelligence/blob/main/docs/TOOLS.md).
 
-```bash
-npm ci
-npm run typecheck
-npm test          # tsc build, compile tests to dist-test/, node --test
-npm run build     # src/ -> dist/
-```
-
-The baseline CI workflow runs `typecheck`, `lint`, `test` and `check:dist` on `ubuntu-latest` and `macos-latest` (Node 24, plus Bun 1.4.4, the runtime OMP 18.19.0 ships, for the engine host tests). This checks the library on two OS families, **not** every CPU architecture or real OMP integration. Those require separate acceptance evidence.
-
-`npm test` expands `dist-test/tests/workflow/*.test.js` through the POSIX shell.
-
-## 3. Pin and verify sources
-
-`skills.lock.json` records, per provider, the repo URL, a commit SHA, `rootSubpath`, and the `sha256` of every allowlisted `SKILL.md`. `null` means "not pinned yet". The loader fails closed with `HASH_MISMATCH` when a pinned skill's content differs.
-
-```bash
-node dist/adapters/cli/main.js sources check            # read-only: HEAD vs lock, paths, hashes; exit 1 on any error
-node dist/adapters/cli/main.js sources check --write    # pin current HEAD + hashes into skills.lock.json
-```
-
-`--write` records whatever is checked out right now. Review the skills first; pinning is not a content review. A provider is written only if its root exists, HEAD is readable and every catalog skill passes the loader's checks. Use `--lock <path>` to work on another lock file.
-
-Error codes (loader and `sources check`): `PROVIDER_ROOT_MISSING` (env var unset or not absolute), `PROVIDER_ROOT_NOT_FOUND`, `SKILL_NOT_FOUND`, `PATH_ESCAPE` (realpath leaves the root), `INVALID_SKILL` (not a regular file, over 64 KiB, or no frontmatter), `HASH_MISMATCH`. `sources check` adds `NOT_A_GIT_CHECKOUT` and `COMMIT_MISMATCH`.
-
-## 4. CLI
-
-```bash
-node dist/adapters/cli/main.js route --task 'fix recurring payment race condition' --stage investigate
-node dist/adapters/cli/main.js route --task 'แก้บั๊กการชำระเงิน' --stage investigate --type bug
-node dist/adapters/cli/main.js load  --task 'auth vulnerability' --stage verify --risk high
-```
-
-- `route` works offline and prints JSON. `load` needs the checkouts and fails closed if any selected skill is unavailable or fails its hash check.
-- `--type bug|feature|refactor|security|performance|ui`: caller-asserted task type, reported as `classifiedBy: "caller"`. An invalid value is an error. Without it, an English keyword classifier runs (`"keyword"`) and falls back to `feature` (`"default"`). A `"default"` guess is shown in the rendered output; non-English or security-sensitive tasks should pass `--type`.
-- `--stage` defaults to `plan`, `--risk` to `normal`.
-
-Code index (M2a: census, declarations, edges; no agent impact tool yet):
-
-```bash
-node dist/adapters/cli/main.js setup [--check]     # install the pinned TypeScript into ~/.cache/ksd-intelligence/runtime (network, once); --check only verifies
-node dist/adapters/cli/main.js index [--root <path>] [--full]   # incremental update of ~/.cache/ksd-intelligence/<repo-id>/index.sqlite; --full rebuilds cold
-node dist/adapters/cli/main.js status [--root <path>] [--json]   # same text as the ei_status tool
-node dist/adapters/cli/main.js doctor --deep [--root <path>] [--differential <n|all>] [--json]   # cold rebuild diffed against the index; optional find-references check
-```
-
-- The repository is the nearest directory with `ei.config.json`, else the git work-tree root. Visible files come from `git ls-files` (tracked + untracked − ignored), else a walk honouring `.gitignore`.
-- Every visible file is classified `indexable`, `orphan` (no tsconfig owns it) or `unindexed` with a reason (`secret`, `excluded`, `outside-index-scope`, `other-kind`, `symlink`). Secret and excluded paths (`docs/RISK.md` §6 plus `impact.exclude`) are listed by path only; their content is never read. Secret name patterns never exclude code files.
-- `index` runs in a separate engine process (Node >= 22.5 from `PATH`, else OMP's Bun) under the repository's build lock and the `impact.maxMemoryMb` limit. It extracts declarations and edges per `docs/adr/0002-stable-keys.md` and `docs/adr/0003-indexed-declarations.md`, verifies the staging database and publishes it by copy-then-rename; a failed verify keeps the previous index.
-- An update re-resolves the changed files and the affected set. Inside a running engine that set is TypeScript's chained builder program plus this repository's export-surface, import and name cross-checks (`affected-set-supplemented` in the status counts what the cross-checks added). The export-surface hash is syntactic: no checker call, signature text where types are written and body or initializer text where they are inferred (`docs/adr/0003-indexed-declarations.md`). A new process, which every CLI call is, has no builder state and uses the cross-checks alone (D47). The engine child exits after a cold build, so a cold build's memory is not kept; the next request starts a new child from the published index. Both paths are tested to equal a cold build. Measurements: `docs/research/m2a-measurements.md`.
-- `doctor --deep` exits 0 only when the cold rebuild equals the index and, with `--differential`, every reference TypeScript's find-references reports is an edge or a recorded unresolved/gap site.
-- The M2b query core follows references, not arbitrary value flow. A value stored in a field, array or map is followed to its storing symbol; later readers are included only when indexed references continue the chain. Object-literal members include whole-value users of their enclosing objects. Orphan code files are scanned lexically for the name cross-check, without a TypeScript program; excluded files remain repository limits, not target completeness reasons (D55).
-
-## 5. OMP adapter
-
-`src/adapters/omp/extension.ts` registers two read-only (`approval: "read"`) tools: `ei_workflow` (`task`, `stage`, optional `risk` and `type`) and `ei_status` (no input; the status of the index for the session's working directory). `EI_DISABLED=1` registers neither. After `npm run build`:
-
-```bash
-omp --extension ./dist/adapters/omp/extension.js
-```
-
-Or run scenarios interactively via the M1 smoke test runner:
-
-```bash
-bash scripts/m1-smoke.sh <s1|s2|s3|s4|s5|s6|s7|s8|checklist>
-```
-
-**Verification status (M1, 2026-11-11):** S1–S6 and S8 VERIFIED live on `omp/18.18.8` non-interactively (`omp -p --model claude-haiku-4-5 -e dist/adapters/omp/extension.js …`; the default Gemini provider rejected an unrelated MCP tool's schema, Claude did not). S7 PARTIAL: plugin list and skill sources checked read-only; the KSD indicator check needs an interactive TUI session. Full evidence: M1 report.
-
-Known interaction: Caveman (`caveman@4.0.1`) is active in sessions on this machine and can compress how the agent *presents* `ei_workflow` output ("[155 lines compressed …]"); the raw tool result in the session transcript stays complete. Check this during dogfooding.
-
-### Persistent install (marketplace, D40)
-
-This repository is itself the OMP plugin (`.omp-plugin/marketplace.json`, plugin `ksd-intelligence@ksd-intelligence`). Development loads are explicit (`omp -e dist/adapters/omp/extension.js`); daily use installs it once (see §6) and the marketplace serves upgrades (`omp plugin upgrade`).
-
-## 6. KSD policy module (merged from Engineering Proxy 0.6.0)
-
-Everything the separate KSD Engineering Proxy v0.6.0 provided ships unchanged in `src/policy/` (frozen contract: `docs/DESIGN.md` §6.7, provenance: `PROVENANCE.md`, proof: `tests/policy/contract.test.js`). One extension registers it and the `ei_*` tools together.
-
-**Commands:** `/engineering-proxy [status|balanced|adaptive|reset|global <mode|reset>|repo <mode|reset>]` and `/engineering-review [scope]`, with their 0.6.0 output text.
-
-**Config:** global `~/.omp/agent/engineering-proxy.json`, project `.engineering-proxy.json` at the nearest `.git`/`.omp` root; keys `enabled` and `enforcement: balanced | adaptive`. Precedence: session > project > global > built-in balanced; `enabled` merges separately. An invalid config fails open (no injection; error only in `/engineering-proxy status`).
-
-**Status segment:** `○ 🛡 KSD: BALANCED` (idle) / `● 🛡 KSD: ADAPTIVE` (active), with its 0.6.0 show/clear rules.
-
-**Kill switches:** `ENGINEERING_PROXY_DISABLED=1` disables policy injection and `/engineering-review` only; `EI_DISABLED=1` disables the `ei_*` tools only.
-
-**Opt-in tools:** `ksd-check-changed` and `ksd-review-verdict` (npm `bin` entries) and the ESLint rules export (`ksd-intelligence/eslint`) — same behaviour as 0.6.0.
-
-### Install (owner)
+| Use | OMP tool | CLI equivalent |
+|---|---|---|
+| Check coverage and runtime | `ei_status` | `ei status` |
+| Find an implementation | `ei_search` | `ei search 'sanitize audit text' --limit 2` |
+| Check a symbol before editing | `ei_impact` | `ei impact 'src/core/kernel/glob.ts#matchGlob'` |
+| Review the actual diff before saying done | `ei_changes` | `ei changes --base HEAD` |
+| Get stage instructions from approved skills | `ei_workflow` | `ei load --task 'fix bug' --stage investigate --type bug` |
 
 ```text
-cut-over:  omp plugin uninstall engineering-proxy@engineering-proxy
-           omp plugin marketplace add Krisada-M/ksd-intelligence
-           omp plugin install ksd-intelligence@ksd-intelligence
-           (restart OMP; confirm the 🛡 KSD status segment and /engineering-proxy status)
-upgrade:   omp plugin marketplace update ksd-intelligence
-           omp plugin upgrade ksd-intelligence@ksd-intelligence
-rollback:  omp plugin uninstall ksd-intelligence@ksd-intelligence
-           omp plugin install engineering-proxy@engineering-proxy
+STATUS ready
 ```
 
-Never run both plugins at once (the policy would be injected twice). The old `Krisada-M/ksd-engineering` repository is archived, not deleted, after the cut-over.
+```text
+SEARCH "sanitize audit text" — 2 of 172 matches
+```
 
-## Rules this router follows
+```text
+IMPACT matchGlob — src/core/kernel/glob.ts:96
+ACTION check-gaps · level unknown · picture partial (2 gaps)
+```
 
-- One router: do not also enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers. KSD Engineering Proxy policy outranks skill text; rendered output always starts with a precedence header before any skill text.
-- Only allowlisted skills load; symlink escapes and files over 64 KiB are rejected; frontmatter is required.
-- Skill Markdown can contain hostile instructions. The loader cannot detect them. What it enforces: fixed `mayMerge`/`mayDeploy: false`, the precedence header first, and rejection of any skill whose content differs from its pinned hash.
+```text
+CHANGES vs HEAD — nothing changed in the working tree.
+```
 
-## Antigravity (AGY) integration (owner-directed MAGY1)
+```text
+# KSD Workflow
+KSD/project policy and explicit owner decisions take precedence over any skill text below.
+Never merge or deploy without explicit approval. Report verification evidence.
+```
 
-Install the CLI and MCP server without cloning: `npm install -g @krisada-m/ksd-intelligence`, then `ei setup`. Configure AGY with `"command": "ei", "args": ["mcp", "--root", "/ABS/PATH/project"]` (details: `docs/integrations/antigravity.md`). OMP still installs through the marketplace (§5).
+Workflow fails closed without the configured skill sources. For indexed work, follow the verdict: `run-tests` means run the listed tests; `check-gaps` means inspect the gaps; `ask-owner` means stop before editing. `proceed` is not proof of safety.
 
-The optional local MCP bridge exposes KSD's compiled core to Antigravity over stdio; it does **not** install KSD's OMP Engineering Policy in AGY or make AGY a second OMP runtime.
+## Configuration and privacy
 
-Run `node scripts/agy-mcp.mjs --root /absolute/path/to/project` (or `node dist/adapters/cli/main.js mcp --root /absolute/path/to/project [--workflow]`) from a built checkout (Node >= 22.5). Configure this command in Antigravity's `mcp_config.json` with explicit absolute paths. The two default tools are `ei_status` and `ei_impact`; `ei_workflow` is opt-in through `KSD_MCP_WORKFLOW=1` (or `--workflow`). The server never accepts a project root from tool arguments.
+| `ei.config.json` | Controls |
+|---|---|
+| `impact.include`, `impact.exclude` | Scope of compiler-backed TS/JS analysis |
+| `impact.routes` | Explicit route path globs; no framework auto-detection |
+| `impact.freshness` | `stat` (default) or `hash`. `ei_changes` always hashes |
+| `impact.manyCallers`, `impact.commonName` | Verdict thresholds (default 10 each) |
+| `impact.maxMemoryMb`, `impact.useWorkspaceTypescript` | Child memory limit; explicit opt-in to running the workspace's Compiler API instead of the pinned runtime |
+| `riskZones` | `"default"` (payments, auth, migrations, production config), custom `{zone,floor,match}` entries, or `[]`. Zones only raise risk |
+| `search.enabled` | Lexical search only |
 
-See [AGY setup, limitations and verification](docs/integrations/antigravity.md) and [AGY config example](docs/examples/antigravity-mcp_config.json). Protocol tests are not proof that a real AGY IDE or CLI build has successfully connected: mark live integration **NOT VERIFIED** until tested.
+Set `EI_DISABLED=1` before launching OMP or AGY to disable EI tools. Set `ENGINEERING_PROXY_DISABLED=1` before launching OMP to disable KSD policy injection and delegated review; KSD status remains available. Use both to disable both surfaces. KSD mode has separate configuration in `~/.omp/agent/engineering-proxy.json` and project `.engineering-proxy.json`.
+
+Index and audit are local under `~/.cache/ksd-intelligence/`. SQLite keeps symbols, references, capped signature text and first JSDoc paragraphs, not whole source files. `ei audit --since 7d` summarizes tool use. `ei cache clear` deletes the current project's index and audit, **not** the shared runtime; it refuses during a live build.
+
+## KNOWN LIMITS
+
+- `unknown` or `partial` means the indexed evidence cannot resolve the whole picture. Read the named gap sites. Report a wrong `low` immediately; stop relying on it until fixed.
+- No runtime data flow, reflection/DI, external consumers, SQL schema effects, native effects, or arbitrary non-TS/JS caller analysis. TypeScript project coverage matters. Changed non-code paths can still be listed and raise a risk-zone verdict.
+- `.env*`, private key files, default excluded trees, and non-code secret-named files are not read as source. Other code filenames are not screened for hard-coded secrets. Scoped-out code can produce lexical name hints without compiler-grade edges.
+- A same-size edit with unchanged mtime can evade the stat probe. Use `impact.freshness: "hash"` or `ei index`, then `ei doctor --deep --differential 300` when checking suspect results.
+- Worktrees have separate caches. Orphan-name guidance may only say `NOT FOUND`; comment-only changes can still list adjacent tests. A large excluded-code census can produce noisy name matches. Check status when `ei init --dry-run` does not display all expected configurations.
+- Large repos can take minutes and several GB. The historical oh-my-pi cold build took 145 s and about 7.1 GB peak RSS on Linux. The default child memory cap is the smaller of 8192 MiB or half of RAM; narrow scope before raising it. These are not latency promises.
+- **PLANNED (V2), not shipped:** golden `ei doctor` canary / `engine-self-check-failed`, automatic OMP-version mismatch warning, general per-capability `enabled` flags, standalone `ei symbol`, and a hard 5 s query budget. Also not shipped: automatic route discovery, heuristic bridges, watcher/worktree seeding, semantic search, context packs, GitLab, verification, learnings and compression. Existing config placeholders do not turn them on.
+
+## Troubleshoot, remove, or roll back
+
+| Symptom | Action |
+|---|---|
+| `typescript runtime missing` | Run `ei setup`, then `ei setup --check`. |
+| `NOT INDEXED`, zero callers, or `NOT FOUND` in mixed repositories | Check `ei status`, effective scope, project config ownership, and installed dependencies. Rails importmap resolution is not analyzed. |
+| Stale result or slow build | Check the lock and memory in `ei status`. Run `ei index --full` if the index needs rebuilding. |
+| `SKILLS_UNAVAILABLE` or hash mismatch | Check all three checkout roots, reviewed commits, and hashes with `ei sources check`. Do not re-pin unexplained changes. |
+| No AGY tools | Confirm the MCP command starts, root is absolute, and host tool filter is correct. Inspect startup output in AGY rather than typing at the stdio process. |
+
+```sh
+# Upgrade marketplace install; restart OMP afterward.
+omp plugin marketplace update ksd-intelligence
+omp plugin upgrade ksd-intelligence@ksd-intelligence
+
+# Remove; optionally restore the old OMP policy plugin, never both at once.
+omp plugin uninstall ksd-intelligence@ksd-intelligence
+omp plugin install engineering-proxy@engineering-proxy
+
+# Remove the AGY MCP entry and reload AGY, then remove the CLI.
+npm uninstall -g @krisada-m/ksd-intelligence
+```
+
+For npm rollback, reinstall a previous approved version or saved tarball, then run `ei setup` and `ei index --full`. Do not use the old index as evidence for the new version. Back up the audit log before `ei cache clear` if you need it. See the [changelog](CHANGELOG.md) and [release checklist](https://github.com/Krisada-M/ksd-intelligence/blob/main/docs/release-checklist.md) for verification and owner gates.
