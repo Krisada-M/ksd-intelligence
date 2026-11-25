@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { cases } from './cases.mjs';
 
 const built = fileURLToPath(new URL('../dist/adapters/', import.meta.url));
-const model = 'claude-haiku-4-5';
+const model = 'glm-5.4';
 const preflight = spawnSync('omp', ['--version'], { encoding: 'utf8' });
 if (preflight.error?.code === 'ENOENT') {
   console.log('NOT VERIFIED: omp not installed');
