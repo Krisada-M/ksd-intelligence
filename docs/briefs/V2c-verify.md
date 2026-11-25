@@ -1,8 +1,8 @@
 # V2c — Verification evidence, `ei_verify` (agent brief, DRAFT)
 
-Start with Round 0 (`README.md`). Read `docs/briefs/V2-README.md`, then `docs/DESIGN.md` §6.6, §7.8, §12; `docs/RISK.md`; `docs/briefs/V2b-gitlab.md` (pipeline reads).
+Start with Round 0 (`README.md`). Read `docs/briefs/V2-README.md`, then `docs/DESIGN.md` §6.6, §7.8, §12; `docs/RISK.md`.
 
-**Branch:** `v2c-verify` from `v1.0.0` (rebased onto V2b if it has merged).
+**Branch:** `v2c-verify` from `v1.0.0`.
 
 ## Goal
 
@@ -18,8 +18,7 @@ Sources, in this order:
 
 1. **Run an allowlisted check.** `verification.checks` in `ei.config.json`: `{ "name": "unit", "command": ["npm", "test"], "timeoutSec": 600 }`. Run with `execFile` (no shell), `cwd` = repository root, environment inherited minus variables matching secret patterns, output captured with a cap (2 MB, tail kept), timeout kills the process tree. The agent passes only a check **name**; any other input is rejected. The tool declares the approval level found in Round 0.
 2. **Read a JUnit XML or TAP file** at a path the config names, if newer than the last commit touching the tested files.
-3. **Read the pipeline** for the current commit through V2b, when enabled.
-4. Otherwise `NOT_VERIFIED` with the reason.
+3. Otherwise `NOT_VERIFIED` with the reason.
 
 - `VerificationReport` per DESIGN §7.8; `revision` = `git rev-parse HEAD` plus a `dirty` flag (uncommitted changes make the report say so on line 1).
 - Status rules: exit 0 and no failed test → `PASS`; non-zero or failed tests → `FAIL`; timeout or spawn error → `ERROR`; check not configured → `NOT_VERIFIED`. A run with zero tests executed is `SKIPPED`, never `PASS`.

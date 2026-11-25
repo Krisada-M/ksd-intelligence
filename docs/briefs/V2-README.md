@@ -15,12 +15,11 @@ V1 `1.0.0` is closed first (`docs/briefs/V1-closeout.md`). Every V2 branch start
 | # | Module | Brief | New tool | Writes / network / exec |
 |---|---|---|---|---|
 | V2a | Context packs | `V2a-context.md` | `ei_context` | none |
-| V2b | GitLab adapter (read-only) | `V2b-gitlab.md` | `ei_gitlab` | **network** (GitLab API only) |
 | V2c | Verification evidence | `V2c-verify.md` | `ei_verify` | **exec** (allowlisted repo scripts, OMP approval) |
 | V2d | Anchored knowledge | `V2d-knowledge.md` | `ei_learning` | **writes** `.ksd/learnings/` (owner-approved only) |
 | V2e | Recoverable compression | `V2e-compression.md` | `ei_retrieve` (+ hook, if OMP has one) | cache only |
 
-This is the DESIGN §13 order. V2a and V2b do not depend on each other and may run in parallel worktrees. V2c uses V2b for pipeline results; V2d and V2e are independent of the rest.
+This is the DESIGN §13 order without the GitLab adapter, which the owner dropped (D67). The four modules do not depend on each other and may run in parallel worktrees.
 
 ## What replaces the gates
 
@@ -35,7 +34,7 @@ The gates existed to stop building things that do not help. With them waived, ea
 
 These are already in DESIGN §12 and RISK; V2 is where they start to matter.
 
-- **Network:** only `src/adapters/gitlab/**`, only when `gitlab.enabled`, only to the configured host, token from `GITLAB_TOKEN` only. A test greps `src/` for network APIs outside that folder.
+- **Network:** none. V2 adds no network code; the owner-run `ei setup` stays the only exception. A test greps `src/` for network APIs and fails on any use outside the `ei setup` path.
 - **Exec:** only `src/core/verify/**`, only commands from an allowlist the owner writes in `ei.config.json`, `execFile` without a shell, under OMP's approval for that call. No command text from the agent is ever executed.
 - **Repository writes:** only `.ksd/learnings/*.yaml`, only through `ei learning approve` run by the owner. The agent can propose; it cannot write.
 - **Secrets:** tokens, environment values and command output that matches secret patterns are redacted before anything is stored, logged or shown.
@@ -43,7 +42,7 @@ These are already in DESIGN §12 and RISK; V2 is where they start to matter.
 
 ## Models
 
-Strongest coding model available for build rounds; a different vendor for each review round. V2b and V2c add attack surface (network, exec): their review rounds are not optional.
+Strongest coding model available for build rounds; a different vendor for each review round. V2c adds attack surface (exec): its review round is not optional.
 
 ## After V2
 
