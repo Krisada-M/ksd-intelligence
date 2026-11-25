@@ -51,6 +51,8 @@ Out of scope until the owner says otherwise: MCP adapters other than the explici
 
 Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a baseline, not proof that the index/impact engine works. When a milestone is done, stop and report. Do not start the next milestone.
 
+**Lane runs (owner exception, D69, 2026-11-26).** After `v1.0.0`, the owner may start a *lane run*: one session that does several milestones from `docs/briefs/V2-README.md` and `docs/briefs/UI-polish.md` back to back, as listed in the owner's lane prompt. A lane run may skip the stop between milestones only if: each milestone has its own branch from `v1.0.0` (or the 1.0.0 commit) in its own worktree; every round's gates pass and its self-review file is written before the next round; the evals stay at or above 9/10 with the strong model after each milestone; and a handoff file is kept current. Every other rule in this file still applies, including the hard stops in the brief, no push, tag, merge or publish, frozen paths and the cross-vendor review before any merge. A lane run stops at the first hard stop and does not continue to the next milestone.
+
 ## Evidence rules (non-negotiable)
 
 1. Never report PASS for something you did not run. Paste the exact command and the relevant output.
