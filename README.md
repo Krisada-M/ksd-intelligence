@@ -147,6 +147,8 @@ Never run both plugins at once (the policy would be injected twice). The old `Kr
 
 ## Antigravity (AGY) integration (owner-directed MAGY1)
 
+Install the CLI and MCP server without cloning: `npm install -g @krisada-m/ksd-intelligence`, then `ei setup`. Configure AGY with `"command": "ei", "args": ["mcp", "--root", "/ABS/PATH/project"]` (details: `docs/integrations/antigravity.md`). OMP still installs through the marketplace (§5).
+
 The optional local MCP bridge exposes KSD's compiled core to Antigravity over stdio; it does **not** install KSD's OMP Engineering Policy in AGY or make AGY a second OMP runtime.
 
 Run `node scripts/agy-mcp.mjs --root /absolute/path/to/project` (or `node dist/adapters/cli/main.js mcp --root /absolute/path/to/project [--workflow]`) from a built checkout (Node >= 22.5). Configure this command in Antigravity's `mcp_config.json` with explicit absolute paths. The two default tools are `ei_status` and `ei_impact`; `ei_workflow` is opt-in through `KSD_MCP_WORKFLOW=1` (or `--workflow`). The server never accepts a project root from tool arguments.

@@ -1,0 +1,32 @@
+name: Publish to npm
+
+# D65: tag-triggered publish with npm trusted publishing (OIDC). No npm token is stored anywhere.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+      - name: Tag must match package.json version
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME}" = "v${v}" || { echo "tag ${GITHUB_REF_NAME} != package version v${v}"; exit 1; }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run check:dist
+      - name: Publish (provenance, public)
+        run: npm publish --provenance --access public

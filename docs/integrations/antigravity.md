@@ -1,6 +1,6 @@
 # Antigravity (AGY) — local MCP integration
 
-**Status:** MCP stdio adapter implemented on the feature branch; native AGY IDE/CLI runtime **NOT VERIFIED**. This adapter does not transfer KSD's OMP policy injection, slash commands, approval rules or model routing into Antigravity.
+**Status:** MCP stdio adapter merged to `main`. Live AGY on Linux **VERIFIED**; live AGY on macOS **NOT VERIFIED**. This adapter does not transfer KSD's OMP policy injection, slash commands, approval rules or model routing into Antigravity.
 
 ## Architecture
 
@@ -10,22 +10,31 @@ The AGY MCP configuration defines a **fixed absolute repository root**. Tool arg
 
 ## Prerequisites
 
-- Node.js >= 22.5 and a built KSD checkout (`npm ci && npm run build`).
+- Node.js >= 22.5 and the npm install above, or a built KSD checkout (`npm ci && npm run build`).
 - A workspace with TS/JS source and an optional `ei.config.json`.
 - For `ei_impact` to build an index, provision the pinned TypeScript runtime once using `node dist/adapters/cli/main.js setup` (owner-run; this can use the network), or opt in to a workspace TypeScript copy in KSD config. Runtime failures are returned as error text, not treated as complete analysis.
 - Antigravity App, IDE or CLI with custom local stdio MCP support. Follow the official documentation at https://antigravity.google/docs/mcp.
 
+## Install without cloning (npm)
+
+```sh
+npm install -g @krisada-m/ksd-intelligence
+ei setup
+```
+
+Then point AGY at `ei mcp` (config below). `ei setup` is the only step that uses the network. Update with `npm update -g @krisada-m/ksd-intelligence`. Registry installs never run the repository's `prepare` hook (D65).
+
 ## Workspace MCP configuration
 
-In Antigravity IDE: open the agent panel's MCP Servers menu -> Manage MCP Servers -> View raw config. Its per-project location is `<workspace>/.agents/mcp_config.json`; global is `~/.gemini/config/mcp_config.json`. Copy the example at `docs/examples/antigravity-mcp_config.json` and replace both **absolute** placeholder paths:
+In Antigravity IDE: open the agent panel's MCP Servers menu -> Manage MCP Servers -> View raw config. Its per-project location is `<workspace>/.agents/mcp_config.json`; global is `~/.gemini/config/mcp_config.json`. Use `ei` from the npm install above, or, from a checkout, `"command": "node"` with `"args": ["/ABS/PATH/ksd-intelligence/scripts/agy-mcp.mjs", "--root", "/ABS/PATH/my-project"]` (example at `docs/examples/antigravity-mcp_config.json`). The root must be **absolute**:
 
 ```json
 {
   "mcpServers": {
     "ksd-intelligence": {
-      "command": "node",
-      "args": ["/ABS/PATH/ksd-intelligence/scripts/agy-mcp.mjs", "--root", "/ABS/PATH/my-project"],
-      "enabledTools": ["ei_status", "ei_impact"],
+      "command": "ei",
+      "args": ["mcp", "--root", "/ABS/PATH/my-project"],
+      "enabledTools": ["ei_status", "ei_impact", "ei_changes", "ei_search"],
       "timeoutSeconds": 180
     }
   }
@@ -40,6 +49,8 @@ Avoid relying on the IDE's process working directory: it may be different from t
 |---|---|---|
 | `ei_status` | Default | Read-only index status and setup guidance |
 | `ei_impact` | Default | Same core query and evidence-based rendering used in OMP |
+| `ei_changes` | Needs `enabledTools` | Changed-code review (M2c) |
+| `ei_search` | Needs `enabledTools` | Lexical declaration search (M6a) |
 | `ei_workflow` | **Opt-in only** via `KSD_MCP_WORKFLOW=1` in the server's `env` | Loads strictly pinned local SKILL.md sources; no scripts are executed |
 
 For `ei_workflow`, configure the reviewed `EI_MATT_ROOT`, `EI_POTETO_ROOT`, and `EI_OSMANI_ROOT` environment variables for the local checkouts. Pass `potetoMode: true` only when the user explicitly opts into deep multi-phase mode; `poteto-mode` is never enabled automatically. Do not enable a second automatic upstream skills router; KSD stays the primary orchestrator. Pinned skills can still contain untrusted instructions.

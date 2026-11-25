@@ -41,7 +41,11 @@ function ownPackage(): { file: string; pkg: Record<string, unknown> } {
   for (;;) {
     const file = join(dir, 'package.json');
     const pkg = existsSync(file) ? readJson(file) : null;
-    if (isRecord(pkg) && pkg.name === 'ksd-intelligence') return { file, pkg };
+    if (
+      isRecord(pkg) &&
+      (pkg.name === 'ksd-intelligence' || pkg.name === '@krisada-m/ksd-intelligence')
+    )
+      return { file, pkg };
     const parent = dirname(dir);
     if (parent === dir) throw new Error(`ksd-intelligence package.json not found above ${dir}`);
     dir = parent;
