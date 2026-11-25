@@ -71,7 +71,17 @@ async function clone(id, enabled) {
   writeFileSync(configPath, `${JSON.stringify({ ...config, knowledge: { enabled } }, null, 2)}\n`);
   run(
     'git',
-    ['-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'eval: knowledge toggle'],
+    [
+      '-c',
+      'user.email=t@t',
+      '-c',
+      'user.name=t',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-am',
+      'eval: knowledge toggle',
+    ],
     dir,
   );
   run(process.execPath, [cli, 'index'], dir);

@@ -21,3 +21,13 @@ Five questions per round (lane rules). Evidence: `tests/core/knowledge.test.ts` 
 | Two learnings on one anchor; one superseding | "two learnings on one anchor; only an explicit supersedes retires one" |
 
 Also: without a current index a symbol learning is `needs-review`, never `active` (stale spans could hash the wrong lines).
+
+## Round 2 — `ei_learning`, `ei_impact` line, value check
+
+1. **Agent-facing text, golden case or snapshot changed?** Not when disabled. `ei_learning` registers only when `knowledge.enabled` is true at load (test "disabled (default): no ei_learning and ei_impact text is unchanged by a proposal"). With it enabled, `ei_impact` appends one line after the unchanged V1 block, and only when the targets have learnings or proposals (test "enabled: ei_impact appends one line after the V1 block and changes nothing else"). `docs/TOOLS.md` gains §7b; a test pins the registered description to it. Golden and snapshot tests pass unchanged (`npm test` 759/759).
+2. **Feeds completeness, reach, factors or a verdict?** No. The line is concatenated after `renderImpact`'s output in the adapter; `details` (the typed `ImpactResult[]`) is untouched.
+3. **Off by default, V1 byte-identical when off?** Yes, as in 1; `defaultConfig()` and this repository's `ei.config.json` keep `"knowledge": { "enabled": false }`.
+4. **Network, exec or repo write outside the V2 rules?** None. `ei_learning` is `read`; `propose` writes `<cache>/learnings-proposed/` only. Test "the OMP adapter has no path to the repository-writing commands" greps `extension.ts` for `approveProposal|reviewLearning|rejectProposal`. `evals/v2d-value.mjs` clones into the OS temp dir and edits only the clones.
+5. **Secret or personal path in the diff?** No.
+
+Not done: the CLI `ei impact` does not print the learnings line (brief names the tool only); AGY MCP does not expose `ei_learning`.
