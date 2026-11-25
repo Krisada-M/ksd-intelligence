@@ -19,7 +19,7 @@ gh pr create --base main --head v1-closeout --title 'V1 close-out: 1.0.0 release
 gh pr checks v1-closeout --watch
 ```
 
-Wait for both Node 24 OS jobs, independent review, no protected-path changes or unreviewed failures, and equivalent checks on the exact head. Model evals use `claude-haiku-4-5` and an isolated HOME. Use an already authorized environment for that model; do not copy any credential files into the rehearsal home. Review any failed cases rather than assuming a zero denominator is a success.
+Wait for both Node 24 OS jobs, independent review, no protected-path changes or unreviewed failures, and equivalent checks on the exact head. The eval runner uses OMP's `3b-ctx16k` selector for local `ollama/granite4.2:3b-ctx16k` in an isolated HOME. Confirm it is available with `omp models find granite4.2`. Review any failed cases rather than assuming a zero denominator is a success.
 
 ## 2. Live smoke on macOS and Linux/WSL2
 
