@@ -36,6 +36,15 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run format:check
+        id: format
+      - name: Show formatter diff on failure
+        if: failure() && steps.format.outcome == 'failure'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Only diagnose an already failed check; never turn formatting failures into passes.
+          npm exec -- prettier --write scripts/sync-engineering.mjs tests/packaging/agy-mcp.test.js
+          git diff -- scripts/sync-engineering.mjs tests/packaging/agy-mcp.test.js
       - run: npm test
       - run: npm run check:dist
       - run: npm run verify:engineering
