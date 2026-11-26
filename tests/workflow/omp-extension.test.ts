@@ -134,7 +134,8 @@ it('applies the two kill switches independently and together', async (t) => {
             assert.ok(start);
             const sections: Record<string, string> = {};
             await start({ systemPromptOptions: { sections } }, { cwd });
-            assert.equal(Object.hasOwn(sections, 'engineering-proxy'), !policy);
+            assert.equal(Object.hasOwn(sections, 'erosiano-dev'), !policy);
+            assert.equal(Object.hasOwn(sections, 'engineering-proxy'), false);
             assert.equal(
               registered.some((tool) => tool.name === 'ei_impact'),
               !ei,
@@ -148,6 +149,53 @@ it('applies the two kill switches independently and together', async (t) => {
         }
       },
     );
+  }
+});
+
+it('one composed extension registers the new engineering policy and native intelligence tools', async () => {
+  const { pi, registered } = mockPi();
+  const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
+  const handlers = new Map<string, (...args: unknown[]) => unknown>();
+  const prompts: string[] = [];
+  const host = {
+    ...pi,
+    registerCommand: (
+      name: string,
+      command: { handler: (args: string, ctx: unknown) => Promise<void> },
+    ) => {
+      assert.ok(!commands.has(name), 'duplicate command: ' + name);
+      commands.set(name, command);
+    },
+    getCommands: () => [...commands.keys()].map((name) => ({ name })),
+    getActiveTools: () => registered.map((tool) => tool.name),
+    on: (event: string, handler: (...args: unknown[]) => unknown) => handlers.set(event, handler),
+    sendUserMessage: (message: string) => prompts.push(message),
+  };
+  const cwd = await tempDir('composed-policy');
+  try {
+    extension(host, { cwd, env: {} });
+    assert.deepEqual(
+      [...commands.keys()],
+      ['erosiano-dev', 'engineering-proxy', 'engineering-review'],
+    );
+    assert.ok(registered.some((tool) => tool.name === 'ei_status'));
+    assert.ok(registered.some((tool) => tool.name === 'ei_impact'));
+    const start = handlers.get('before_agent_start');
+    assert.ok(start);
+    const sections: Record<string, string> = { 'engineering-proxy': 'stale policy' };
+    await start({ systemPromptOptions: { sections } }, { cwd });
+    assert.equal(Object.hasOwn(sections, 'engineering-proxy'), false);
+    assert.match(sections['erosiano-dev'] ?? '', /erosiano-dev personal style/);
+    const command = commands.get('erosiano-dev');
+    assert.ok(command);
+    await command.handler('review src', { cwd });
+    assert.match(prompts.at(-1) ?? '', /Optional KSD Intelligence native tools/);
+    assert.match(prompts.at(-1) ?? '', /ei_impact/);
+    await writeFile(join(cwd, '.erosiano-dev.json'), '{"intelligenceMode":"off"}');
+    await command.handler('review src', { cwd });
+    assert.doesNotMatch(prompts.at(-1) ?? '', /Optional KSD Intelligence/);
+  } finally {
+    await cleanup(cwd);
   }
 });
 

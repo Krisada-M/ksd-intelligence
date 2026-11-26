@@ -1,12 +1,12 @@
 import { KSD_MODES } from "./sdlc.js";
 // Keep this policy orthogonal to Ponytail's simplicity and over-engineering guidance.
-export const SECTION_KEY = "engineering-proxy";
-export const POLICY_MARKER = "[Engineering Proxy Policy]";
-export const POLICY_END = "[End Engineering Proxy Policy]";
+export const SECTION_KEY = "erosiano-dev";
+export const POLICY_MARKER = "[erosiano-dev Policy]";
+export const POLICY_END = "[End erosiano-dev Policy]";
 /** A complete line consisting only of a policy marker: the stable marker or a numbered legacy version. */
-const COMPLETE_MARKER_LINE = /^\[Engineering Proxy Policy(?: v\d+(?:\.\d+)*)?\]\r?$/;
+const COMPLETE_MARKER_LINE = /^\[(?:Engineering Proxy|erosiano-dev) Policy(?: v\d+(?:\.\d+)*)?\]\r?$/;
 /** An array element is owned when it BEGINS with the stable or a numbered legacy marker (existing array contract). */
-const LEADING_MARKER = /^\[Engineering Proxy Policy(?: v\d+(?:\.\d+)*)?\]/;
+const LEADING_MARKER = /^\[(?:Engineering Proxy|erosiano-dev) Policy(?: v\d+(?:\.\d+)*)?\]/;
 const changed = (next, base) => next !== base;
 /**
  * Locate complete owned blocks in a string prompt: each runs from a dedicated marker line to the next
@@ -33,15 +33,16 @@ function findStringBlocks(base) {
             index += 1;
             continue;
         }
+        const expectedEnd = line.text.startsWith("[Engineering Proxy Policy") ? "[End Engineering Proxy Policy]" : POLICY_END;
         let blockEnd = -1;
         for (let probe = index + 1; probe < lines.length; probe++) {
             const candidate = lines[probe];
-            if (candidate.text.replace(/\r$/, "") === POLICY_END) {
-                blockEnd = candidate.start + POLICY_END.length;
+            if (candidate.text.replace(/\r$/, "") === expectedEnd) {
+                blockEnd = candidate.start + expectedEnd.length;
                 index = probe + 1;
                 break;
             }
-            if (COMPLETE_MARKER_LINE.test(candidate.text)) {
+            if (COMPLETE_MARKER_LINE.test(candidate.text) || candidate.text.replace(/\r$/, "") === POLICY_END || candidate.text.replace(/\r$/, "") === "[End Engineering Proxy Policy]") {
                 unterminated = true;
                 break;
             }
@@ -58,7 +59,7 @@ function findStringBlocks(base) {
 function reconcileString(base, policy, warn) {
     const { blocks, unterminated } = findStringBlocks(base);
     if (unterminated) {
-        warn?.("KSD could not replace/remove an unterminated legacy policy; restart the session.");
+        warn?.("erosiano-dev could not replace/remove an unterminated legacy policy; restart the session.");
         return undefined;
     }
     if (blocks.length === 0) {
@@ -84,22 +85,23 @@ export function buildPolicy({ enforcement = "balanced" } = {}) {
     if (!KSD_MODES.includes(enforcement))
         throw new Error("Unsupported KSD enforcement mode");
     const cleanCode = enforcement === "adaptive"
-        ? "Adaptive Clean Code: flat by default. Guard clauses and early returns; no else after return; no nested if when a guard clause or a combined condition works. Mark avoidable nesting in changed code as FIX REQUIRED in reviews; keep behavior-sensitive cases as WARN. Never weaken security, transactions or error handling to flatten code."
-        : "Balanced Clean Code: prefer guard clauses and early returns where behavior is preserved; nesting findings stay advisory.";
+        ? "Adaptive Clean Code: flat by default. Guard clauses/early returns; no else after return or nesting avoidable by guards or combined conditions. Changed-code review: FIX REQUIRED for behavior-preserving fixes; WARN if behavior-sensitive. Never weaken security, transactions or error handling."
+        : "Balanced Clean Code: prefer behavior-preserving guards/early returns; nesting findings are advisory.";
     return `${POLICY_MARKER}
-KSD personal code style. Explicit user requirements and existing repo conventions win over it.
+erosiano-dev personal style. Explicit user requirements and current repo conventions take precedence.
 ${cleanCode}
-- No nested ternaries: use if, a small named function, or a lookup map.
-- Blank line before a return only when two or more statements precede it in the same block; never before a first-statement return. One blank line between adjacent function implementations; leave TypeScript overload groups untouched.
-- Errors: domain logic returns a typed result (discriminated union); IO and infrastructure throw and are caught at the boundary (route handler, job runner, UI error boundary).
-- Types: no any, no \`as\` casts (\`as const\` is fine), no non-null \`!\`; narrow with type guards; exported functions declare return types.
-- Extract a helper only when it is reused or its name makes the caller clearer; length alone is not a reason.
-- Comments: one line explaining why; never restate the code.
-- Preserve existing architecture, contracts, validation and accessibility; no unrelated renames or refactors.
-- Ponytail owns YAGNI/simplification and /ponytail-review; do not duplicate or invoke it.
-- Risky behavior (auth/authorization, payments, DB schema/queries/RLS, destructive data operations, secrets, concurrency): prove normal-user denial (cross-tenant, another owner's record, unauthenticated), keep idempotency and replay protection, check constraints, locks, transaction boundaries and migration compatibility. Never run real payments or destructive shared-database checks.
+- No nested ternaries; use if, named helper or lookup map.
+- One blank before return after 2+ preceding statements in the same block; optional after one, none for first-statement return. One blank between adjacent implementations, not TS overloads.
+- Prefer typed domain results (discriminated unions); throw IO/infrastructure errors, catch at boundary. Preserve project error contracts and causes.
+- No any, \`as\` casts except \`as const\`, or non-null \`!\`; type guards, explicit exported return types.
+- Extract helpers for reuse or clearer callers, not length. Comments: one line explaining why, not what.
+- Before substantial changes, establish a scoped project baseline: instructions, native gates, maintained code/tests. Distinguish current, legacy and unknown; refresh stale evidence. Preserve architecture, contracts, validation, accessibility; no unrelated refactors. Never copy insecure legacy behavior.
+- Select applicable practices after baseline via permitted resolver/catalog; never inject entire catalog.
+- Ponytail owns YAGNI/simplification and /ponytail-review; don't duplicate or invoke it.
+- Risky auth/authorization, payments, DB schema/queries/RLS, destructive data, secrets, concurrency: prove normal-user denial (cross-tenant/other owner/unauthenticated); preserve idempotency/replay protection, check constraints/locks/transactions/migration compatibility. Never run real payments or destructive shared-DB checks.
+- Validate runtime boundaries, handle promise rejection/exhaustive states. Never weaken types, security or tests, invent APIs or fake production success.
 - Never claim a check passed without running it.
-Enforcement=${enforcement}: repo gates stay authoritative; these rules are deterministic only where the repo enables the KSD ESLint profile. The full SDLC checklist is delivered by /engineering-review.
+Enforcement=${enforcement}: native gates authoritative; deterministic only if adopted. SDLC: /erosiano-dev review.
 ${POLICY_END}`;
 }
 /** Reconcile a string or array fallback prompt: remove owned guidance, or replace it with exactly one policy. */
@@ -135,6 +137,7 @@ export function augmentSystemPrompt(event, policy, warn) {
             failed = true;
             warn?.(message);
         });
+        delete sections["engineering-proxy"];
         if (policy === undefined || failed)
             delete sections[SECTION_KEY];
         else

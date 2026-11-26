@@ -47,3 +47,11 @@ Thin KSD-native wrapper `SKILL.md` files under `skills/` (authored for KSD orche
 | same, path `.omp-plugin/marketplace.json` | marketplace manifest shape; rewritten for `ksd-intelligence` 0.1.0, source `.` | `.omp-plugin/marketplace.json` |
 
 Copied at `73fc916` without git history (the M1c no-commit rule blocks `git subtree add`, which creates commits). Frozen-contract proof: `tests/policy/contract.test.js` against snapshots generated from the same clone (`tests/policy/snapshots/`).
+
+## D70 — pinned engineering runtime (candidate)
+
+| Upstream | Files | Destination |
+|---|---|---|
+| https://github.com/Krisada-M/ksd-engineering at `f8c85ce74dc9d94d73417e032f10b4a17232b754`, `plugins/erosiano-dev/` (MIT) | 21 allowlisted runtime files, compiled modules, declarations and catalog; each exact Git blob ID and mode in `engineering.lock.json` | `src/engineering/`, generated `dist/engineering/` |
+
+The old frozen source is retained for its original tests only. Local sync is explicit and verified; ordinary build/runtime do not fetch upstream. AGY native rule is generated from the pinned balanced policy, with only host-specific command wording adapted.

@@ -2,7 +2,7 @@
   "name": "@krisada-m/ksd-intelligence",
   "version": "1.1.0",
   "type": "module",
-  "description": "KSD engineering policy plus ei_* code-intelligence tools for OMP",
+  "description": "Local-first engineering and code intelligence for OMP and AGY",
   "license": "MIT",
   "author": "Krisada M. (https://github.com/Krisada-M)",
   "repository": {
@@ -25,7 +25,11 @@
     "skills.lock.json",
     "skills.registry.json",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "engineering.lock.json",
+    ".antigravity-plugin/",
+    "rules/",
+    "agy-skills/"
   ],
   "engines": {
     "node": ">=22.5"
@@ -40,16 +44,19 @@
     "lint:fix": "eslint --fix .",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
-    "prepare": "husky || true"
+    "prepare": "husky || true",
+    "verify:engineering": "node scripts/engineering-bundle.mjs"
   },
   "bin": {
     "ei": "dist/adapters/cli/main.js",
     "ksd-check-changed": "dist/adapters/cli/check-changed.js",
-    "ksd-review-verdict": "dist/adapters/cli/review-verdict.js"
+    "ksd-review-verdict": "dist/adapters/cli/review-verdict.js",
+    "erosiano-baseline": "dist/engineering/baseline.js",
+    "erosiano-practices": "dist/engineering/practices.js"
   },
   "exports": {
     ".": "./dist/adapters/omp/extension.js",
-    "./eslint": "./dist/policy/eslint-rules/index.js"
+    "./eslint": "./dist/engineering/eslint-rules/index.js"
   },
   "omp": {
     "extensions": [

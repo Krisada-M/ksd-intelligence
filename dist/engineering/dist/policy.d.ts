@@ -1,7 +1,7 @@
 import { type KsdMode } from "./sdlc.js";
-export declare const SECTION_KEY = "engineering-proxy";
-export declare const POLICY_MARKER = "[Engineering Proxy Policy]";
-export declare const POLICY_END = "[End Engineering Proxy Policy]";
+export declare const SECTION_KEY = "erosiano-dev";
+export declare const POLICY_MARKER = "[erosiano-dev Policy]";
+export declare const POLICY_END = "[End erosiano-dev Policy]";
 interface AgentStartEvent {
     systemPromptOptions?: {
         sections?: Record<string, string | undefined>;

@@ -1,0 +1,2453 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "6b50161b38cdfcd2406e616eec8b867628b817e6",
+  "facets": [
+    "api",
+    "architecture",
+    "async",
+    "auth",
+    "backend",
+    "baseline",
+    "code",
+    "concurrency",
+    "contract",
+    "critical",
+    "database",
+    "destructive",
+    "error",
+    "frontend",
+    "io",
+    "logging",
+    "migration",
+    "module",
+    "money",
+    "payments",
+    "performance",
+    "react",
+    "regression",
+    "resource",
+    "review",
+    "runtime",
+    "secrets",
+    "security",
+    "state",
+    "testing",
+    "time",
+    "typescript"
+  ],
+  "practices": [
+    {
+      "id": "BL01",
+      "version": 1,
+      "group": "baseline",
+      "title": "Observe before prescribing",
+      "intent": "Read applicable evidence before imposing changes.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL02",
+      "version": 1,
+      "group": "baseline",
+      "title": "Local over generic",
+      "intent": "Respect established subsystem conventions.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL03",
+      "version": 1,
+      "group": "baseline",
+      "title": "Current over historical majority",
+      "intent": "Do not propagate obsolete patterns.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL04",
+      "version": 1,
+      "group": "baseline",
+      "title": "Evidence over assumption",
+      "intent": "Cite observations and confidence.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL05",
+      "version": 1,
+      "group": "baseline",
+      "title": "No architectural drift",
+      "intent": "Preserve boundaries and existing dependency direction.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL06",
+      "version": 1,
+      "group": "baseline",
+      "title": "No unsolicited modernization",
+      "intent": "Avoid broad unrelated migrations.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL07",
+      "version": 1,
+      "group": "baseline",
+      "title": "Preserve subsystem boundaries",
+      "intent": "Resolve per workspace/package/module/feature.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL08",
+      "version": 1,
+      "group": "baseline",
+      "title": "Detect migration direction",
+      "intent": "Classify mixed patterns and confirm direction.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL09",
+      "version": 1,
+      "group": "baseline",
+      "title": "Freshness validation",
+      "intent": "Check relevant fingerprints before reuse.",
+      "allOf": [],
+      "anyOf": [
+        "baseline"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL10",
+      "version": 1,
+      "group": "baseline",
+      "title": "Confidence-aware enforcement",
+      "intent": "Unknown heuristics are not blocking facts.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL11",
+      "version": 1,
+      "group": "baseline",
+      "title": "Discover once, reuse when valid",
+      "intent": "Keep discovery scoped and bounded.",
+      "allOf": [],
+      "anyOf": [
+        "baseline"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL12",
+      "version": 1,
+      "group": "baseline",
+      "title": "Refresh when evidence changes",
+      "intent": "Invalidate stale or incomplete results.",
+      "allOf": [],
+      "anyOf": [
+        "baseline"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL13",
+      "version": 1,
+      "group": "baseline",
+      "title": "Never normalize insecure legacy",
+      "intent": "Escalate harmful patterns; preserve safe contracts.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "BL14",
+      "version": 1,
+      "group": "baseline",
+      "title": "Risk-scaled discovery",
+      "intent": "L0-L3 based on impact and uncertainty.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "BL15",
+      "version": 1,
+      "group": "baseline",
+      "title": "Repository-native gates",
+      "intent": "Discover and honor actual applicable commands.",
+      "allOf": [],
+      "anyOf": [
+        "baseline",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S01",
+      "version": 2,
+      "group": "style",
+      "title": "Guard clauses, flat flow, early exits",
+      "intent": "Prefer guard clauses and early returns where behavior is preserved. Balanced nesting findings are advisory; adaptive avoidable nesting is fix-required in changed-scope review only when a behavior-preserving transformation is established. Warn on uncertain or behavior-sensitive cases.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance",
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S02",
+      "version": 1,
+      "group": "style",
+      "title": "No nested ternaries",
+      "intent": "use clear conditional, small named function or map.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance",
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S03",
+      "version": 1,
+      "group": "style",
+      "title": "Blank before return",
+      "intent": "exactly one when two or more preceding statements in same block, optional after one, none before first-statement return; never multiple.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S04",
+      "version": 1,
+      "group": "style",
+      "title": "Blank between function implementations",
+      "intent": "exactly one, including adjacent arrow function definitions; preserve TS overload groups and existing comment handling.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S05",
+      "version": 2,
+      "group": "style",
+      "title": "Typed Result vs exception boundary",
+      "intent": "Prefer discriminated domain results and thrown IO failures caught at the appropriate boundary. Preserve established project error contracts and never weaken error handling.",
+      "allOf": [],
+      "anyOf": [
+        "error",
+        "io",
+        "backend"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S06",
+      "version": 1,
+      "group": "style",
+      "title": "Strict typing",
+      "intent": "avoid explicit any, unsafe assertions and non-null assertion; as const allowed; narrow values and declare exported return types when baseline requires.",
+      "allOf": [],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance",
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S07",
+      "version": 1,
+      "group": "style",
+      "title": "Meaningful helper extraction",
+      "intent": "reuse or improve caller clarity, not arbitrary length.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S08",
+      "version": 1,
+      "group": "style",
+      "title": "Why-only comments",
+      "intent": "explain intent/invariants, not restate code; allow necessary multi-line docs, contracts and legal notices.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "S09",
+      "version": 1,
+      "group": "style",
+      "title": "Preserve architecture, contracts, validation and accessibility",
+      "intent": "no unrelated churn.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "S10",
+      "version": 2,
+      "group": "style",
+      "title": "Evidence and risky-behavior escalation",
+      "intent": "Never claim unexecuted checks pass. Escalate authentication, authorization, payment, data, secret, concurrency and destructive behavior to applicable security and verification rules.",
+      "allOf": [],
+      "anyOf": [
+        "review",
+        "code"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "C01",
+      "version": 1,
+      "group": "readability",
+      "title": "Top-down reading",
+      "intent": "make the main flow easy to find and follow.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C02",
+      "version": 1,
+      "group": "readability",
+      "title": "Happy path clarity",
+      "intent": "handle failure cases early where safe.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C03",
+      "version": 1,
+      "group": "readability",
+      "title": "Minimize variable scope",
+      "intent": "declare close to use.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C04",
+      "version": 1,
+      "group": "readability",
+      "title": "No variable shadowing",
+      "intent": "avoid confusing name reuse; use correct language-aware rule.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C05",
+      "version": 1,
+      "group": "readability",
+      "title": "Avoid ambiguous boolean parameters",
+      "intent": "named options or enum when positional flags obscure intent.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C06",
+      "version": 1,
+      "group": "readability",
+      "title": "No hidden temporal coupling",
+      "intent": "make call ordering/lifecycle requirements explicit.",
+      "allOf": [],
+      "anyOf": [
+        "state",
+        "resource",
+        "api"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C07",
+      "version": 1,
+      "group": "readability",
+      "title": "Locality of behavior",
+      "intent": "colocate feature-owned logic, types, hooks and helpers when appropriate.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C08",
+      "version": 1,
+      "group": "readability",
+      "title": "Prefer composition",
+      "intent": "use composition over unnecessary inheritance.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C09",
+      "version": 1,
+      "group": "readability",
+      "title": "Consistent vocabulary",
+      "intent": "use the domain's established terms.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C10",
+      "version": 1,
+      "group": "readability",
+      "title": "No dead code",
+      "intent": "remove unused code in changed scope; do not remove dynamic consumers blindly.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C11",
+      "version": 1,
+      "group": "readability",
+      "title": "Intent-revealing naming",
+      "intent": "names express purpose and ownership.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C12",
+      "version": 1,
+      "group": "readability",
+      "title": "Positive boolean naming",
+      "intent": "isActive, canEdit, hasPermission where natural.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C13",
+      "version": 1,
+      "group": "readability",
+      "title": "No magic values",
+      "intent": "name business-significant constants, not every literal.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C14",
+      "version": 1,
+      "group": "readability",
+      "title": "Named complex conditions",
+      "intent": "clarify predicate intent without hiding logic.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "C15",
+      "version": 1,
+      "group": "readability",
+      "title": "Single level of abstraction",
+      "intent": "avoid mixing transport details and domain decisions unnecessarily.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T01",
+      "version": 1,
+      "group": "typescript",
+      "title": "Prefer unknown",
+      "intent": "narrow untrusted or unknown types before use.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T02",
+      "version": 1,
+      "group": "typescript",
+      "title": "Prefer satisfies",
+      "intent": "check shape while preserving inference; not a runtime validator.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance",
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T03",
+      "version": 1,
+      "group": "typescript",
+      "title": "Type inference first",
+      "intent": "infer obvious locals; explicit public/boundary contracts when required.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T04",
+      "version": 1,
+      "group": "typescript",
+      "title": "Avoid primitive obsession",
+      "intent": "domain types when ambiguity or invariants justify them.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T05",
+      "version": 1,
+      "group": "typescript",
+      "title": "Readonly contracts",
+      "intent": "prevent unintended mutation of inputs/contracts; shallow readonly is not deep immutability.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T06",
+      "version": 1,
+      "group": "typescript",
+      "title": "Safe indexed access",
+      "intent": "handle absent keys and bounds.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T07",
+      "version": 1,
+      "group": "typescript",
+      "title": "Exact optional properties",
+      "intent": "distinguish absent property and undefined per contract.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T08",
+      "version": 1,
+      "group": "typescript",
+      "title": "Avoid unnecessary generics",
+      "intent": "no speculative flexibility.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T09",
+      "version": 1,
+      "group": "typescript",
+      "title": "Schema-derived types",
+      "intent": "derive from authoritative runtime schema when appropriate.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T10",
+      "version": 1,
+      "group": "typescript",
+      "title": "Type-only imports",
+      "intent": "separate type and runtime imports in compatible toolchains.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T11",
+      "version": 1,
+      "group": "typescript",
+      "title": "Exhaustive state handling",
+      "intent": "exhaustively narrow discriminated unions and legal transitions; no catch-all that hides missing cases.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T12",
+      "version": 1,
+      "group": "typescript",
+      "title": "Explicit null and undefined",
+      "intent": "distinguish 0, false, empty, null and absent according to domain.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "T13",
+      "version": 1,
+      "group": "typescript",
+      "title": "Make invalid states hard to represent",
+      "intent": "discriminated unions or suitable state model, with runtime and persistence checks as needed.",
+      "allOf": [
+        "typescript"
+      ],
+      "anyOf": [
+        "typescript"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A01",
+      "version": 1,
+      "group": "architecture",
+      "title": "High cohesion",
+      "intent": "group related behavior.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A02",
+      "version": 1,
+      "group": "architecture",
+      "title": "Low coupling",
+      "intent": "avoid unnecessary dependency on internals.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A03",
+      "version": 1,
+      "group": "architecture",
+      "title": "No circular dependencies",
+      "intent": "prevent harmful new cycles using native graph tools when available; distinguish type-only/intentional cases.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "module"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A04",
+      "version": 1,
+      "group": "architecture",
+      "title": "Single source of truth",
+      "intent": "canonical owner for each business fact.",
+      "allOf": [],
+      "anyOf": [
+        "state",
+        "database"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A05",
+      "version": 1,
+      "group": "architecture",
+      "title": "Feature-first organization",
+      "intent": "only when consistent with target baseline.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A06",
+      "version": 1,
+      "group": "architecture",
+      "title": "Public module boundaries",
+      "intent": "use supported public APIs, avoid private deep imports across boundaries.",
+      "allOf": [],
+      "anyOf": [
+        "module",
+        "api"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A07",
+      "version": 1,
+      "group": "architecture",
+      "title": "Dependency direction",
+      "intent": "respect existing layers and separate domain from infrastructure when useful.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "module"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A08",
+      "version": 1,
+      "group": "architecture",
+      "title": "Avoid generic dumping grounds",
+      "intent": "prefer meaningful feature ownership to generic utils/common/helpers sprawl.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A09",
+      "version": 1,
+      "group": "architecture",
+      "title": "Avoid unnecessary barrel exports",
+      "intent": "preserve intentional public API barrels.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A10",
+      "version": 1,
+      "group": "architecture",
+      "title": "Explicit ownership",
+      "intent": "clear owner of rules and state.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "state"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A11",
+      "version": 1,
+      "group": "architecture",
+      "title": "Explicit dependencies",
+      "intent": "avoid hidden dependency and unnecessary mutable global state.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A12",
+      "version": 1,
+      "group": "architecture",
+      "title": "Immutability by default",
+      "intent": "const and non-mutating inputs where appropriate, not a ban on justified local mutation.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A13",
+      "version": 1,
+      "group": "architecture",
+      "title": "Pure business logic",
+      "intent": "isolate computation/validation from IO when useful.",
+      "allOf": [],
+      "anyOf": [
+        "architecture",
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A14",
+      "version": 1,
+      "group": "architecture",
+      "title": "Minimal public API",
+      "intent": "export what consumers actually need; preserve compatibility.",
+      "allOf": [],
+      "anyOf": [
+        "module",
+        "api"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "A15",
+      "version": 1,
+      "group": "architecture",
+      "title": "Explicit side effects",
+      "intent": "make writes and external effects visible in contracts and names.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "state"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D01",
+      "version": 1,
+      "group": "correctness",
+      "title": "Fail fast",
+      "intent": "validate preconditions before effects; handle error safely.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "state",
+        "api"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D02",
+      "version": 1,
+      "group": "correctness",
+      "title": "No silent fallback",
+      "intent": "do not mask missing critical data or failure as success.",
+      "allOf": [],
+      "anyOf": [
+        "error",
+        "io"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "D03",
+      "version": 1,
+      "group": "correctness",
+      "title": "Preserve error cause",
+      "intent": "preserve context/cause without leaking sensitive data.",
+      "allOf": [],
+      "anyOf": [
+        "error"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D04",
+      "version": 1,
+      "group": "correctness",
+      "title": "Narrow try-catch",
+      "intent": "catch where errors can be translated or handled.",
+      "allOf": [],
+      "anyOf": [
+        "error"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D05",
+      "version": 1,
+      "group": "correctness",
+      "title": "No exception-driven branching",
+      "intent": "avoid using exceptions as ordinary control flow without justification.",
+      "allOf": [],
+      "anyOf": [
+        "error"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D06",
+      "version": 1,
+      "group": "correctness",
+      "title": "Validate before mutation",
+      "intent": "enforce preconditions and integrity before state changes.",
+      "allOf": [],
+      "anyOf": [
+        "state",
+        "database",
+        "api"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "D07",
+      "version": 1,
+      "group": "correctness",
+      "title": "Explicit allowlists",
+      "intent": "validate permitted fields/actions and prevent mass assignment, separately authorize.",
+      "allOf": [],
+      "anyOf": [
+        "api",
+        "auth",
+        "security"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "D08",
+      "version": 1,
+      "group": "correctness",
+      "title": "No hidden side effects",
+      "intent": "a query should not silently mutate critical state.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "state"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D09",
+      "version": 1,
+      "group": "correctness",
+      "title": "Parse at the boundary",
+      "intent": "validate external/API/form/JSON/env/provider/DB data where trust and contract warrant it; static types alone are insufficient.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "api",
+        "database"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "D10",
+      "version": 1,
+      "group": "correctness",
+      "title": "No floating promises",
+      "intent": "await/return or explicitly supervise asynchronous work and handle rejection; bare void does not prove handling.",
+      "allOf": [],
+      "anyOf": [
+        "async"
+      ],
+      "mechanisms": [
+        "optional-native-gate",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "D11",
+      "version": 1,
+      "group": "correctness",
+      "title": "No silent failure",
+      "intent": "do not swallow errors or fabricate success; safe expected fallback may be documented.",
+      "allOf": [],
+      "anyOf": [
+        "error",
+        "io",
+        "async"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R01",
+      "version": 1,
+      "group": "reliability",
+      "title": "Resource lifecycle",
+      "intent": "release connections, listeners, timers, files and resources even on failure.",
+      "allOf": [],
+      "anyOf": [
+        "resource"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R02",
+      "version": 1,
+      "group": "reliability",
+      "title": "Timeout and cancellation",
+      "intent": "bounded external waits; propagate cancellation where supported.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "async"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R03",
+      "version": 1,
+      "group": "reliability",
+      "title": "Bounded concurrency",
+      "intent": "avoid unbounded work queues and resource exhaustion.",
+      "allOf": [],
+      "anyOf": [
+        "concurrency"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R04",
+      "version": 1,
+      "group": "reliability",
+      "title": "Retry with backoff",
+      "intent": "bounded attempts, jitter where useful, distinguish transient/permanent failures; only retry safe/idempotent operations.",
+      "allOf": [],
+      "anyOf": [
+        "io",
+        "async"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R05",
+      "version": 1,
+      "group": "reliability",
+      "title": "Structured logging",
+      "intent": "actionable context and correlation without secrets or unnecessary personal data.",
+      "allOf": [],
+      "anyOf": [
+        "logging",
+        "runtime"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "R06",
+      "version": 1,
+      "group": "reliability",
+      "title": "Money precision",
+      "intent": "appropriate integer minor units or decimal policy, currency-specific rounding and range checks; preserve existing financial contract.",
+      "allOf": [],
+      "anyOf": [
+        "money",
+        "payments"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R07",
+      "version": 1,
+      "group": "reliability",
+      "title": "Timezone and clock",
+      "intent": "explicit instants/local dates, expiry semantics and deterministic clocks in tests.",
+      "allOf": [],
+      "anyOf": [
+        "time"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R08",
+      "version": 1,
+      "group": "reliability",
+      "title": "Backward-compatible contracts",
+      "intent": "inspect consumers and version/migration needs.",
+      "allOf": [],
+      "anyOf": [
+        "contract",
+        "api",
+        "migration"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "R09",
+      "version": 1,
+      "group": "reliability",
+      "title": "Query efficiency",
+      "intent": "avoid N+1/unbounded retrieval based on actual workload and evidence.",
+      "allOf": [],
+      "anyOf": [
+        "database",
+        "performance"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "R10",
+      "version": 1,
+      "group": "reliability",
+      "title": "State ownership",
+      "intent": "define canonical state, avoid inconsistent copies.",
+      "allOf": [],
+      "anyOf": [
+        "state"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "SEC01",
+      "version": 1,
+      "group": "security",
+      "title": "Authorization and least privilege",
+      "intent": "Enforce server-side action/resource permission; verify unauthenticated, cross-tenant and other-owner denial. Admin/service-role success is insufficient.",
+      "allOf": [],
+      "anyOf": [
+        "auth"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC02",
+      "version": 1,
+      "group": "security",
+      "title": "RLS and tenant isolation",
+      "intent": "Check real policy behavior under normal user credentials in safe environment.",
+      "allOf": [],
+      "anyOf": [
+        "auth",
+        "database"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC03",
+      "version": 1,
+      "group": "security",
+      "title": "Payment idempotency and replay protection",
+      "intent": "Verify signature, amount/currency, provider status, event authenticity, replay, duplicate events and safe transition rules; no real payments.",
+      "allOf": [],
+      "anyOf": [
+        "payments"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC04",
+      "version": 1,
+      "group": "security",
+      "title": "Transaction and concurrency integrity",
+      "intent": "Check constraints, locks, conditional writes, transaction boundaries, rollback and competing operations.",
+      "allOf": [],
+      "anyOf": [
+        "concurrency",
+        "database",
+        "payments"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC05",
+      "version": 1,
+      "group": "security",
+      "title": "Secrets and data exposure",
+      "intent": "Least-privilege credentials, no secret logging/commits/prompts, explicit output allowlists.",
+      "allOf": [],
+      "anyOf": [
+        "secrets",
+        "security",
+        "api"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC06",
+      "version": 1,
+      "group": "security",
+      "title": "Destructive operations",
+      "intent": "Check deletion scope, cascades, backup/recovery, migration/rollback and explicit authorization; no shared-database destructive checks.",
+      "allOf": [],
+      "anyOf": [
+        "destructive",
+        "migration"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "SEC07",
+      "version": 1,
+      "group": "security",
+      "title": "Safety over style",
+      "intent": "Never weaken validation, access control, transaction handling, accessibility, tests or other invariants to satisfy formatting or simplification.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review",
+        "security"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "F01",
+      "version": 1,
+      "group": "frontend",
+      "title": "Derive, don't synchronize",
+      "intent": "calculate derived state unless caching/snapshot semantics require state.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "react"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F02",
+      "version": 1,
+      "group": "frontend",
+      "title": "Avoid unnecessary effects",
+      "intent": "render/event logic instead of an effect; retain actual external synchronization.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "react"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F03",
+      "version": 1,
+      "group": "frontend",
+      "title": "State colocation",
+      "intent": "keep state near its owner.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "react"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F04",
+      "version": 1,
+      "group": "frontend",
+      "title": "Stable identity",
+      "intent": "stable keys for changing lists, preserve component identity.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "react"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F05",
+      "version": 1,
+      "group": "frontend",
+      "title": "No premature memoization",
+      "intent": "use memoization only for supported benefit or contract.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "react"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F06",
+      "version": 1,
+      "group": "frontend",
+      "title": "Complete UI states",
+      "intent": "loading/error/empty/success, retry and disabled state as applicable.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "frontend"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F07",
+      "version": 1,
+      "group": "frontend",
+      "title": "Semantic HTML first",
+      "intent": "native semantics before custom controls.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "frontend"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F08",
+      "version": 1,
+      "group": "frontend",
+      "title": "Prevent duplicate submission",
+      "intent": "UI pending protection plus backend idempotency/authorization as relevant.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "frontend",
+        "state"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "F09",
+      "version": 1,
+      "group": "frontend",
+      "title": "Server-state ownership",
+      "intent": "avoid unnecessary duplicate server state in stores.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "frontend",
+        "state"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "F10",
+      "version": 1,
+      "group": "frontend",
+      "title": "Preserve accessibility",
+      "intent": "keyboard, focus, labels and screen-reader semantics; test impacted behavior.",
+      "allOf": [
+        "frontend"
+      ],
+      "anyOf": [
+        "frontend"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "B01",
+      "version": 1,
+      "group": "backend",
+      "title": "Thin controllers",
+      "intent": "transport boundary delegates domain work according to architecture.",
+      "allOf": [],
+      "anyOf": [
+        "backend"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "B02",
+      "version": 1,
+      "group": "backend",
+      "title": "Database-enforced invariants",
+      "intent": "constraints/unique keys/foreign keys where supported and appropriate.",
+      "allOf": [],
+      "anyOf": [
+        "database"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "B03",
+      "version": 1,
+      "group": "backend",
+      "title": "Explicit field selection",
+      "intent": "select necessary fields and protect sensitive data.",
+      "allOf": [],
+      "anyOf": [
+        "database"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "B04",
+      "version": 1,
+      "group": "backend",
+      "title": "Stable pagination ordering",
+      "intent": "deterministic order and tie-breaker, correct cursor semantics.",
+      "allOf": [],
+      "anyOf": [
+        "database",
+        "api"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "B05",
+      "version": 1,
+      "group": "backend",
+      "title": "Atomic state transitions",
+      "intent": "guard concurrent transition, validate legal source state.",
+      "allOf": [],
+      "anyOf": [
+        "database",
+        "state",
+        "concurrency"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "B06",
+      "version": 1,
+      "group": "backend",
+      "title": "Consistent error contracts",
+      "intent": "stable error codes and responses without leaking internals.",
+      "allOf": [],
+      "anyOf": [
+        "api",
+        "backend"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "B07",
+      "version": 1,
+      "group": "backend",
+      "title": "Safe migrations",
+      "intent": "compatibility with existing data and concurrent deployment versions; explicit approval and rollback/recovery.",
+      "allOf": [],
+      "anyOf": [
+        "migration"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "B08",
+      "version": 1,
+      "group": "backend",
+      "title": "Audit critical actions",
+      "intent": "meaningful audit trail without leaking secrets; respect retention policy.",
+      "allOf": [],
+      "anyOf": [
+        "security",
+        "payments",
+        "auth"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "B09",
+      "version": 1,
+      "group": "backend",
+      "title": "Avoid check-then-act races",
+      "intent": "atomic conditional update or suitable transaction/lock; verify result and input constraints.",
+      "allOf": [],
+      "anyOf": [
+        "concurrency",
+        "database"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "B10",
+      "version": 1,
+      "group": "backend",
+      "title": "Explicit data exposure",
+      "intent": "serialize intended public fields, not unchecked entire entities.",
+      "allOf": [],
+      "anyOf": [
+        "api"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q01",
+      "version": 1,
+      "group": "testing",
+      "title": "Test behavior, not implementation",
+      "intent": "assertions on public contract and outcomes.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "Q02",
+      "version": 1,
+      "group": "testing",
+      "title": "Regression test for bug fixes",
+      "intent": "show bug-catching test or justify why unavailable; where possible reproduce fail then pass.",
+      "allOf": [],
+      "anyOf": [
+        "regression"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q03",
+      "version": 1,
+      "group": "testing",
+      "title": "Deterministic tests",
+      "intent": "control randomness, clocks and dependencies.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "Q04",
+      "version": 1,
+      "group": "testing",
+      "title": "Test isolation",
+      "intent": "no order-dependent shared mutable state.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q05",
+      "version": 1,
+      "group": "testing",
+      "title": "Avoid excessive mocking",
+      "intent": "mock at appropriate boundaries, verify actual integration separately.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "guidance",
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q06",
+      "version": 1,
+      "group": "testing",
+      "title": "Boundary value testing",
+      "intent": "empty, limits, invalid, edge and failure cases as applicable.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q07",
+      "version": 1,
+      "group": "testing",
+      "title": "Property-based testing",
+      "intent": "use for meaningful invariants, not mandatory everywhere.",
+      "allOf": [],
+      "anyOf": [
+        "testing"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "PREFERRED",
+      "safetyInvariant": false
+    },
+    {
+      "id": "Q08",
+      "version": 1,
+      "group": "testing",
+      "title": "Contract testing",
+      "intent": "R when changing relevant consumer/provider boundaries.",
+      "allOf": [],
+      "anyOf": [
+        "contract",
+        "api"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q09",
+      "version": 1,
+      "group": "testing",
+      "title": "Failure injection",
+      "intent": "R for critical failure behavior; timeouts, network/provider failures in safe fixtures.",
+      "allOf": [],
+      "anyOf": [
+        "critical",
+        "io"
+      ],
+      "mechanisms": [
+        "guidance"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "Q10",
+      "version": 1,
+      "group": "testing",
+      "title": "Meaningful assertions",
+      "intent": "verify business outcome, not merely no throw.",
+      "allOf": [],
+      "anyOf": [
+        "testing",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI01",
+      "version": 1,
+      "group": "agent",
+      "title": "No compatibility bypass",
+      "intent": "Never widen types or bypass contracts merely to compile.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI02",
+      "version": 1,
+      "group": "agent",
+      "title": "No fabricated APIs",
+      "intent": "Verify actual installed/library version, symbols and supported APIs before use.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI03",
+      "version": 1,
+      "group": "agent",
+      "title": "No speculative dependencies",
+      "intent": "Inspect existing tools first; justify any new dependency and obtain approval when required.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI04",
+      "version": 1,
+      "group": "agent",
+      "title": "No suppression-driven fixes",
+      "intent": "No ts-ignore, eslint-disable or similar workaround solely to hide root cause; documented narrow exceptions require evidence and authorization.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI05",
+      "version": 1,
+      "group": "agent",
+      "title": "No test weakening",
+      "intent": "Never remove assertions or alter expected results merely to pass; genuine contract changes need approval.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI06",
+      "version": 1,
+      "group": "agent",
+      "title": "No placeholder production code",
+      "intent": "No stubs, fake success or mock responses presented as complete production flows.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI07",
+      "version": 1,
+      "group": "agent",
+      "title": "Preserve existing consumers",
+      "intent": "Inspect affected callers before changing public interfaces.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI08",
+      "version": 1,
+      "group": "agent",
+      "title": "No duplicate implementations",
+      "intent": "Search existing source before inventing replacements; reuse when appropriate without premature abstraction.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI09",
+      "version": 1,
+      "group": "agent",
+      "title": "No unrelated cleanup",
+      "intent": "Do not reformat/rename/refactor outside the authorized scope.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI10",
+      "version": 1,
+      "group": "agent",
+      "title": "Evidence before optimization",
+      "intent": "Explain performance hypothesis and verify meaningful benefit, including trade-offs.",
+      "allOf": [],
+      "anyOf": [
+        "performance"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI11",
+      "version": 1,
+      "group": "agent",
+      "title": "Preserve business semantics",
+      "intent": "Refactor without unauthorized behavioral changes.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    },
+    {
+      "id": "AI12",
+      "version": 1,
+      "group": "agent",
+      "title": "Verify generated changes",
+      "intent": "Inspect actual diff and relevant runtime/test evidence; tool success does not prove correctness.",
+      "allOf": [],
+      "anyOf": [
+        "code",
+        "review"
+      ],
+      "mechanisms": [
+        "review"
+      ],
+      "defaultLevel": "REQUIRED",
+      "safetyInvariant": true
+    }
+  ]
+}

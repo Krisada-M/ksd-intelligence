@@ -78,3 +78,7 @@ For native AGY skill discovery of KSD's platform-agnostic skill catalog (`skills
 5. Record exact AGY version, Node version, OS/arch, raw tool responses, and any missing permission prompts. Until these steps are performed, classify **AGY LIVE: NOT VERIFIED**.
 
 AGY's native Plugin packaging and Skill packaging are intentionally separate milestones; this PR implements local MCP tools, not a full installable AGY plugin.
+
+## D70 candidate: native engineering plugin
+
+The repository also packages an Antigravity-native manifest, a generated balanced engineering rule and `erosiano-review` skill. Run `agy plugin validate /absolute/path/to/ksd-intelligence`, install the reviewed local candidate using `agy plugin install /absolute/path/to/ksd-intelligence`, then confirm the plugin's rule and skill discovery. Install only this product; remove older duplicated global policy rules/skills deliberately. The native rule is static; OMP session overrides and environment flags are not simulated in AGY. The local MCP config remains per workspace and fixed-root, not a plugin-global root guess. The terminal package includes `erosiano-baseline` and `erosiano-practices`; use only the host-approved project root. Real AGY validation, installation and rule/skill activation are NOT VERIFIED until observed.

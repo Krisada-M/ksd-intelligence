@@ -18,7 +18,7 @@ const modernMeta = {
 async function start(env = {}, customArgs, sharedRoot) {
   const root = sharedRoot ?? (await mkdtemp(join(tmpdir(), 'ksd-mcp-')));
   const args = customArgs ? customArgs(root) : [entry, '--root', root];
-  const childEnv = { ...process.env, EI_DISABLED: '', KSD_MCP_WORKFLOW: '' };
+  const childEnv = { ...process.env, EI_DISABLED: '', KSD_MCP_WORKFLOW: '', KSD_MCP_ENGINEERING: '' };
   delete childEnv.KSD_MCP_MARKDOWN;
   const child = spawn(process.execPath, args, {
     env: { ...childEnv, ...env },
@@ -116,6 +116,64 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     } finally {
       await rm(parent, { recursive: true, force: true });
     }
+  });
+
+  it('opt-in engineering tools share the fixed root and reject stale evidence', async (t) => {
+    const c = await start({ KSD_MCP_ENGINEERING: '1' });
+    t.after(c.stop);
+    await mkdir(join(c.root, 'src'));
+    await mkdir(join(c.root, '.git', 'refs', 'heads'), { recursive: true });
+    await writeFile(join(c.root, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+    await writeFile(join(c.root, '.git', 'refs', 'heads', 'main'), 'a'.repeat(40) + '\n');
+    await writeFile(join(c.root, 'src', 'main.ts'), 'export const value = 1;\n');
+    await writeFile(join(c.root, 'tsconfig.json'), '{"compilerOptions":{"strict":true}}');
+    await c.request(1, 'initialize', {
+      protocolVersion: '2025-11-25',
+      clientInfo: { name: 'engineering-test', version: '1' },
+      capabilities: {},
+    });
+    c.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    const list = await c.request(2, 'tools/list', {});
+    assert.deepEqual(
+      list.result.tools.map((tool) => tool.name).slice(-2),
+      ['erosiano_baseline', 'erosiano_resolve_practices'],
+    );
+    const outside = await c.request(3, 'tools/call', {
+      name: 'erosiano_baseline',
+      arguments: { scope: '..' },
+    });
+    assert.equal(outside.result.isError, true);
+    const reply = await c.request(4, 'tools/call', {
+      name: 'erosiano_baseline',
+      arguments: { scope: 'src' },
+    });
+    const baseline = JSON.parse(reply.result.content[0].text);
+    assert.equal(baseline.cacheable, true);
+    const context = JSON.stringify({
+      baseline: {
+        scope: baseline.scope,
+        additionalPaths: baseline.additionalPaths,
+        fingerprint: baseline.fingerprint,
+      },
+      facets: { typescript: true },
+      observations: {
+        typescript: {
+          paths: ['tsconfig.json', 'src/main.ts'],
+          classification: 'CURRENT',
+          confidence: 'HIGH',
+        },
+      },
+    });
+    const input = {
+      name: 'erosiano_resolve_practices',
+      arguments: { context, group: 'typescript', format: 'policy' },
+    };
+    const fresh = await c.request(5, 'tools/call', input);
+    assert.match(fresh.result.content[0].text, /Scoped erosiano-dev practice pack/);
+    await writeFile(join(c.root, 'src', 'main.ts'), 'export const value = 2;\n');
+    const stale = await c.request(6, 'tools/call', input);
+    assert.equal(stale.result.isError, true);
+    assert.match(stale.result.content[0].text, /stale or incomplete sampled baseline/);
   });
 
   it('2025-11-25 lifecycle, read-only tools and status without an index', async (t) => {

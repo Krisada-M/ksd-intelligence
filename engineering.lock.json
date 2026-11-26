@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/Krisada-M/ksd-engineering",
+  "commit": "f8c85ce74dc9d94d73417e032f10b4a17232b754",
+  "sourceDirectory": "plugins/erosiano-dev",
+  "package": "omp-erosiano-dev",
+  "version": "0.7.0",
+  "files": {
+    "baseline.js": {
+      "gitBlob": "7acceae59049c075607bbcb2a1b0daa77320d7f0",
+      "mode": "100755"
+    },
+    "change-scope.js": {
+      "gitBlob": "b51d7a628cd7c2106a59b483f9f9664a6743fa4d",
+      "mode": "100644"
+    },
+    "check-changed.js": {
+      "gitBlob": "b6e14d643d452d9e0d449f9bcb40eff2dc4e5255",
+      "mode": "100755"
+    },
+    "config.js": {
+      "gitBlob": "d42fe9f7611fb45c37d3cc0ec904bc37c8c60351",
+      "mode": "100644"
+    },
+    "dist/policy.d.ts": {
+      "gitBlob": "ac4719a2ad45a60c2b086b86b4df0c6869d8b06c",
+      "mode": "100644"
+    },
+    "dist/policy.js": {
+      "gitBlob": "dddbf30c4369f3abcb26da968623c07aedfede00",
+      "mode": "100644"
+    },
+    "dist/runtime.d.ts": {
+      "gitBlob": "6f1cd36b727fcc3d7abc8d505740be58bc85c19a",
+      "mode": "100644"
+    },
+    "dist/runtime.js": {
+      "gitBlob": "9e148a4fb25ac60162b5c62df115a9f60f4997fb",
+      "mode": "100644"
+    },
+    "dist/sdlc.d.ts": {
+      "gitBlob": "deab3d24fbdc9d776bab296c8c5a1c604b4edb73",
+      "mode": "100644"
+    },
+    "dist/sdlc.js": {
+      "gitBlob": "b8a1a6f6d15042e14e8531e15f9bb514c1d6c622",
+      "mode": "100644"
+    },
+    "eslint-rules/index.js": {
+      "gitBlob": "1e05f3e2726b8203d192d710e3398083292da5e3",
+      "mode": "100644"
+    },
+    "index.d.ts": {
+      "gitBlob": "76520a3c098c99fc1abce5a15457d041c6d9b32b",
+      "mode": "100644"
+    },
+    "index.js": {
+      "gitBlob": "620f3909de24c626bf253f7403ecb922fa5d414d",
+      "mode": "100644"
+    },
+    "intelligence.js": {
+      "gitBlob": "67820bcd36661f3a962c3b2ac6446d328c346a34",
+      "mode": "100644"
+    },
+    "package.json": {
+      "gitBlob": "6652521461d677b4fe5e893f42456921543fd841",
+      "mode": "100644"
+    },
+    "policy.js": {
+      "gitBlob": "8dd150af2cfbe8e952fc48c4c343556c639845ab",
+      "mode": "100644"
+    },
+    "practice-tool.js": {
+      "gitBlob": "0938e6474f3a3a695abc4e6d962796c2ce225f7f",
+      "mode": "100644"
+    },
+    "practices.js": {
+      "gitBlob": "db56ad205a64a7bc0cc95b006ffa910bb59f8abb",
+      "mode": "100755"
+    },
+    "practices.json": {
+      "gitBlob": "d94e9aeba68dd9eb0ab2caf286688f22bf7622a3",
+      "mode": "100644"
+    },
+    "review-verdict.js": {
+      "gitBlob": "d7565fbf97dd74ea1c44dfbf9bb2b4cfaef7fc2c",
+      "mode": "100755"
+    },
+    "sdlc.js": {
+      "gitBlob": "47ea2562a7c1cd4460a09072795a6673b3d0c565",
+      "mode": "100644"
+    }
+  }
+}

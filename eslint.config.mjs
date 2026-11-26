@@ -9,6 +9,7 @@ export default tseslint.config(
       'node_modules/**',
       'spikes/**',
       'src/policy/**',
+      'src/engineering/**',
       'tests/policy/**',
       'tests/fixtures/**',
       'examples/**',

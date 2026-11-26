@@ -1,6 +1,6 @@
 # ksd-intelligence
 
-KSD helps you find TypeScript and JavaScript code, see what depends on a symbol before editing it, and review what an actual Git diff affects. It builds a private local SQLite index. It suggests checks; it does not run your tests, edit source, approve changes, or deploy. In Oh My Pi (OMP) it also supplies the KSD engineering policy and a skill workflow. Antigravity (AGY) uses the same analysis through local MCP stdio, without the OMP policy.
+KSD helps you find TypeScript and JavaScript code, see what depends on a symbol before editing it, and review what an actual Git diff affects. It builds a private local SQLite index. It suggests checks; it does not run your tests, edit source, approve changes, or deploy. It also supplies the pinned **erosiano-dev** engineering core (baseline, 138 practices, quality gates and evidence-aware review). One product, two host adapters: native extension in OMP and native rules/skills plus fixed-root local MCP in Antigravity (AGY). The integration branch is a candidate, not a released version.
 
 ## Install
 
@@ -8,7 +8,7 @@ Requirements: Git and **Node ≥ 22.5**; use Node 24 LTS. On Node 22.5–22.12 o
 
 ### OMP: marketplace
 
-If you already use `engineering-proxy@engineering-proxy`, uninstall it first (`omp plugin uninstall engineering-proxy@engineering-proxy`). Running both plugins can inject the policy twice.
+Only install `ksd-intelligence@ksd-intelligence` as the engineering/intelligence product. Before switching to the integrated build, back up configuration and uninstall any standalone `engineering-proxy@engineering-proxy` or `erosiano-dev@erosiano-dev` installation that exists. Do not activate both policy owners. Ponytail is independent.
 
 ```sh
 omp plugin marketplace add Krisada-M/ksd-intelligence
@@ -16,11 +16,21 @@ omp plugin install ksd-intelligence@ksd-intelligence
 omp plugin list
 ```
 
-Restart OMP. Run `/engineering-proxy status` and check the KSD status segment. To get the `ei` shell command, install the npm package below; it does not replace the marketplace install. From a built checkout you can instead run `node dist/adapters/cli/main.js` in place of `ei`.
+Restart OMP. Run `/erosiano-dev status` and inspect the EROSIANO status segment. `/engineering-proxy` and `/engineering-review` are migration aliases owned by the same new core. Existing legacy config/session modes are migrated by erosiano-dev; the former policy is not loaded. Default engineering integration uses the four native `ei_*` tools; explicit `intelligenceMode` config overrides it. A missing/inactive tool falls back to native evidence. New core commands include `/erosiano-dev baseline [scope]`, `/erosiano-dev practices [scope]`, `/erosiano-dev review [scope]`. To get the `ei` shell command, install the npm package below; it does not replace the marketplace install. From a built checkout you can instead run `node dist/adapters/cli/main.js` in place of `ei`.
 
-### AGY and terminal: npm
+### AGY: native plugin and terminal/MCP
 
-After 1.0.0 is published:
+The same repository has an Antigravity-native manifest, a generated balanced rule, existing skills and an on-demand `erosiano-review` skill. From a trusted checkout of this candidate, validate and install locally:
+
+```sh
+agy plugin validate /absolute/path/to/ksd-intelligence
+agy plugin install /absolute/path/to/ksd-intelligence
+agy plugin list
+```
+
+Once the integrated build is accepted on main, the same repository URL can be used for AGY installation. AGY's static rule does not implement OMP's session mode or config hooks. Disable the AGY plugin using the host controls. MCP stays an explicit per-workspace setup with an approved absolute root; a global plugin cannot safely infer the active project. Live AGY validation and installation are still required.
+
+For terminal tools and the MCP launcher, install an accepted package (or pack/install this candidate from a trusted checkout):
 
 ```sh
 npm install -g @krisada-m/ksd-intelligence
@@ -128,7 +138,7 @@ Workflow fails closed without the configured skill sources. For indexed work, fo
 | `riskZones` | `"default"` (payments, auth, migrations, production config), custom `{zone,floor,match}` entries, or `[]`. Zones only raise risk |
 | `search.enabled` | Lexical search only |
 
-Set `EI_DISABLED=1` before launching OMP or AGY to disable EI tools. Set `ENGINEERING_PROXY_DISABLED=1` before launching OMP to disable KSD policy injection and delegated review; KSD status remains available. Use both to disable both surfaces. KSD mode has separate configuration in `~/.omp/agent/engineering-proxy.json` and project `.engineering-proxy.json`.
+Set `EI_DISABLED=1` before launching OMP or the MCP server to disable EI tools. In OMP, `EROSIANO_DEV_DISABLED=1` (or legacy `ENGINEERING_PROXY_DISABLED=1`) disables policy guidance and review independently; it is not a way to co-install two policy owners. Engineering configuration lives in `~/.omp/agent/erosiano-dev.json` and project `.erosiano-dev.json`; missing new files fall back to the old files. See the [engineering guide](https://github.com/Krisada-M/ksd-engineering) for precedence and migration. AGY uses its own plugin activation; these environment flags do not control its static rule.
 
 Index and audit are local under `~/.cache/ksd-intelligence/`. SQLite keeps symbols, references, capped signature text and first JSDoc paragraphs, not whole source files. `ei audit --since 7d` summarizes tool use. `ei cache clear` deletes the current project's index and audit, **not** the shared runtime; it refuses during a live build.
 
@@ -157,12 +167,17 @@ Index and audit are local under `~/.cache/ksd-intelligence/`. SQLite keeps symbo
 omp plugin marketplace update ksd-intelligence
 omp plugin upgrade ksd-intelligence@ksd-intelligence
 
-# Remove; optionally restore the old OMP policy plugin, never both at once.
+# Remove the composed product (both OMP policy and intelligence).
 omp plugin uninstall ksd-intelligence@ksd-intelligence
-omp plugin install engineering-proxy@engineering-proxy
+# AGY: uninstall its native plugin and remove the separately configured MCP entry.
+agy plugin uninstall ksd-intelligence
 
 # Remove the AGY MCP entry and reload AGY, then remove the CLI.
 npm uninstall -g @krisada-m/ksd-intelligence
 ```
 
 For npm rollback, reinstall a previous approved version or saved tarball, then run `ei setup` and `ei index --full`. Do not use the old index as evidence for the new version. Back up the audit log before `ei cache clear` if you need it. See the [changelog](CHANGELOG.md) and [release checklist](https://github.com/Krisada-M/ksd-intelligence/blob/main/docs/release-checklist.md) for verification and owner gates.
+
+## Engineering bundle provenance
+
+[`engineering.lock.json`](engineering.lock.json) pins the exact upstream commit and every allowed runtime Git blob/mode. `src/engineering/` contains byte-identical runtime files; build verifies them offline and copies them to `dist/engineering/`, never fetching dependencies at agent startup. The old `src/policy/` and its frozen tests remain historical contract evidence; no legacy policy is registered or distributed under `dist/policy/`. `npm run verify:engineering` validates both source and distribution. The exported ESLint rules and all four engineering companion CLIs now use the new bundle. To update the core, review the upstream PR, update the pin and bytes together using the sync script, regenerate host assets, build, run CI, then approve the composed product. See [provenance](PROVENANCE.md).

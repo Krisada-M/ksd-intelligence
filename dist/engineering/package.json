@@ -1,6 +1,6 @@
 {
-  "name": "omp-engineering-proxy",
-  "version": "0.6.0",
+  "name": "omp-erosiano-dev",
+  "version": "0.7.0",
   "type": "module",
   "license": "MIT",
   "description": "Repo-adaptive engineering policy extension for OMP, compatible with Ponytail",
@@ -12,7 +12,9 @@
   },
   "bin": {
     "ksd-check-changed": "./check-changed.js",
-    "ksd-review-verdict": "./review-verdict.js"
+    "ksd-review-verdict": "./review-verdict.js",
+    "erosiano-practices": "./practices.js",
+    "erosiano-baseline": "./baseline.js"
   },
   "engines": {
     "node": ">=20"
@@ -29,5 +31,6 @@
   },
   "scripts": {
     "test": "node --import ./test/helpers/isolated-home.js --test test/*.test.js"
-  }
+  },
+  "types": "./index.d.ts"
 }

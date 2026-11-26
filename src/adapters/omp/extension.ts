@@ -1,17 +1,7 @@
 /**
- * OMP extension entry: KSD policy module + `ei_workflow`, `ei_status` and `ei_impact` tools in one plugin.
- *
- * STATUS: live-verified pieces — policy module migrated byte-identical from KSD 0.6.0
- * (73fc916) in M1c, ei_workflow verified live in OMP 18.18.8 in M1, ei_status (M2a.1) uses the
- * `ctx.cwd` documented for tool `execute` in OMP 18.19.0 (omp://extensions.md §2), ei_impact
- * (M2b) verified against OMP 18.22.0 extension types (`@oh-my-pi/pi-coding-agent`
- * `extensibility/extensions/types.d.ts`, `wrapper.ts`, `@oh-my-pi/omptype` `src/zod.ts`).
- *
- * Registration order is KSD first, then ei_* (docs/DESIGN.md §10.1). A failure in
- * either part must not prevent the other from registering. Kill switches are
- * independent: ENGINEERING_PROXY_DISABLED=1 (checked inside the policy module)
- * disables only policy injection and /engineering-review; EI_DISABLED=1 disables
- * only the ei_* tools.
+ * Single OMP composition root: pinned erosiano-dev engineering policy and native ei_* tools.
+ * Registration failures are isolated. EI_DISABLED affects intelligence only; the engineering
+ * library owns its config, commands, lifecycle and disable flags.
  */
 import {
   auditFieldsForChanges,
@@ -60,8 +50,8 @@ import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
 import { defaultLockPath, readLock } from '../../workflow/sources.js';
 import { RISKS, STAGES, TASK_TYPES, WorkflowError } from '../../workflow/types.js';
-import { createExtension as createPolicyExtension } from '../../policy/index.js';
-import { SECTION_KEY } from '../../policy/policy.js';
+import { createExtension as createPolicyExtension } from '../../engineering/index.js';
+import { SECTION_KEY } from '../../engineering/dist/policy.js';
 import { renderResultView, type ResultView } from '../ui/tree.js';
 import type { WorkspaceStatus } from '../../core/engine/status.js';
 import type { ImpactBatch } from '../../core/impact/session.js';
@@ -323,7 +313,7 @@ export interface ExtensionDeps {
   impactSession?: ImpactSessionOptions;
   /** Where the load-time config is read to decide which V2 tools register (default: cwd). */
   cwd?: string;
-  /** Injectable for tests; defaults to the real KSD policy entry. */
+  /** Injectable for tests; defaults to the pinned engineering entry. */
   createPolicyExtension?: (pi: OmpExtensionApi) => void;
   /** Injectable for tests; defaults to the real check runner. */
   verifyRunner?: VerifyOptions['runner'];
@@ -1116,7 +1106,9 @@ export default function ksdIntelligenceExtension(
 ): void {
   const env = deps.env ?? process.env;
   const startPolicy =
-    deps.createPolicyExtension ?? ((api: OmpExtensionApi) => createPolicyExtension(api));
+    deps.createPolicyExtension ??
+    ((api: OmpExtensionApi) =>
+      createPolicyExtension(api, { defaultIntelligenceMode: 'native', label: 'ksd-intelligence' }));
 
   try {
     startPolicy(pi);
