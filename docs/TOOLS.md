@@ -15,7 +15,7 @@ Derived from this project's principles and from what a reference project measure
 5. **Bounded output.** Each tool has a character budget. Overflow is summarised with counts and the exact call that reveals more. Never truncate silently.
 6. **Guidance, not errors, for expected conditions.** Ambiguous name, name not found, an index build that outlasts the wait: success-shaped responses that say what to do next. `isError` is for malfunctions and trust failures only (DESIGN §7.9).
 7. **Never claim more than the evidence.** The words describe the picture ("complete", "partial") and the reach; nothing on the page says "safe".
-8. **Read-only.** All tools register with `approval: 'read'`.
+8. **Read-only.** All tools register with `approval: 'read'`. One V2 exception: `ei_verify` (§7a) declares `exec` for a call that names a `check`, because it runs the owner's allowlisted command; reading a result file stays `read`.
 9. **Deterministic.** Same index and input → byte-identical text (stable ordering: depth, then path, then line).
 10. **Show provenance where relevant.** Index-backed answers include freshness and version evidence. Guidance and workflow have their own shapes.
 
@@ -34,7 +34,7 @@ Derived from this project's principles and from what a reference project measure
 - Symbol lookup is folded into `ei_impact`: an ambiguous or unknown name returns the candidates.
 - Indexing is automatic on first query and explicit for the owner via `ei index`. The agent never decides to index.
 
-**PLANNED (V2):** `ei_context`, `ei_verify`, `ei_learning`, `ei_gitlab`, `ei_retrieve`. Module conditions and value checks are in DESIGN §13.
+**V2:** `ei_verify` and `ei_learning` are opt-in (§7a–7b). `ei_context` and `ei_retrieve` are planned. `ei_gitlab` was dropped (D67). Module conditions and value checks are in DESIGN §13.
 
 ## 3. `ei_workflow`
 
@@ -222,6 +222,39 @@ Rules:
 - Each hit: match kind, `path:line`, signature, then at most two facts (exported, caller count, route).
 - Match kinds: `exact` and `lexical` (SQLite FTS5). Semantic matching and embeddings are **PLANNED (V2)**; V1 never suggests installing a model.
 - No matches: success-shaped `SEARCH "<query>" — no matches. Try identifiers that would appear in the code.`
+
+## 7a. `ei_verify` (V2c; registered only when `verification.enabled` is true)
+
+**Description (registered text):**
+> Before you say tests, typecheck or lint pass, call this to get a recorded result. Pass `check` with a name the owner configured; it runs that exact command and returns PASS, FAIL, SKIPPED, ERROR or NOT_VERIFIED with the git revision. Pass `report` instead to read a configured JUnit/TAP file. Only a PASS result supports a claim that tests pass. Running a check asks for approval.
+
+followed by the configured names (`Checks: test, typecheck, lint.`, `Result files: …`).
+
+**Input:** exactly one of `check: string` or `report: string`, each a name from `verification.checks` / `verification.reports`. Anything else is `INVALID_INPUT`; an unknown name is `NOT_VERIFIED` and nothing runs. Argv, cwd, timeout and file paths come only from the committed `ei.config.json`; an uncommitted edit to it refuses to run.
+
+**Approval:** `exec` for `check` (the OMP prompt shows the configured command and timeout), `read` for `report`.
+
+**Output (budget: 6,000 characters)**
+
+```text
+VERIFY test — FAIL · 3f2c9a1b7d40 · dirty
+exit 1
+exit 1 · 41.3 s · tests 762 · passed 761 · failed 1 · skipped 0
+Command: npm test
+Failing (1)
+  verify: status rules > timeout is ERROR
+Output (last 40 lines)
+  …
+Next: report this status as it is; fix and call ei_verify again only after a change.
+— engine 1.0.0
+```
+
+Rules:
+
+- Line 1: name, status, the first 12 characters of `HEAD`, and `dirty` when the working tree has uncommitted changes.
+- `PASS` only from exit 0 with no failed test; exit 0 with zero tests is `SKIPPED`; timeout, cancel or a command that cannot start is `ERROR` (the process group is killed); a configured name not found, verification disabled, or a stale result file is `NOT_VERIFIED`.
+- Output is redacted (secret-named environment values, token shapes) before it is shown or stored; the footer says `secrets redacted` when something was replaced. The check runs with every secret-named variable removed from its environment.
+- Reports are kept in the cache, newest 10 per name. When verification is enabled, `ei_changes` adds `Verified for this tree: test PASS (ei_verify)` before `Next:` if a report matches `HEAD` and the uncommitted state exactly; otherwise its `Next:` line ends `No test result is recorded for this tree: call ei_verify (test, typecheck, lint).` Neither changes the verdict.
 
 ## 7b. `ei_learning` (V2d; registered only when `knowledge.enabled` is true)
 

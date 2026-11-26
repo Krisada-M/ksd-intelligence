@@ -10,6 +10,8 @@ import { checkTypescriptRuntime, engineVersion, pinnedTypescriptVersion, setupTy
 import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
 import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
+import { changesVerificationNote, renderVerifyOutcome } from '../../core/verify/render.js';
+import { loadVerificationState, runVerification, validateVerifyInput, } from '../../core/verify/verify.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
@@ -71,6 +73,7 @@ const USAGE = `usage:
   main.js changes [--base <ref>] [--depth <n>] [--planned <target>]... [--root <path>] [--json] (impact of uncommitted changes)
   main.js search  <query> [--limit <n>] [--root <path>] [--json] (find declarations by words or identifier)
   main.js learning list [--status <state>] | show <id> | approve <id> | review <id> | reject <id> [--root <path>] [--json] (owner commands for .ksd/learnings)
+  main.js verify  <check> | --report <name> [--root <path>] [--json] (run an allowlisted check or read a result file; needs verification.enabled)
   main.js doctor  --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status  [--root <path>] [--json]        (index, coverage, runtime, TypeScript, store, lock)
   main.js audit   [--since <7d|24h|30m|ISO>] [--root <path>] [--json] (summarize audit.jsonl)
@@ -195,6 +198,7 @@ async function run(argv) {
             planned: { type: 'string', multiple: true },
             since: { type: 'string' },
             status: { type: 'string' },
+            report: { type: 'string' },
             workflow: { type: 'boolean' },
         },
     });
@@ -427,7 +431,9 @@ async function run(argv) {
             engine: engineVersion(),
             ...auditFieldsForChanges(outcome, engineVersion()),
         }, { root: workspace.root });
-        const rendered = renderChangesOutcome(outcome);
+        const verification = await loadVerificationState(workspace);
+        const rendered = renderChangesOutcome(outcome, undefined, verification &&
+            changesVerificationNote(verification.reports, verification.revision, verification.checkNames));
         if (values.json === true) {
             console.log(JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2));
         }
@@ -438,6 +444,34 @@ async function run(argv) {
     }
     if (command === 'learning') {
         return runLearningCommand(sub, positionals[2], values.root, values.status, values.json === true);
+    }
+    if (command === 'verify') {
+        if (process.env.EI_DISABLED === '1') {
+            console.log('VERIFY disabled (EI_DISABLED)');
+            return 0;
+        }
+        const name = positionals[1];
+        const raw = values.report === undefined ? { check: name } : { check: name, report: values.report };
+        const valid = validateVerifyInput(raw);
+        if (!valid.ok) {
+            const failure = {
+                kind: 'failure',
+                code: 'INVALID_INPUT',
+                message: valid.message,
+            };
+            console.log(values.json === true
+                ? JSON.stringify(failure, null, 2)
+                : renderVerifyOutcome(failure, engineVersion()));
+            return 2;
+        }
+        const workspace = await loadWorkspace(values.root ?? process.cwd());
+        const outcome = await runVerification(workspace, valid.request);
+        console.log(values.json === true
+            ? JSON.stringify(outcome.kind === 'result' ? outcome.value : outcome, null, 2)
+            : renderVerifyOutcome(outcome, engineVersion()));
+        if (outcome.kind === 'failure')
+            return 2;
+        return outcome.value.status === 'PASS' ? 0 : 1;
     }
     if (command === 'search') {
         if (process.env.EI_DISABLED === '1') {

@@ -64,6 +64,106 @@ function isStringArray(value) {
 function isPositiveInteger(value) {
     return typeof value === 'number' && Number.isInteger(value) && value > 0;
 }
+/** Names of checks and reports: no spaces, separators, quotes or path characters. */
+export const VERIFY_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
+const MAX_CHECK_TIMEOUT_SEC = 3600;
+const DEFAULT_CHECK_TIMEOUT_SEC = 600;
+function parseCheckEntry(entry, index, errors) {
+    const where = `verification.checks[${index}]`;
+    if (!isRecord(entry)) {
+        errors.push(`${where} must be an object; ignored`);
+        return null;
+    }
+    if (typeof entry.name !== 'string' || !VERIFY_NAME_RE.test(entry.name)) {
+        errors.push(`${where}.name must match ${VERIFY_NAME_RE.source}; ignored`);
+        return null;
+    }
+    const command = entry.command;
+    if (!isStringArray(command) ||
+        command.length === 0 ||
+        command.some((part) => part === '' || part.includes('\0'))) {
+        errors.push(`${where}.command must be a non-empty array of non-empty strings; ignored`);
+        return null;
+    }
+    if (entry.timeoutSec === undefined) {
+        return { name: entry.name, command: [...command], timeoutSec: DEFAULT_CHECK_TIMEOUT_SEC };
+    }
+    if (!isPositiveInteger(entry.timeoutSec) || entry.timeoutSec > MAX_CHECK_TIMEOUT_SEC) {
+        errors.push(`${where}.timeoutSec must be an integer 1–${MAX_CHECK_TIMEOUT_SEC}; ignored`);
+        return null;
+    }
+    return { name: entry.name, command: [...command], timeoutSec: entry.timeoutSec };
+}
+function isRepoRelativePath(path) {
+    if (path === '' || path.includes('\0') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) {
+        return false;
+    }
+    return !path.split(/[\\/]/).some((segment) => segment === '..');
+}
+function parseReportEntry(entry, index, errors) {
+    const where = `verification.reports[${index}]`;
+    if (!isRecord(entry)) {
+        errors.push(`${where} must be an object; ignored`);
+        return null;
+    }
+    if (typeof entry.name !== 'string' || !VERIFY_NAME_RE.test(entry.name)) {
+        errors.push(`${where}.name must match ${VERIFY_NAME_RE.source}; ignored`);
+        return null;
+    }
+    if (entry.format !== 'junit' && entry.format !== 'tap') {
+        errors.push(`${where}.format must be "junit" or "tap"; ignored`);
+        return null;
+    }
+    if (typeof entry.path !== 'string' || !isRepoRelativePath(entry.path)) {
+        errors.push(`${where}.path must be a repository-relative path; ignored`);
+        return null;
+    }
+    if (entry.covers !== undefined && (!isStringArray(entry.covers) || entry.covers.length === 0)) {
+        errors.push(`${where}.covers must be a non-empty array of globs; ignored`);
+        return null;
+    }
+    return {
+        name: entry.name,
+        format: entry.format,
+        path: entry.path,
+        covers: entry.covers === undefined ? ['**'] : [...entry.covers],
+    };
+}
+function parseNamedList(value, key, parseEntry, errors) {
+    if (value === undefined)
+        return undefined;
+    if (!Array.isArray(value)) {
+        errors.push(`verification.${key} must be an array; ignored`);
+        return [];
+    }
+    const out = [];
+    value.forEach((entry, index) => {
+        const parsed = parseEntry(entry, index, errors);
+        if (parsed === null)
+            return;
+        if (out.some((existing) => existing.name === parsed.name)) {
+            errors.push(`verification.${key}[${index}].name "${parsed.name}" is a duplicate; ignored`);
+            return;
+        }
+        out.push(parsed);
+    });
+    return out;
+}
+function parseVerification(section, fallback, errors) {
+    if (section === undefined)
+        return fallback;
+    if (!isRecord(section) || typeof section.enabled !== 'boolean') {
+        errors.push('Invalid or missing "verification" section; using defaults');
+        return fallback;
+    }
+    const checks = parseNamedList(section.checks, 'checks', parseCheckEntry, errors);
+    const reports = parseNamedList(section.reports, 'reports', parseReportEntry, errors);
+    return {
+        enabled: section.enabled,
+        ...(checks === undefined ? {} : { checks }),
+        ...(reports === undefined ? {} : { reports }),
+    };
+}
 function parseToggle(section, fallback, name, errors) {
     if (section === undefined)
         return fallback;
@@ -276,7 +376,7 @@ export function parseProjectConfig(raw) {
         context: parseToggle(parsed.context, defaults.context, 'context', errors),
         compression: parseToggle(parsed.compression, defaults.compression, 'compression', errors),
         knowledge: parseToggle(parsed.knowledge, defaults.knowledge, 'knowledge', errors),
-        verification: parseToggle(parsed.verification, defaults.verification, 'verification', errors),
+        verification: parseVerification(parsed.verification, defaults.verification, errors),
         gitlab: parseGitlab(parsed.gitlab, defaults.gitlab, errors),
     };
     return { config, errors };

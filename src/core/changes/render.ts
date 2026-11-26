@@ -147,9 +147,16 @@ function compactSection(title: string, items: readonly string[], maxItems = 3): 
   ];
 }
 
+/** Optional text from an enabled verification module; absent means V1 output, byte for byte. */
+export interface ChangesExtraLines {
+  line?: string;
+  nextHint?: string;
+}
+
 export function renderChangesOutcome(
   outcome: Outcome<ChangesResult>,
   budget = CHANGES_BUDGET,
+  extra?: ChangesExtraLines,
 ): string {
   if (outcome.kind === 'failure') {
     if (outcome.message === 'Cancelled') return 'Cancelled';
@@ -170,7 +177,7 @@ export function renderChangesOutcome(
       budget,
     );
   }
-  return renderChanges(outcome.value, budget);
+  return renderChanges(outcome.value, budget, extra);
 }
 
 function formatUserLine(
@@ -189,7 +196,11 @@ function formatUserLine(
   return `    ${user.file}:${user.line}  ${shortSymbolName(user.source)}  ${note}`;
 }
 
-export function renderChanges(result: ChangesResult, budget = CHANGES_BUDGET): string {
+export function renderChanges(
+  result: ChangesResult,
+  budget = CHANGES_BUDGET,
+  extra?: ChangesExtraLines,
+): string {
   const renderStart = performance.now();
   const finish = (text: string): string => {
     if (result.timings !== undefined && !Object.isFrozen(result.timings)) {
@@ -338,9 +349,10 @@ export function renderChanges(result: ChangesResult, budget = CHANGES_BUDGET): s
       ? ['Gaps: none']
       : [`Gaps (${reasons.length.toLocaleString('en-US')})`, ...reasons.map((r) => `  ${r}`)];
 
-  const nextLine = formatNext(result);
+  const nextLine = `${formatNext(result)}${extra?.nextHint ?? ''}`;
   const footerLine = formatFooter(result);
-  const tailLines = [nextLine, footerLine];
+  const tailLines =
+    extra?.line === undefined ? [nextLine, footerLine] : [extra.line, nextLine, footerLine];
 
   const assemble = (
     p: readonly string[],
@@ -442,7 +454,7 @@ export function renderChanges(result: ChangesResult, budget = CHANGES_BUDGET): s
   if (text.length <= budget) return finish(text);
 
   // Last-resort hard cap: keep line1-3 + priorityLines as far as budget permits + tailLines.
-  const fixedTail = `\n${nextLine}\n${footerLine}`;
+  const fixedTail = `\n${tailLines.join('\n')}`;
   const fixedHead = `${line1}\n${line2}\n${line3}\n\n`;
   const remaining = Math.max(0, budget - fixedHead.length - fixedTail.length);
   const body = [...priorityLines, ...cPlan, ...cSummary].join('\n');

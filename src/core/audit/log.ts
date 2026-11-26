@@ -98,6 +98,11 @@ function escapeRegExp(value: string): string {
 
 const SECRET_KEY_RE = /(?:TOKEN|SECRET|PASSWORD|PASSWD|KEY|AUTH|CREDENTIAL)/i;
 
+/** True for environment variable names that may hold a credential (never passed to checks). */
+export function isSecretEnvName(name: string): boolean {
+  return SECRET_KEY_RE.test(name);
+}
+
 const TOKEN_PATTERNS: ReadonlyArray<{ re: RegExp; replacement: string }> = [
   { re: /\bgh[pousr]_[A-Za-z0-9_]{6,}\b/g, replacement: '[REDACTED]' },
   { re: /\bgithub_pat_[A-Za-z0-9_]{6,}\b/g, replacement: '[REDACTED]' },
@@ -153,6 +158,13 @@ export function sanitizeAuditText(
     }
   }
   out = stripHomePrefixes(out, env);
+  out = redactSecrets(out, env);
+  return options.maxLen !== undefined ? out.slice(0, options.maxLen) : out;
+}
+
+/** Replaces secret-named environment values and known token shapes; keeps line structure. */
+export function redactSecrets(text: string, env: NodeJS.ProcessEnv = process.env): string {
+  let out = text;
   for (const [key, value] of Object.entries(env)) {
     if (typeof value === 'string' && value.length >= 6 && SECRET_KEY_RE.test(key)) {
       out = out.split(value).join('[REDACTED]');
@@ -161,7 +173,7 @@ export function sanitizeAuditText(
   for (const pattern of TOKEN_PATTERNS) {
     out = out.replace(pattern.re, pattern.replacement);
   }
-  return options.maxLen !== undefined ? out.slice(0, options.maxLen) : out;
+  return out;
 }
 
 export function stripCodeDetail(

@@ -462,6 +462,10 @@ interface VerificationReport {
   check: string; command?: string; revision: string; startedAt: string;
   status: 'PASS' | 'FAIL' | 'SKIPPED' | 'ERROR' | 'NOT_VERIFIED';
   exitCode?: number; artifacts: string[]; summary: string; redacted: boolean;
+  // V2c additions
+  source: 'check' | 'junit' | 'tap' | 'none'; dirty: boolean; treeState: string;
+  durationMs?: number; counts?: { tests: number; passed: number; failed: number; skipped: number };
+  failures: string[]; outputTail: string[];
 }
 ```
 
@@ -487,7 +491,7 @@ The npm package root exports the OMP extension. `@krisada-m/ksd-intelligence/esl
 
 ## 8. Interfaces
 
-### 8.1 OMP tools (all `approval: 'read'`)
+### 8.1 OMP tools
 
 Full contract (inputs, registered descriptions, exact output text, budgets, guidance responses): **`docs/TOOLS.md`**.
 
@@ -503,13 +507,13 @@ V1 exposes four tools, one per moment the agent already recognises (D27); `ei_se
 
 AGY's stdio server advertises status, impact, changes and search by default. Enable workflow explicitly.
 
-`ei_learning` (V2d) is built and registered only when `knowledge.enabled` is true (`read` approval). `ei_context`, `ei_verify`, and `ei_retrieve` are **PLANNED (V2)**; `ei_gitlab` is dropped (D67).
+`ei_verify` (V2c) registers only when `verification.enabled` is true. It declares `exec` for a `check` call and `read` for a `report` call. `ei_learning` (V2d) registers only when `knowledge.enabled` is true, with `read` approval. `ei_context` and `ei_retrieve` are **PLANNED (V2)**; `ei_gitlab` is dropped (D67).
 
 V1 adds no automatic EI prompt hook; the frozen KSD policy module still registers its own hooks.
 
 ### 8.2 CLI (`ei`)
 
-Run `ei --help` for the shipped syntax. CLI-only commands: `init`, `setup`, `index`, `doctor --deep`, `audit`, `cache clear`, `route`, `sources check`, `skills list/check/diff/sync/publish/rollback`, and `mcp`. CLI counterparts to OMP tools: `load`, `status`, `impact`, `changes`, and `search`. They share the renderers; CLI waits for index work instead of returning interactive timeout guidance.
+Run `ei --help` for the shipped syntax. CLI-only commands include `init`, `setup`, `index`, `doctor --deep`, `audit`, `cache clear`, `route`, `sources check`, `skills list/check/diff/sync/publish/rollback`, and `mcp`. CLI counterparts to OMP tools: `load`, `status`, `impact`, `changes`, `search`, `verify` (V2c), and `learning` (V2d; owner write commands are CLI-only). They share the renderers; the CLI waits for index work instead of returning interactive timeout guidance.
 
 **PLANNED (V2):** `ei symbol`, `ei embeddings install/status/remove`, `ei cache list` and automatic pruning, and CLI equivalents of V2 tools. In V1, use `ei impact` for symbol guidance and `ei cache clear` for per-repository removal.
 
@@ -526,6 +530,7 @@ V1 reads project `ei.config.json` at the root discovered by `ei init`/`ei index`
 | `riskZones` | `"default"`, an explicit list, or `[]`; can only raise verdicts |
 | `search.enabled` | Existing search-only switch |
 | `knowledge.enabled` | V2d, off by default: registers `ei_learning` and the `ei_impact` learnings line. Learnings live in `.ksd/learnings/*.yaml`; agent proposals in the cache |
+| `verification.enabled`, `verification.checks`, `verification.reports` | V2c, off by default. `checks`: `{ name, command: string[], timeoutSec? (default 600, max 3600) }`, run without a shell; `reports`: `{ name, format: "junit" \| "tap", path, covers? }`. Invalid entries are dropped and reported |
 
 **PLANNED (V2):** global EI config/session precedence, general per-capability `enabled` flags, `impact.maxDepth` as a setting, `impact.watch`, `bridges.*`, `search.semantic`, and the five V2 module configurations. Some keys already appear in generated config and are accepted as placeholders. They do not activate these features. The frozen policy has its own separate config and precedence (§6.7).
 
