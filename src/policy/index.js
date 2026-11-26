@@ -199,7 +199,20 @@ export function createExtension(pi, { globalConfigPath } = {}) {
       const ponytailFound = Array.isArray(names) && names.some(command => command?.name === "ponytail");
       const msg = `Engineering Proxy: ${enabled ? "ON" : "OFF"}; mode: ${effectiveMode(config).toUpperCase()} (${selectedSessionMode ? "session" : config.enforcementSource}); project default: ${(config.projectEnforcement ?? "unset").toUpperCase()}; global default: ${(config.globalEnforcement ?? "unset").toUpperCase()}; session: ${(selectedSessionMode ?? "inherit").toUpperCase()}; Ponytail command: ${ponytailFound ? "detected" : "not detected/unknown"}; Ponytail mode: not inspected`;
       const warnings = [config.configError, lastWarning].filter(Boolean);
-      ctx.ui?.notify?.(warnings.length ? `${msg}; WARNING: ${warnings.join("; ")}` : msg, warnings.length ? "warning" : "info");
+      const plain = warnings.length ? `${msg}; WARNING: ${warnings.join("; ")}` : msg;
+      let display = plain;
+      try {
+        const theme = ctx.ui?.theme;
+        if (typeof theme?.fg === "function") {
+          display = plain.replace(/(Engineering Proxy: |; mode: |; project default: |; global default: |; session: )(ON|OFF|BALANCED|ADAPTIVE|UNSET|INHERIT)/g,
+            (_match, label, value) => `${label}${theme.fg("accent", value)}`)
+            .replace(/Engineering Proxy:|; mode:|; project default:|; global default:|; session:|; Ponytail command:|; Ponytail mode:|; WARNING:/g,
+              label => theme.fg(label === "; WARNING:" ? "accent" : "dim", label));
+        }
+      } catch {
+        display = plain;
+      }
+      ctx.ui?.notify?.(display, warnings.length ? "warning" : "info");
     },
   });
 

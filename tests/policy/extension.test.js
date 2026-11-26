@@ -294,9 +294,9 @@ test("uses OMP theme for colored dots when available", () => {
     h.events.get("agent_start")({}, ctx);
     h.events.get("agent_end")({}, ctx);
     assert.deepEqual(h.statuses.map(([, label]) => label), [
-      "[dim:○] 🛡 KSD: BALANCED",
-      "[accent:●] 🛡 KSD: BALANCED",
-      "[dim:○] 🛡 KSD: BALANCED",
+      "[dim:○] 🛡 [dim:KSD:] [dim:BALANCED]",
+      "[accent:●] 🛡 [dim:KSD:] [accent:BALANCED]",
+      "[dim:○] 🛡 [dim:KSD:] [dim:BALANCED]",
     ]);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

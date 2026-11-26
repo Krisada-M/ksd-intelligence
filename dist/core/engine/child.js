@@ -117,7 +117,7 @@ const ops = new Map([
     ],
     [
         'index',
-        async (args, progress) => {
+        async (args, progress, hud) => {
             const indexer = indexerFor(args, await compilerAt(stringArg(args, 'typescriptPath')));
             const workspace = await loadWorkspace(indexer.root);
             return indexer.index({
@@ -125,12 +125,13 @@ const ops = new Map([
                 full: args.full === true,
                 freshness: args.freshness === 'stat' ? 'stat' : 'hash',
                 onProgress: progress,
+                onHudProgress: args.hudProgress === true ? hud : undefined,
             });
         },
     ],
     [
         'doctor',
-        async (args, progress) => {
+        async (args, progress, hud) => {
             const ts = await compilerAt(stringArg(args, 'typescriptPath'));
             const indexer = indexerFor(args, ts);
             const workspace = await loadWorkspace(indexer.root);
@@ -138,6 +139,7 @@ const ops = new Map([
             return doctorDeep(ts, indexer, workspace.config.impact, {
                 differential: size,
                 onProgress: progress,
+                onHudProgress: args.hudProgress === true ? hud : undefined,
             });
         },
     ],
@@ -351,7 +353,17 @@ async function handle(id, op, args) {
     }
     const retire = BUILD_OPS.has(op);
     try {
-        const value = await run(isRecord(args) ? args : {}, (message, data) => send({ type: 'progress', id, message, data }));
+        const input = isRecord(args) ? args : {};
+        const value = await run(input, (message, data) => send({ type: 'progress', id, message, data }), (event) => {
+            if (input.hudProgress !== true)
+                return;
+            try {
+                send({ type: 'progress', id, message: '__hud_progress__', data: { hudProgress: event } });
+            }
+            catch {
+                // Optional telemetry cannot affect the engine operation.
+            }
+        });
         send({ type: 'result', id, value, retire });
     }
     catch (error) {

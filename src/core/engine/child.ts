@@ -12,13 +12,18 @@ import {
 } from '../indexing/declarations.js';
 import { doctorDeep } from '../indexing/doctor.js';
 import { Indexer } from '../indexing/indexer.js';
+import type { BuildProgress } from '../indexing/ui-progress.js';
 import { declarationSurfaces, type DeclarationSurfacesResult } from '../indexing/surface.js';
 import { beginBuild, writeFiles, type FileRecord } from '../../storage/sqlite.js';
 import { encode, lineReader, parseMessage, type Message } from './protocol.js';
 import { loadWorkspace } from './workspace.js';
 
 type Progress = (message: string, data?: unknown) => void;
-type Op = (args: Record<string, unknown>, progress: Progress) => unknown;
+type Op = (
+  args: Record<string, unknown>,
+  progress: Progress,
+  hud: (event: BuildProgress) => void,
+) => unknown;
 
 class OpError extends Error {
   constructor(
@@ -154,7 +159,7 @@ const ops = new Map<string, Op>([
   ],
   [
     'index',
-    async (args, progress) => {
+    async (args, progress, hud) => {
       const indexer = indexerFor(args, await compilerAt(stringArg(args, 'typescriptPath')));
       const workspace = await loadWorkspace(indexer.root);
       return indexer.index({
@@ -162,12 +167,13 @@ const ops = new Map<string, Op>([
         full: args.full === true,
         freshness: args.freshness === 'stat' ? 'stat' : 'hash',
         onProgress: progress,
+        onHudProgress: args.hudProgress === true ? hud : undefined,
       });
     },
   ],
   [
     'doctor',
-    async (args, progress) => {
+    async (args, progress, hud) => {
       const ts = await compilerAt(stringArg(args, 'typescriptPath'));
       const indexer = indexerFor(args, ts);
       const workspace = await loadWorkspace(indexer.root);
@@ -175,6 +181,7 @@ const ops = new Map<string, Op>([
       return doctorDeep(ts, indexer, workspace.config.impact, {
         differential: size,
         onProgress: progress,
+        onHudProgress: args.hudProgress === true ? hud : undefined,
       });
     },
   ],
@@ -384,8 +391,18 @@ async function handle(id: string, op: string, args: unknown): Promise<void> {
   }
   const retire = BUILD_OPS.has(op);
   try {
-    const value = await run(isRecord(args) ? args : {}, (message, data) =>
-      send({ type: 'progress', id, message, data }),
+    const input = isRecord(args) ? args : {};
+    const value = await run(
+      input,
+      (message, data) => send({ type: 'progress', id, message, data }),
+      (event) => {
+        if (input.hudProgress !== true) return;
+        try {
+          send({ type: 'progress', id, message: '__hud_progress__', data: { hudProgress: event } });
+        } catch {
+          // Optional telemetry cannot affect the engine operation.
+        }
+      },
     );
     send({ type: 'result', id, value, retire });
   } catch (error) {

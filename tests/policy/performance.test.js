@@ -105,7 +105,7 @@ test("mode changes update status without replacing the Ponytail status key", () 
   r.cache.syncStatus(r.ctx, false, "balanced");
   r.cache.syncStatus(r.ctx, false, "adaptive");
   assert.deepEqual(r.counters.statuses.map(([key]) => key), ["engineering-proxy", "engineering-proxy"]);
-  assert.match(r.counters.statuses.at(-1)[1], /KSD: ADAPTIVE/);
+  assert.equal(r.counters.statuses.at(-1)[1], "dim:○ 🛡 dim:KSD: dim:ADAPTIVE");
 });
 
 test("theme replacement redraws status, theme failure degrades safely", () => {

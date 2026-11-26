@@ -5,7 +5,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { promisify } from 'node:util';
+import { promisify, stripVTControlCharacters } from 'node:util';
 import extension, {
   type ExtensionDeps,
   type OmpExtensionApi,
@@ -296,6 +296,126 @@ describe('M2b Step 3.2 — ei_impact OMP tool and CLI', () => {
     assert.match(text, /ACTION run-tests · level medium · picture complete/);
     assert.match(text, /IMPACT localOnly — packages\/payments\/src\/fee\.ts:19/);
     assert.match(text, /ACTION proceed · level low · picture complete/);
+  });
+
+  it('renders four human-only views without changing model text (MOCK-ONLY host)', async () => {
+    const { registered, impactTool } = setupExtension({ cacheHome });
+    assert.ok(impactTool?.renderResult);
+    const impact = await impactTool.execute(
+      'call',
+      { targets: ['packages/payments/src/fee.ts#calculateFee'] },
+      undefined,
+      undefined,
+      { cwd: repo },
+    );
+    const modelBytes = Buffer.from(impact.content[0]?.text ?? '', 'utf8');
+    assert.match(
+      modelBytes.toString(),
+      /^IMPACT calculateFee — packages\/payments\/src\/fee\.ts:9/,
+    );
+    assert.match(modelBytes.toString(), /ACTION run-tests · level medium · picture complete/);
+    const collapsed = impactTool
+      .renderResult(impact, { expanded: false, isPartial: false })
+      .render(80);
+    const expanded = impactTool
+      .renderResult(impact, { expanded: true, isPartial: false })
+      .render(80);
+    assert.equal(collapsed.length, 1);
+    assert.match(collapsed[0] ?? '', /calculateFee.*run-tests/);
+    assert.ok(expanded.some((row) => row.includes('callers')));
+    assert.ok(expanded.some((row) => row.includes('index fresh')));
+    assert.deepEqual(Buffer.from(impact.content[0]?.text ?? '', 'utf8'), modelBytes);
+
+    const statusTool = registered.find((tool) => tool.name === 'ei_status');
+    assert.ok(statusTool?.renderResult);
+    const status = await statusTool.execute('call', {}, undefined, undefined, { cwd: repo });
+    const statusText = status.content[0]?.text;
+    const statusHeader = statusTool
+      .renderResult(status, { expanded: false, isPartial: false })
+      .render(80)[0];
+    assert.match(stripVTControlCharacters(statusHeader ?? ''), /status (ready|degraded)/);
+    assert.ok(
+      statusTool
+        .renderResult(status, { expanded: true, isPartial: false })
+        .render(80)
+        .some((row) => row.includes('runtime')),
+    );
+    assert.equal(status.content[0]?.text, statusText);
+
+    const searchTool = registered.find((tool) => tool.name === 'ei_search');
+    assert.ok(searchTool?.renderResult);
+    const search = await searchTool.execute(
+      'call',
+      { query: 'calculateFee' },
+      undefined,
+      undefined,
+      { cwd: repo },
+    );
+    const searchText = search.content[0]?.text;
+    assert.match(
+      searchTool.renderResult(search, { expanded: false, isPartial: false }).render(80)[0] ?? '',
+      /search calculateFee/,
+    );
+    assert.ok(
+      searchTool
+        .renderResult(search, { expanded: true, isPartial: false })
+        .render(80)
+        .some((row) => row.includes('matches')),
+    );
+    assert.equal(search.content[0]?.text, searchText);
+
+    const changesTool = registered.find((tool) => tool.name === 'ei_changes');
+    assert.ok(changesTool?.renderResult);
+    const changes = {
+      content: [{ type: 'text' as const, text: 'CHANGES model unchanged\nGAP evidence' }],
+      details: {
+        changedSymbols: [],
+        changedFiles: [],
+        unindexedChanges: [],
+        nothingChanged: true,
+        impact: { completeness: { status: 'complete', reasons: [] }, tests: [] },
+        verdict: { action: 'proceed', level: 'low', requiredActions: [] },
+        engine: { version: '1.1.0' },
+      },
+    };
+    const changesHeader = changesTool
+      .renderResult(changes, { expanded: false, isPartial: false })
+      .render(80)[0];
+    assert.match(stripVTControlCharacters(changesHeader ?? ''), /changes proceed/);
+    assert.ok(
+      changesTool
+        .renderResult(changes, { expanded: true, isPartial: false })
+        .render(80)
+        .some((row) => row.includes('nothing changed')),
+    );
+    assert.equal(changes.content[0]?.text, 'CHANGES model unchanged\nGAP evidence');
+    const partial = impactTool.renderResult(impact, { expanded: true, isPartial: true }).render(80);
+    assert.match(partial[0] ?? '', /partial/);
+    const legacy = impactTool
+      .renderResult(
+        { content: [{ type: 'text', text: 'NOT INDEXED .env — secret\nKeep evidence' }] },
+        { expanded: true, isPartial: false },
+      )
+      .render(80);
+    assert.ok(legacy.includes('NOT INDEXED .env — secret'));
+    assert.ok(legacy.includes('Keep evidence'));
+    const failed = changesTool
+      .renderResult(
+        { isError: true, content: [{ type: 'text', text: 'index-failed: retry once' }] },
+        { expanded: true, isPartial: false },
+      )
+      .render(80);
+    assert.match(failed[0] ?? '', /failed/);
+    assert.ok(failed.includes('index-failed: retry once'));
+    assert.equal(
+      searchTool.renderCall?.({ query: 'calculateFee' }, { expanded: false, isPartial: false }),
+      undefined,
+    );
+    const openCall = searchTool.renderCall?.(
+      { query: '\u001b[31munsafe' },
+      { expanded: true, isPartial: false },
+    );
+    assert.match(openCall?.render(80)[0] ?? '', /^ei_search \?\[31munsafe$/);
   });
 
   it('resolves the same repository index from a subdirectory and from a git worktree subdirectory', async () => {

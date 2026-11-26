@@ -4,6 +4,7 @@ import { createEngineHost } from './host.js';
 import { acquireBuildLock } from './lock.js';
 import { chooseRuntime, memoryLimitMb } from './runtime.js';
 import { pinnedTypescriptVersion, resolveTypescript } from './typescript.js';
+import type { BuildProgress } from '../indexing/ui-progress.js';
 import type { Workspace } from './workspace.js';
 
 /** Owner commands are long (a cold oh-my-pi build is minutes) but never unbounded. */
@@ -17,6 +18,7 @@ export interface BuildOptions {
   /** Child environment; defaults to this process's environment. */
   env?: NodeJS.ProcessEnv;
   onProgress?: (message: string, data: unknown) => void;
+  onHudProgress?: (event: BuildProgress) => void;
   /** Time limit of the engine request; default 1 h. */
   timeoutMs?: number;
   signal?: AbortSignal;
@@ -86,8 +88,41 @@ async function runLocked(
         root: workspace.root,
         cacheDir: workspace.cacheDir,
         typescriptPath: typescript.runtime.path,
+        ...(options.onHudProgress === undefined ? {} : { hudProgress: true }),
       },
-      { onProgress: options.onProgress, timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS },
+      {
+        onProgress:
+          options.onHudProgress === undefined
+            ? options.onProgress
+            : (message, data) => {
+                if (
+                  message === '__hud_progress__' &&
+                  isRecord(data) &&
+                  isRecord(data.hudProgress)
+                ) {
+                  const event = data.hudProgress;
+                  if (typeof event.phase === 'string') {
+                    try {
+                      options.onHudProgress?.({
+                        phase: event.phase,
+                        ...(typeof event.done === 'number' ? { done: event.done } : {}),
+                        ...(typeof event.total === 'number' ? { total: event.total } : {}),
+                        ...(typeof event.file === 'string' ? { file: event.file } : {}),
+                        ...(event.kind === 'cold' || event.kind === 'update'
+                          ? { kind: event.kind }
+                          : {}),
+                        ...(typeof event.reason === 'string' ? { reason: event.reason } : {}),
+                      });
+                    } catch {
+                      // Presentation cannot change the build outcome.
+                    }
+                  }
+                  return;
+                }
+                options.onProgress?.(message, data);
+              },
+        timeoutMs: options.timeoutMs ?? OWNER_COMMAND_MS,
+      },
     );
     if (options.signal?.aborted) {
       return { ok: false, code: 'index-failed', message: 'Cancelled', fix: '' };

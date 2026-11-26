@@ -62,6 +62,10 @@ import { defaultLockPath, readLock } from '../../workflow/sources.js';
 import { RISKS, STAGES, TASK_TYPES, WorkflowError } from '../../workflow/types.js';
 import { createExtension as createPolicyExtension } from '../../policy/index.js';
 import { SECTION_KEY } from '../../policy/policy.js';
+import { renderResultView, type ResultView } from '../ui/tree.js';
+import type { WorkspaceStatus } from '../../core/engine/status.js';
+import type { ImpactBatch } from '../../core/impact/session.js';
+import type { ChangesResult, ImpactResult, SearchResult } from '../../core/kernel/types.js';
 
 interface SchemaLike {
   optional(): SchemaLike;
@@ -121,6 +125,171 @@ interface ToolResult {
   details?: unknown;
   isError?: boolean;
 }
+interface RenderOptions {
+  expanded: boolean;
+  isPartial: boolean;
+}
+
+interface Rows {
+  render(width: number): string[];
+}
+
+type PresentedTool = 'impact' | 'changes' | 'search' | 'status';
+
+function isImpactResult(value: unknown): value is ImpactResult {
+  return (
+    isRecord(value) &&
+    typeof value.target === 'string' &&
+    isRecord(value.verdict) &&
+    isRecord(value.reach) &&
+    isRecord(value.completeness) &&
+    Array.isArray(value.byDepth) &&
+    Array.isArray(value.bridged) &&
+    Array.isArray(value.tests) &&
+    Array.isArray(value.factors) &&
+    isRecord(value.engine)
+  );
+}
+
+function isWorkspaceStatus(value: unknown): value is WorkspaceStatus {
+  return (
+    isRecord(value) &&
+    (value.state === 'ready' || value.state === 'degraded') &&
+    isRecord(value.runtime) &&
+    isRecord(value.typescript) &&
+    isRecord(value.config)
+  );
+}
+
+function isChangesResult(value: unknown): value is ChangesResult {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.changedSymbols) &&
+    Array.isArray(value.changedFiles) &&
+    isRecord(value.impact) &&
+    isRecord(value.verdict) &&
+    isRecord(value.engine)
+  );
+}
+
+function isSearchResult(value: unknown): value is SearchResult {
+  return (
+    isRecord(value) &&
+    typeof value.query === 'string' &&
+    Array.isArray(value.hits) &&
+    typeof value.totalMatches === 'number' &&
+    isRecord(value.engine)
+  );
+}
+
+function impactView(details: unknown): ResultView | undefined {
+  if (!Array.isArray(details) || details.length === 0) return undefined;
+  const first: unknown = details[0];
+  if (!isRecord(first) || !isRecord(first.presentationIndex)) return undefined;
+  const index = first.presentationIndex;
+  if (
+    index.state !== 'fresh' &&
+    index.state !== 'updated' &&
+    index.state !== 'stale' &&
+    index.state !== 'building'
+  )
+    return undefined;
+  if (typeof index.updatedFiles !== 'number' || !Array.isArray(index.driftedFiles))
+    return undefined;
+  if (!details.every(isImpactResult)) return undefined;
+  const answers: ImpactBatch['answers'] = details.map((value) => ({
+    kind: 'result',
+    input: value.target,
+    value,
+  }));
+  return {
+    kind: 'impact',
+    learningsLine: typeof first.learningsLine === 'string' ? first.learningsLine : undefined,
+    value: {
+      answers,
+      index: {
+        state: index.state,
+        updatedFiles: index.updatedFiles,
+        driftedFiles: index.driftedFiles,
+      },
+    },
+  };
+}
+
+function resultView(kind: PresentedTool, details: unknown): ResultView | undefined {
+  if (kind === 'impact') return impactView(details);
+  if (kind === 'status' && isWorkspaceStatus(details)) return { kind: 'status', value: details };
+  if (kind === 'changes' && isChangesResult(details)) {
+    const note = 'verificationNote' in details ? details.verificationNote : undefined;
+    const verificationNote = isRecord(note)
+      ? {
+          line: typeof note.line === 'string' ? note.line : undefined,
+          nextHint: typeof note.nextHint === 'string' ? note.nextHint : undefined,
+        }
+      : undefined;
+
+    return { kind: 'changes', value: { kind: 'result', value: details }, verificationNote };
+  }
+  if (kind === 'search' && isSearchResult(details))
+    return { kind: 'search', value: { kind: 'result', value: details } };
+  return undefined;
+}
+
+function displayText(text: string): string[] {
+  return text.replace(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/g, '?').split('\n');
+}
+
+function renderToolResult(kind: PresentedTool, result: ToolResult, options: RenderOptions): Rows {
+  return {
+    render(width) {
+      const view =
+        !options.isPartial && !result.isError ? resultView(kind, result.details) : undefined;
+      if (view) {
+        try {
+          return renderResultView(view, {
+            columns: width,
+            color: process.env.NO_COLOR === undefined && process.env.TERM !== 'dumb',
+            ascii:
+              process.env.EI_ASCII === '1' ||
+              !/utf-?8/i.test(
+                process.env.LC_ALL ?? process.env.LC_CTYPE ?? process.env.LANG ?? 'UTF-8',
+              ),
+            collapsed: !options.expanded,
+          });
+        } catch {
+          // Replayed results may have details from an older adapter.
+        }
+      }
+      let state = 'partial · details unavailable';
+      if (result.isError) state = 'failed';
+      else if (options.isPartial) state = 'in progress · partial';
+      const heading = `${result.isError ? '✗' : '?'} ${kind} ${state}`;
+      if (!options.expanded) return [heading];
+      return [heading, ...result.content.flatMap((part) => displayText(part.text))];
+    },
+  };
+}
+
+function renderToolCall(
+  kind: PresentedTool,
+  args: unknown,
+  options: RenderOptions,
+): Rows | undefined {
+  if (!options.expanded && !options.isPartial) return undefined;
+  return {
+    render() {
+      if (!isRecord(args)) return [`ei_${kind}`];
+      let target = '';
+      if (kind === 'impact' && Array.isArray(args.targets))
+        target = args.targets
+          .filter((value): value is string => typeof value === 'string')
+          .join(', ');
+      if (kind === 'search' && typeof args.query === 'string') target = args.query;
+      if (kind === 'changes' && typeof args.base === 'string') target = `vs ${args.base}`;
+      return [`ei_${kind}${target ? ` ${displayText(target).join(' ')}` : ''}`];
+    },
+  };
+}
 
 interface OmpToolDefinition<P> {
   name: string;
@@ -130,6 +299,8 @@ interface OmpToolDefinition<P> {
   /** OMP tier (omp://approval-mode.md): every V1 tool is `read`; `ei_verify` decides per call. */
   approval: 'read' | ((args: unknown) => 'read' | 'exec');
   formatApprovalDetails?: (args: unknown) => string[] | undefined;
+  renderCall?(args: P, options: RenderOptions): Rows | undefined;
+  renderResult?(result: ToolResult, options: RenderOptions): Rows;
   execute(
     toolCallId: string,
     params: P,
@@ -293,6 +464,8 @@ function registerEiStatus(pi: OmpExtensionApi, deps: ExtensionDeps, env: NodeJS.
     // No input: nothing the agent passes can reach the engine or its environment.
     parameters: pi.zod.object({}),
     approval: 'read',
+    renderCall: (args, options) => renderToolCall('status', args, options),
+    renderResult: (result, options) => renderToolResult('status', result, options),
     async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
       if (signal?.aborted) return errorResult('Cancelled');
       const started = performance.now();
@@ -377,6 +550,8 @@ function registerEiImpact(
       depth: depthSchema,
     }),
     approval: 'read',
+    renderCall: (args, options) => renderToolCall('impact', args, options),
+    renderResult: (result, options) => renderToolResult('impact', result, options),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       if (signal?.aborted) return errorResult('Cancelled');
       const started = performance.now();
@@ -462,6 +637,11 @@ function registerEiImpact(
           { env, root: workspace.root },
         );
         const details = impactDetails(batch);
+        const first = details[0];
+        if (first !== undefined) {
+          const presented = { ...first, presentationIndex: batch.index, learningsLine };
+          details[0] = presented;
+        }
         const failed = batch.answers.some((answer) => answer.kind === 'failure');
         if (failed) {
           return { isError: true, content: [{ type: 'text', text }], details };
@@ -530,6 +710,8 @@ function registerEiChanges(
       planned: plannedSchema,
     }),
     approval: 'read',
+    renderCall: (args, options) => renderToolCall('changes', args, options),
+    renderResult: (result, options) => renderToolResult('changes', result, options),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       if (signal?.aborted) return errorResult('Cancelled');
       const started = performance.now();
@@ -598,16 +780,14 @@ function registerEiChanges(
         if (signal?.aborted) return errorResult('Cancelled');
 
         const verification = await loadVerificationState(workspace);
-        const text = renderChangesOutcome(
-          outcome,
-          undefined,
+        const verificationNote =
           verification &&
-            changesVerificationNote(
-              verification.reports,
-              verification.revision,
-              verification.checkNames,
-            ),
-        );
+          changesVerificationNote(
+            verification.reports,
+            verification.revision,
+            verification.checkNames,
+          );
+        const text = renderChangesOutcome(outcome, undefined, verificationNote);
         if (text === 'Cancelled') return errorResult('Cancelled');
         recordAudit(
           workspace.cacheDir,
@@ -628,7 +808,11 @@ function registerEiChanges(
         if (outcome.kind === 'guidance') {
           return { content: [{ type: 'text', text }], details: outcome };
         }
-        return { content: [{ type: 'text', text }], details: outcome.value };
+        return {
+          content: [{ type: 'text', text }],
+          details:
+            verificationNote === undefined ? outcome.value : { ...outcome.value, verificationNote },
+        };
       } catch (error) {
         if (signal?.aborted) return errorResult('Cancelled');
         const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
@@ -682,6 +866,8 @@ function registerEiSearch(
       limit: limitSchema,
     }),
     approval: 'read',
+    renderCall: (args, options) => renderToolCall('search', args, options),
+    renderResult: (result, options) => renderToolResult('search', result, options),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       if (signal?.aborted) return errorResult('Cancelled');
       const started = performance.now();

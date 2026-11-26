@@ -122,16 +122,11 @@ describe('ei_learning and the ei_impact line', () => {
         )
       ).content[0]?.text ?? '';
     await setKnowledge(repo, true);
-    const on =
-      (
-        await tool(load(repo, cacheHome), 'ei_impact').execute(
-          'id',
-          { targets: [TARGET] },
-          undefined,
-          undefined,
-          { cwd: repo },
-        )
-      ).content[0]?.text ?? '';
+    const impact = tool(load(repo, cacheHome), 'ei_impact');
+    const result = await impact.execute('id', { targets: [TARGET] }, undefined, undefined, {
+      cwd: repo,
+    });
+    const on = result.content[0]?.text ?? '';
     const lines = on.split('\n');
     const last = lines.pop() ?? '';
     assert.match(
@@ -143,6 +138,11 @@ describe('ei_learning and the ei_impact line', () => {
       lines.join('\n').replace(/— index [^·]*·/g, '— index ·'),
       v1.replace(/— index [^·]*·/g, '— index ·'),
     );
+    assert.ok(impact.renderResult);
+    const expanded = impact.renderResult(result, { expanded: true, isPartial: false }).render(80);
+    assert.ok(expanded.includes(last), 'expanded impact must show the learning summary');
+    const collapsed = impact.renderResult(result, { expanded: false, isPartial: false }).render(80);
+    assert.equal(collapsed.length, 1);
   });
 
   it('list quotes the proposal as an unconfirmed note; nothing is written to .ksd/', async () => {

@@ -13,6 +13,7 @@ import { scanLexically } from './lexical.js';
 import { extractSearchRows } from '../search/segments.js';
 import { extractorStamp, impactConfigHash } from './stamp.js';
 import { verifyIndex } from './verify.js';
+import { recordBuildHistory } from './ui-progress.js';
 const LOCKFILES = new Set([
     'package-lock.json',
     'npm-shrinkwrap.json',
@@ -191,6 +192,28 @@ export class Indexer {
     }
     async index(request) {
         const progress = request.onProgress ?? (() => undefined);
+        let lastHudPhase = '';
+        let lastHudTotal;
+        let lastHudAt = 0;
+        const hud = (event) => {
+            if (request.onHudProgress === undefined)
+                return;
+            const now = performance.now();
+            if (event.phase === lastHudPhase &&
+                event.total === lastHudTotal &&
+                (event.done === undefined || event.total === undefined || event.done !== event.total) &&
+                now - lastHudAt < 100)
+                return;
+            lastHudAt = now;
+            lastHudPhase = event.phase;
+            lastHudTotal = event.total;
+            try {
+                request.onHudProgress(event);
+            }
+            catch {
+                // Presentation cannot change the build outcome.
+            }
+        };
         const phases = {
             scan: 0,
             program: 0,
@@ -206,28 +229,33 @@ export class Indexer {
             ? new Map(published.files.map((file) => [file.path, file]))
             : undefined;
         progress('scan');
+        hud({ phase: 'scan' });
         const census = await scan(this.root, request.impact, this.ts, fingerprint);
         phases.scan = performance.now() - started;
+        hud({ phase: 'scan', done: census.records.length, total: census.records.length });
         const drift = published === null ? null : diffCensus(published.files, census.records);
         const coldReason = this.coldReason(request, stamp, published, drift);
         if (coldReason !== null || published === null || drift === null) {
-            return this.cold(census, coldReason ?? 'no published index', stamp, request, phases, progress);
+            return this.cold(census, coldReason ?? 'no published index', stamp, request, phases, progress, hud, started);
         }
         const contentDrift = drift.added.size + drift.changed.size + drift.deleted.size;
         if (contentDrift === 0 && drift.touched === 0) {
+            hud({ phase: 'unchanged', kind: 'update' });
             return this.unchanged(census, phases);
         }
         if (contentDrift === 0) {
-            return this.update(census, drift, published, stamp, request, phases, progress, null);
+            return this.update(census, drift, published, stamp, request, phases, progress, hud, started, null);
         }
         const programStarted = performance.now();
         progress('program');
+        hud({ phase: 'program', kind: 'update' });
         const programs = this.createPrograms(census.records);
         const late = this.programLevelChange(programs.groups, drift, published);
         phases.program = performance.now() - programStarted;
-        if (late !== null)
-            return this.cold(census, late, stamp, request, phases, progress);
-        return this.update(census, drift, published, stamp, request, phases, progress, programs);
+        if (late !== null) {
+            return this.cold(census, late, stamp, request, phases, progress, hud, started);
+        }
+        return this.update(census, drift, published, stamp, request, phases, progress, hud, started, programs);
     }
     readPublished() {
         const db = openPublished(this.cacheDir);
@@ -392,9 +420,10 @@ export class Indexer {
             oldProgram: group.program,
         });
     }
-    cold(census, reason, stamp, request, phases, progress) {
+    cold(census, reason, stamp, request, phases, progress, hud, runStarted) {
         let started = performance.now();
         progress('program');
+        hud({ phase: 'program', kind: 'cold', reason });
         const programs = this.createPrograms(census.records);
         phases.program += performance.now() - started;
         const indexable = census.records.filter((r) => r.status === 'indexable').map((r) => r.path);
@@ -409,31 +438,38 @@ export class Indexer {
         const sourceFile = (path) => ownerGroup.get(path)?.program.getSourceFile(join(this.root, path));
         // EXTRACT-LOCAL: declarations from each file's syntax tree; their names scope the resolve.
         progress('extract', { files: indexable.length });
+        hud({ phase: 'extract', done: 0, total: indexable.length, kind: 'cold', reason });
         started = performance.now();
         const declarations = new Map();
+        let extracted = 0;
         for (const path of indexable) {
             const sf = sourceFile(path);
-            if (sf === undefined)
-                continue;
-            const found = fileDeclarations(this.ts, sf, path);
-            declarations.set(path, found);
-            for (const declaration of found.declarations) {
-                if (declaration.kind !== 'module')
-                    declarationNames.add(declaration.simple);
+            if (sf !== undefined) {
+                const found = fileDeclarations(this.ts, sf, path);
+                declarations.set(path, found);
+                for (const declaration of found.declarations) {
+                    if (declaration.kind !== 'module')
+                        declarationNames.add(declaration.simple);
+                }
             }
+            hud({ phase: 'extract', done: ++extracted, total: indexable.length, file: path });
         }
         phases.extract = performance.now() - started;
         // RESOLVE one program at a time; a resolved program gives up its checker before the next.
         progress('resolve', { files: indexable.length });
+        hud({ phase: 'resolve', done: 0, total: indexable.length });
         started = performance.now();
         const db = beginBuild(this.cacheDir);
         try {
             writeFiles(db, census.records);
             const writer = recordWriter(db);
+            let resolved = 0;
             transaction(db, () => {
                 for (const path of indexable) {
-                    if (sourceFile(path) === undefined)
-                        writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
+                    if (sourceFile(path) !== undefined)
+                        continue;
+                    writer.write(rowsOf(this.ts, path, undefined, undefined, undefined));
+                    hud({ phase: 'resolve', done: ++resolved, total: indexable.length, file: path });
                 }
                 for (const group of programs.groups) {
                     const resolver = new Resolver(this.ts, group.program, scope);
@@ -444,13 +480,14 @@ export class Indexer {
                         if (sf === undefined)
                             continue;
                         writer.write(rowsOf(this.ts, path, sf, declarations.get(path), resolver.resolveFile(sf)));
+                        hud({ phase: 'resolve', done: ++resolved, total: indexable.length, file: path });
                     }
                     this.lighten(group);
                 }
                 this.writeOrphans(writer, census, declarationNames);
             });
             phases.resolve = performance.now() - started;
-            return this.finish(db, census, writer.inserted, stamp, request, phases, progress, programs, {
+            return this.finish(db, census, writer.inserted, stamp, request, phases, progress, hud, runStarted, programs, {
                 action: 'cold',
                 reason,
                 drift: { added: 0, changed: 0, deleted: 0 },
@@ -471,7 +508,7 @@ export class Indexer {
             writer.write(scanLexically(this.ts, record.path, readFileSync(join(this.root, record.path), 'utf8'), names));
         }
     }
-    update(census, drift, published, stamp, request, phases, progress, programs) {
+    update(census, drift, published, stamp, request, phases, progress, hud, runStarted, programs) {
         const indexableNow = new Set(census.records.filter((r) => r.status === 'indexable').map((r) => r.path));
         const changed = [...drift.changed, ...drift.added].filter((path) => indexableNow.has(path));
         const removed = published.files
@@ -479,11 +516,12 @@ export class Indexer {
             .map((file) => file.path);
         const db = beginUpdate(this.cacheDir);
         if (db === null) {
-            return this.cold(census, 'published index unreadable', stamp, request, phases, progress);
+            return this.cold(census, 'published index unreadable', stamp, request, phases, progress, hud, runStarted);
         }
         try {
             let started = performance.now();
             progress('extract', { files: changed.length });
+            hud({ phase: 'extract', kind: 'update', done: 0, total: changed.length });
             const before = tableCounts(db);
             const oldIndex = readFileIndex(db);
             const oldKeys = declarationNamesOf(db, [...changed, ...removed]);
@@ -501,14 +539,16 @@ export class Indexer {
             };
             const sourceOf = programs === null ? () => undefined : this.sources(programs.groups, census.records, scope);
             const newKeys = new Map();
+            let extracted = 0;
             for (const path of changed) {
                 const source = sourceOf(path);
-                if (source === undefined)
-                    continue;
-                for (const declaration of source.resolver.declarationsOf(source.sf).declarations) {
-                    newKeys.set(declaration.key, declaration.simple);
-                    nameCounts.set(declaration.simple, (nameCounts.get(declaration.simple) ?? 0) + 1);
+                if (source !== undefined) {
+                    for (const declaration of source.resolver.declarationsOf(source.sf).declarations) {
+                        newKeys.set(declaration.key, declaration.simple);
+                        nameCounts.set(declaration.simple, (nameCounts.get(declaration.simple) ?? 0) + 1);
+                    }
                 }
+                hud({ phase: 'extract', done: ++extracted, total: changed.length, file: path });
             }
             for (const [name, n] of nameCounts) {
                 if (n > 0 && name !== '<module>')
@@ -553,6 +593,7 @@ export class Indexer {
                 }
             }
             progress('resolve', { files: pending.size });
+            hud({ phase: 'resolve' });
             const resolved = new Map();
             // A file's surface counts as changed when its text-derived surface differs, or when one of
             // its observable declarations (types written or inferred) has an edge into a file whose
@@ -613,6 +654,7 @@ export class Indexer {
                         const source = sourceOf(path);
                         const resolution = source?.resolver.resolveFile(source.sf);
                         resolved.set(path, rowsOf(this.ts, path, source?.sf, source?.resolver.declarationsOf(source.sf), resolution));
+                        hud({ phase: 'resolve', done: resolved.size, file: path });
                         if (resolution === undefined)
                             continue;
                         observableKeysOf.set(path, resolution.observableKeys);
@@ -645,7 +687,7 @@ export class Indexer {
                 deleteOrphanSymbols(db);
             });
             phases.resolve = performance.now() - started;
-            return this.finish(db, census, expected, stamp, request, phases, progress, programs, {
+            return this.finish(db, census, expected, stamp, request, phases, progress, hud, runStarted, programs, {
                 action: 'update',
                 reason: `${changed.length} changed · ${removed.length} removed · ${resolved.size} resolved`,
                 drift: {
@@ -666,8 +708,9 @@ export class Indexer {
      * VERIFY, then PUBLISH; on failure the previous index stays and the report lists why.
      * `programs` null: the census alone changed (sizes or times), not any file's content.
      */
-    finish(db, census, produced, stamp, request, phases, progress, programs, outcome) {
+    finish(db, census, produced, stamp, request, phases, progress, hud, runStarted, programs, outcome) {
         progress('verify');
+        hud({ phase: 'verify' });
         let started = performance.now();
         const verify = this.options.verify ?? verifyIndex;
         const problems = verify(db, { ...produced, files: census.records.length });
@@ -687,6 +730,7 @@ export class Indexer {
             };
         }
         progress('publish');
+        hud({ phase: 'publish' });
         started = performance.now();
         const buildId = randomUUID();
         writeMeta(db, {
@@ -719,6 +763,17 @@ export class Indexer {
         if (programs !== null)
             rmSync(join(this.cacheDir, FAILURE_FILE), { force: true });
         phases.publish = performance.now() - started;
+        if (request.recordHistory !== false) {
+            try {
+                recordBuildHistory(this.cacheDir, {
+                    durationMs: Math.round(performance.now() - runStarted),
+                    ...(outcome.action === 'cold' ? { reason: outcome.reason } : {}),
+                });
+            }
+            catch {
+                // Optional history must not turn a published build into a failed build.
+            }
+        }
         return { ...outcome, census: census.summary, counts, problems, phases: roundPhases(phases) };
     }
     unchanged(census, phases) {

@@ -46,24 +46,22 @@ export class KsdRuntime {
             catch {
                 // Missing theme must never break headless/early-start UIs.
             }
-            let status;
-            if (enabled) {
-                const dot = isActive ? "●" : "○";
-                let colored = dot;
+            const paint = (tone, text) => {
                 try {
-                    if (typeof theme?.fg === "function") {
-                        colored = theme.fg(isActive ? "accent" : "dim", dot);
-                    }
+                    return typeof theme?.fg === "function" ? theme.fg(tone, text) : text;
                 }
                 catch {
-                    // Theme rendering is optional.
+                    return text;
                 }
-                status = `${colored} 🛡 KSD: ${mode.toUpperCase()}`;
+            };
+            let status;
+            if (enabled) {
+                status = `${paint(isActive ? "accent" : "dim", isActive ? "●" : "○")} 🛡 ${paint("dim", "KSD:")} ${paint(isActive ? "accent" : "dim", mode.toUpperCase())}`;
                 if (notice)
                     status += `; ${notice}`;
             }
             else if (notice)
-                status = `⚠ KSD: ${notice}`;
+                status = `${paint("accent", "⚠")} ${paint("dim", "KSD:")} ${notice}`;
             const before = this.statuses.get(ui);
             if (before && before.value === status && before.theme === theme)
                 return;

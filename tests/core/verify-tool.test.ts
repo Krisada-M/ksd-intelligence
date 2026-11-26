@@ -1,16 +1,22 @@
 // MOCK-ONLY for the OMP ExtensionAPI harness; the core runs real git and real processes.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { execFile, execFileSync } from 'node:child_process';
+import { appendFile, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { after, describe, it } from 'node:test';
+import { dirname, join } from 'node:path';
+import { after, before, describe, it } from 'node:test';
+import { promisify, stripVTControlCharacters } from 'node:util';
 import extension, { type OmpExtensionApi } from '../../src/adapters/omp/extension.js';
+import { buildIndex } from '../../src/core/engine/build.js';
+import { loadWorkspace } from '../../src/core/engine/workspace.js';
 import { parseProjectConfig } from '../../src/core/kernel/config.js';
 import type { VerificationReport } from '../../src/core/verify/report.js';
 import { changesVerificationNote, renderVerifyReport } from '../../src/core/verify/render.js';
 import { readRevision } from '../../src/core/verify/revision.js';
 import { loadVerificationState, runVerification } from '../../src/core/verify/verify.js';
+import { ensureRuntime, fixtureRepo } from './index-helpers.js';
+
+const execFileAsync = promisify(execFile);
 
 const dirs: string[] = [];
 after(async () => {
@@ -38,7 +44,11 @@ function schema(): MockSchema {
 
 type Tool = Parameters<OmpExtensionApi['registerTool']>[0];
 
-function load(cwd: string, runner?: () => Promise<never>): Tool[] {
+function load(
+  cwd: string,
+  runner?: () => Promise<never>,
+  cacheHome: string | null = `${cwd}-cache`,
+): Tool[] {
   const registered: Tool[] = [];
   const pi: OmpExtensionApi = {
     zod: {
@@ -56,7 +66,7 @@ function load(cwd: string, runner?: () => Promise<never>): Tool[] {
   extension(pi, {
     createPolicyExtension: () => {},
     cwd,
-    cacheHome: `${cwd}-cache`,
+    ...(cacheHome === null ? {} : { cacheHome }),
     env: {},
     ...(runner === undefined ? {} : { verifyRunner: runner }),
   });
@@ -189,5 +199,68 @@ describe('verification text', () => {
     assert.equal(changesVerificationNote(now.reports, changed, now.checkNames).line, undefined);
     const off = await loadVerificationState({ ...ws, config: parseProjectConfig('{}').config });
     assert.equal(off, undefined);
+  });
+});
+
+describe('V2c ei_changes verification hint across CLI and OMP surfaces', () => {
+  const HINT = /No test result is recorded for this tree: call ei_verify \(test\)\./;
+  const LINE = /Verified for this tree: test PASS \(ei_verify\)/;
+  const cli = join(process.cwd(), 'dist/adapters/cli/main.js');
+
+  before(ensureRuntime);
+
+  it('plain, styled and expanded OMP rows carry the hint, then the evidence line; collapsed keeps one row', async () => {
+    const root = await fixtureRepo('verify-views');
+    try {
+      const config = {
+        impact: { routes: ['packages/api/src/routes.ts'] },
+        riskZones: [],
+        verification: { enabled: true, checks: [{ name: 'test', command: PASSING }] },
+      };
+      await writeFile(join(root, 'ei.config.json'), JSON.stringify(config));
+      execFileSync(
+        'git',
+        ['-C', root, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'cfg'],
+        { stdio: 'ignore' },
+      );
+      await appendFile(join(root, 'packages/payments/src/fee.ts'), '\n// touched\n');
+      // Default cache home: the CLI child shares it with the in-process workspace.
+      const workspace = await loadWorkspace(root);
+      const built = await buildIndex(workspace);
+      assert.ok(built.ok, JSON.stringify(built));
+
+      const clean = { ...process.env };
+      delete clean.FORCE_COLOR;
+      delete clean.NO_COLOR;
+      const colored = { ...clean, TERM: 'xterm', FORCE_COLOR: '1' };
+      const runCli = async (environment: NodeJS.ProcessEnv): Promise<string> => {
+        const args = [cli, 'changes', '--base', 'HEAD', '--root', root];
+        return (await execFileAsync(process.execPath, args, { env: environment })).stdout;
+      };
+      const changesTool = load(root, undefined, null).find((tool) => tool.name === 'ei_changes');
+      const renderResult = changesTool?.renderResult;
+      assert.ok(changesTool && renderResult);
+
+      for (const [pattern, verified] of [
+        [HINT, false],
+        [LINE, true],
+      ] as const) {
+        if (verified) await runVerification(workspace, { check: 'test' });
+        const result = await changesTool.execute('call', { base: 'HEAD' }, undefined, undefined, {
+          cwd: root,
+        });
+        assert.match(result.content[0]?.text ?? '', pattern);
+        assert.match(await runCli(clean), pattern);
+        const styled = await runCli(colored);
+        assert.match(styled, /\u001b\[/);
+        assert.match(stripVTControlCharacters(styled), pattern);
+        const expanded = renderResult(result, { expanded: true, isPartial: false }).render(100);
+        assert.match(stripVTControlCharacters(expanded.join('\n')), pattern);
+        const collapsed = renderResult(result, { expanded: false, isPartial: false }).render(100);
+        assert.equal(collapsed.length, 1);
+      }
+    } finally {
+      await rm(dirname(root), { recursive: true, force: true });
+    }
   });
 });

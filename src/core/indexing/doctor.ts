@@ -6,6 +6,7 @@ import { canonicalLines, counterLines } from '../../storage/records.js';
 import type { Ts } from './declarations.js';
 import { differential, type DifferentialReport } from './differential.js';
 import { Indexer, type IndexReport, type Progress } from './indexer.js';
+import type { BuildProgress } from './ui-progress.js';
 
 export interface DoctorReport {
   /** The update that brought the active index up to date with the working tree first. */
@@ -40,11 +41,32 @@ export async function doctorDeep(
   ts: Ts,
   indexer: Indexer,
   impact: ImpactConfig,
-  options: { differential: number; seed?: number; onProgress?: Progress },
+  options: {
+    differential: number;
+    seed?: number;
+    onProgress?: Progress;
+    onHudProgress?: (event: BuildProgress) => void;
+  },
 ): Promise<DoctorReport> {
   const progress = options.onProgress ?? (() => undefined);
+  const hud = (event: BuildProgress): void => {
+    try {
+      options.onHudProgress?.(event);
+    } catch {
+      // Optional presentation must not change doctor results.
+    }
+  };
   progress('doctor: update active index');
-  const update = await indexer.index({ impact, freshness: 'hash', onProgress: progress });
+  hud({ phase: 'doctor:update' });
+  const update = await indexer.index({
+    impact,
+    freshness: 'hash',
+    onProgress: progress,
+    onHudProgress:
+      options.onHudProgress === undefined
+        ? undefined
+        : (event) => hud({ ...event, phase: `doctor:update:${event.phase}` }),
+  });
   if (update.action === 'failed') {
     throw new Error(`doctor: active index verification failed: ${update.problems.join('; ')}`);
   }
@@ -59,7 +81,16 @@ export async function doctorDeep(
   });
   try {
     progress('doctor: cold rebuild');
-    cold = await rebuild.index({ impact, full: true });
+    hud({ phase: 'doctor:rebuild', kind: 'cold' });
+    cold = await rebuild.index({
+      impact,
+      full: true,
+      recordHistory: false,
+      onHudProgress:
+        options.onHudProgress === undefined
+          ? undefined
+          : (event) => hud({ ...event, phase: `doctor:rebuild:${event.phase}` }),
+    });
     if (cold.action === 'failed') {
       throw new Error(`doctor: cold rebuild verification failed: ${cold.problems.join('; ')}`);
     }
@@ -87,6 +118,7 @@ export async function doctorDeep(
   let report: DifferentialReport | null = null;
   if (options.differential !== 0) {
     progress('doctor: differential');
+    hud({ phase: 'doctor:differential' });
     const db = openPublished(indexer.cacheDir);
     if (db === null)
       throw new Error(`doctor: no published index at ${indexPath(indexer.cacheDir)}`);
