@@ -139,10 +139,10 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     });
     c.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
     const list = await c.request(2, 'tools/list', {});
-    assert.deepEqual(
-      list.result.tools.map((tool) => tool.name).slice(-2),
-      ['erosiano_baseline', 'erosiano_resolve_practices'],
-    );
+    assert.deepEqual(list.result.tools.map((tool) => tool.name).slice(-2), [
+      'erosiano_baseline',
+      'erosiano_resolve_practices',
+    ]);
     const outside = await c.request(3, 'tools/call', {
       name: 'erosiano_baseline',
       arguments: { scope: '..' },

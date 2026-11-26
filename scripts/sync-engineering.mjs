@@ -18,7 +18,12 @@ const old = readEngineeringLock(root);
 verifyEngineeringBundle(source, old);
 const git = (args) =>
   execFileSync('git', ['-C', checkout, ...args], { maxBuffer: 2 * 1024 * 1024, timeout: 10000 });
-assert.equal(git(['rev-parse', '--verify', commit + '^{commit}']).toString().trim(), commit);
+assert.equal(
+  git(['rev-parse', '--verify', commit + '^{commit}'])
+    .toString()
+    .trim(),
+  commit,
+);
 const stage = mkdtempSync(join(tmpdir(), 'ksd-engineering-sync-'));
 try {
   const next = { ...old, commit, files: {} };
