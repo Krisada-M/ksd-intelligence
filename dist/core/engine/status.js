@@ -5,7 +5,9 @@ import { repositoryLimits } from '../graph/limits.js';
 import { resolveRiskZones } from '../kernel/config.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
+import { matchGlob } from '../kernel/glob.js';
 import { probe } from '../workspace/probe.js';
+import { isCodeKind, kindOf, statVisible } from '../workspace/scan.js';
 import { FAILURE_FILE, SCHEMA_VERSION, indexPath, openPublished, readFiles, readMeta, readSchemaVersion, } from '../../storage/sqlite.js';
 import { consumeAuditWarning } from '../audit/log.js';
 import { isHolderAlive, readLockHolder } from './lock.js';
@@ -72,8 +74,59 @@ function graphOf(db) {
         limits: repositoryLimits(db),
     };
 }
+function presentationOf(db, files) {
+    let codeFiles = 0;
+    let outsideScope = 0;
+    for (const file of files) {
+        if (!isCodeKind(kindOf(file.path)))
+            continue;
+        codeFiles++;
+        if (file.reason === 'outside-index-scope')
+            outsideScope++;
+    }
+    return {
+        codeFiles,
+        outsideScope,
+        // Out-of-scope lexical rows serve the name cross-check, not index coverage.
+        extraction: grouped(db, `SELECT fi.extraction AS k, COUNT(*) AS n FROM file_index fi
+       JOIN files f ON f.path = fi.file
+       WHERE f.status IN ('indexable', 'orphan') GROUP BY k`),
+    };
+}
+/** Warn (strictly M > 2*N) when a positive `dir/*` include matches far fewer files than `dir/**`. */
+function includeWarningsOf(include, paths) {
+    const warnings = [];
+    for (const pattern of include) {
+        if (pattern.startsWith('!') || !pattern.endsWith('/*'))
+            continue;
+        const wide = `${pattern}*`;
+        let narrow = 0;
+        let broad = 0;
+        for (const path of paths) {
+            if (matchGlob(pattern, path))
+                narrow++;
+            if (matchGlob(wide, path))
+                broad++;
+        }
+        if (broad > 2 * narrow) {
+            warnings.push(`include "${pattern}" matches ${narrow.toLocaleString('en-US')} files; "${wide}" would match ${broad.toLocaleString('en-US')}`);
+        }
+    }
+    return warnings;
+}
+/** Current visible paths: the stored census patched by drift, else one disk listing. */
+async function visiblePaths(root, files, drift) {
+    if (files !== null && drift !== null) {
+        const gone = new Set(drift.deleted);
+        return [
+            ...files.filter((file) => !gone.has(file.path)).map((file) => file.path),
+            ...drift.added,
+        ];
+    }
+    return (await statVisible(root)).entries.map((entry) => entry.path);
+}
 /** The published index, read-only; null when none exists. Throws when it cannot be read. */
-function readIndex(cacheDir) {
+function readIndex(cacheDir, presentation) {
     const db = openPublished(cacheDir);
     if (db === null)
         return null;
@@ -106,6 +159,7 @@ function readIndex(cacheDir) {
                     },
             },
             files,
+            ...(current && presentation ? { presentation: presentationOf(db, files) } : {}),
         };
     }
     finally {
@@ -177,15 +231,30 @@ export async function workspaceStatus(start, options = {}) {
     let index = null;
     let indexError = null;
     let drift = null;
+    let census = null;
+    let presentation;
     try {
-        const read = readIndex(workspace.cacheDir);
+        const read = readIndex(workspace.cacheDir, options.presentation === 'index');
         index = read?.info ?? null;
+        presentation = read?.presentation;
         if (read && read.info.schemaVersion === SCHEMA_VERSION) {
+            census = read.files;
             drift = await probe(workspace.root, impact, read.files);
         }
     }
     catch (error) {
         indexError = error instanceof Error ? error.message : String(error);
+    }
+    let includeWarnings = [];
+    // Reuses the census patched by drift; walks disk only when no probe result exists.
+    if (options.presentation !== undefined &&
+        impact.include.some((pattern) => !pattern.startsWith('!') && pattern.endsWith('/*'))) {
+        try {
+            includeWarnings = includeWarningsOf(impact.include, await visiblePaths(workspace.root, census, drift));
+        }
+        catch {
+            includeWarnings = []; // a failed scan must not break an otherwise valid status
+        }
     }
     const holder = readLockHolder(workspace.cacheDir);
     const zones = resolveRiskZones(workspace.config.riskZones).map((zone) => zone.zone);
@@ -211,6 +280,8 @@ export async function workspaceStatus(start, options = {}) {
         fix: degraded?.[1] ?? null,
         ...partial,
         ...(auditWarning !== null ? { auditWarning } : {}),
+        ...(presentation !== undefined ? { presentation } : {}),
+        ...(includeWarnings.length > 0 ? { includeWarnings } : {}),
     };
 }
 /** DESIGN §14: the engine's peak memory, as of the last build. */

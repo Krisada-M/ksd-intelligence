@@ -4,6 +4,7 @@
 
 - Added compact result trees for terminal commands and expandable OMP tool results. Non-interactive, `--plain`, and JSON output retain their existing formats.
 - Added a measured terminal HUD for `ei index`, `ei setup`, and `ei doctor`, plus themed KSD status in OMP. Neither affects engineering decisions or policy.
+- Clarified index coverage, extraction limits, scope warnings, and rebuild reasons in the terminal HUD and status tree. Plain and JSON output are unchanged.
 - Added opt-in Markdown for AGY via `KSD_MCP_MARKDOWN=1`. Default MCP text is unchanged. The opt-in changes the text the model reads; it is not a separate display channel.
 
 ## 1.0.0 — release candidate

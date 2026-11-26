@@ -363,7 +363,9 @@ async function run(argv: string[]): Promise<number> {
       return 0;
     }
     const started = performance.now();
-    const status = await workspaceStatus(values.root ?? process.cwd());
+    const status = await workspaceStatus(values.root ?? process.cwd(), {
+      presentation: view === undefined ? undefined : 'status',
+    });
     recordAudit(
       status.cacheDir,
       {
@@ -453,16 +455,23 @@ async function run(argv: string[]): Promise<number> {
       repo: basename(workspace.root),
       previous,
     });
+    let rebuildReason: string | undefined;
     const outcome = await duringHud(hud, () =>
       buildIndex(workspace, {
         full: values.full === true,
         onProgress:
           hud === undefined ? (message) => console.error(`ei index: ${message}`) : undefined,
-        onHudProgress: hud?.update,
+        onHudProgress:
+          hud === undefined && view === undefined
+            ? undefined
+            : (event) => {
+                rebuildReason = event.reason ?? rebuildReason;
+                hud?.update(event);
+              },
       }),
     );
     if (!outcome.ok) {
-      if (hud !== undefined && view !== undefined) {
+      if (view !== undefined) {
         const status = await workspaceStatus(workspace.root);
         console.log(
           renderHudSummary({
@@ -488,19 +497,23 @@ async function run(argv: string[]): Promise<number> {
     const seconds = (durationMs / 1000).toFixed(2);
     const { action, reason } = outcome.value;
     if (
-      hud !== undefined &&
       view !== undefined &&
       (action === 'cold' || action === 'update' || action === 'unchanged' || action === 'failed')
     ) {
-      const { index } = await workspaceStatus(workspace.root);
-      const problems = Array.isArray(outcome.value.problems)
-        ? outcome.value.problems.filter((value): value is string => typeof value === 'string')
-        : [];
+      const { index, presentation, includeWarnings } = await workspaceStatus(workspace.root, {
+        presentation: action === 'failed' ? undefined : 'index',
+      });
+      let shownReason = rebuildReason ?? String(reason);
+      if (action === 'failed') {
+        shownReason = String(reason);
+        const problems = Array.isArray(outcome.value.problems)
+          ? outcome.value.problems.filter((value): value is string => typeof value === 'string')
+          : [];
+        if (problems.length > 0) shownReason += `: ${problems.join('; ')}`;
+      }
       const actionLabel = action === 'cold' ? 'built' : 'updated';
       const activeIndex = index === null ? 'none' : homeRelative(index.path);
       const drift = isRecord(outcome.value.drift) ? outcome.value.drift : {};
-      const coverage = index?.coverage;
-      const extraction = index?.graph.extraction;
       console.log(
         renderHudSummary({
           ...view,
@@ -509,23 +522,19 @@ async function run(argv: string[]): Promise<number> {
           kind: action === 'cold' || action === 'update' ? action : undefined,
           durationMs,
           previous,
-          reason:
-            problems.length === 0 ? String(reason) : `${String(reason)}: ${problems.join('; ')}`,
+          reason: shownReason,
           phases: phaseTimes(outcome.value.phases),
-          files: coverage?.scanned,
-          indexed: extraction === undefined ? undefined : (extraction.ok ?? 0),
-          outsideScope:
-            coverage?.reasons['outside-index-scope'] ?? (index === null ? undefined : 0),
-          errors:
-            extraction === undefined
+          coverage:
+            index === null || presentation === undefined
               ? undefined
-              : (extraction['parse-error'] ?? 0) + (extraction['not-in-program'] ?? 0),
+              : { scanned: index.coverage.scanned, ...presentation },
+          includeWarnings,
           drift:
             action === 'update'
               ? `+${String(drift.added)} · ~${String(drift.changed)} · −${String(drift.deleted)}`
               : undefined,
           activeIndex: action === 'failed' ? activeIndex : undefined,
-          throughput: hud.throughput,
+          throughput: hud?.throughput,
           next: action === 'failed' ? 'check ei status before retrying' : 'ready for ei impact',
         }),
       );

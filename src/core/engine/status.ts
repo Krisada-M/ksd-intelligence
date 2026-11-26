@@ -7,7 +7,9 @@ import { resolveRiskZones } from '../kernel/config.js';
 import type { ImpactLimits } from '../kernel/types.js';
 import { isRecord } from '../kernel/guards.js';
 import { impactConfigHash } from '../indexing/stamp.js';
+import { matchGlob } from '../kernel/glob.js';
 import { probe, type ProbeResult } from '../workspace/probe.js';
+import { isCodeKind, kindOf, statVisible } from '../workspace/scan.js';
 import {
   FAILURE_FILE,
   SCHEMA_VERSION,
@@ -90,6 +92,10 @@ export interface WorkspaceStatus {
   drift: ProbeResult | null;
   lock: { pid: number; startedAt: string; alive: boolean } | null;
   auditWarning?: string | null;
+  /** Present only when requested: current-schema census counts for the human view. */
+  presentation?: { codeFiles: number; outsideScope: number; extraction: Record<string, number> };
+  /** Present only when requested and non-empty: shallow `dir/*` includes that look too narrow. */
+  includeWarnings?: string[];
 }
 
 function stringList(raw: string | undefined): string[] {
@@ -152,8 +158,76 @@ function graphOf(db: DatabaseSync): GraphCounts {
   };
 }
 
+function presentationOf(
+  db: DatabaseSync,
+  files: readonly FileRecord[],
+): NonNullable<WorkspaceStatus['presentation']> {
+  let codeFiles = 0;
+  let outsideScope = 0;
+  for (const file of files) {
+    if (!isCodeKind(kindOf(file.path))) continue;
+    codeFiles++;
+    if (file.reason === 'outside-index-scope') outsideScope++;
+  }
+  return {
+    codeFiles,
+    outsideScope,
+    // Out-of-scope lexical rows serve the name cross-check, not index coverage.
+    extraction: grouped(
+      db,
+      `SELECT fi.extraction AS k, COUNT(*) AS n FROM file_index fi
+       JOIN files f ON f.path = fi.file
+       WHERE f.status IN ('indexable', 'orphan') GROUP BY k`,
+    ),
+  };
+}
+
+/** Warn (strictly M > 2*N) when a positive `dir/*` include matches far fewer files than `dir/**`. */
+function includeWarningsOf(include: readonly string[], paths: readonly string[]): string[] {
+  const warnings: string[] = [];
+  for (const pattern of include) {
+    if (pattern.startsWith('!') || !pattern.endsWith('/*')) continue;
+    const wide = `${pattern}*`;
+    let narrow = 0;
+    let broad = 0;
+    for (const path of paths) {
+      if (matchGlob(pattern, path)) narrow++;
+      if (matchGlob(wide, path)) broad++;
+    }
+    if (broad > 2 * narrow) {
+      warnings.push(
+        `include "${pattern}" matches ${narrow.toLocaleString('en-US')} files; "${wide}" would match ${broad.toLocaleString('en-US')}`,
+      );
+    }
+  }
+  return warnings;
+}
+
+/** Current visible paths: the stored census patched by drift, else one disk listing. */
+async function visiblePaths(
+  root: string,
+  files: readonly FileRecord[] | null,
+  drift: ProbeResult | null,
+): Promise<string[]> {
+  if (files !== null && drift !== null) {
+    const gone = new Set(drift.deleted);
+    return [
+      ...files.filter((file) => !gone.has(file.path)).map((file) => file.path),
+      ...drift.added,
+    ];
+  }
+  return (await statVisible(root)).entries.map((entry) => entry.path);
+}
+
 /** The published index, read-only; null when none exists. Throws when it cannot be read. */
-function readIndex(cacheDir: string): { info: IndexInfo; files: FileRecord[] } | null {
+function readIndex(
+  cacheDir: string,
+  presentation: boolean,
+): {
+  info: IndexInfo;
+  files: FileRecord[];
+  presentation?: NonNullable<WorkspaceStatus['presentation']>;
+} | null {
   const db = openPublished(cacheDir);
   if (db === null) return null;
   try {
@@ -185,6 +259,7 @@ function readIndex(cacheDir: string): { info: IndexInfo; files: FileRecord[] } |
             },
       },
       files,
+      ...(current && presentation ? { presentation: presentationOf(db, files) } : {}),
     };
   } finally {
     db.close();
@@ -243,7 +318,7 @@ function degradation(
 /** Everything `ei_status` and `ei status` report; reads files only, never starts the engine. */
 export async function workspaceStatus(
   start: string,
-  options: { cacheHome?: string; env?: NodeJS.ProcessEnv } = {},
+  options: { cacheHome?: string; env?: NodeJS.ProcessEnv; presentation?: 'status' | 'index' } = {},
 ): Promise<WorkspaceStatus> {
   const workspace = await loadWorkspace(start, options.cacheHome);
   const { impact } = workspace.config;
@@ -260,14 +335,34 @@ export async function workspaceStatus(
   let index: IndexInfo | null = null;
   let indexError: string | null = null;
   let drift: ProbeResult | null = null;
+  let census: FileRecord[] | null = null;
+  let presentation: WorkspaceStatus['presentation'];
   try {
-    const read = readIndex(workspace.cacheDir);
+    const read = readIndex(workspace.cacheDir, options.presentation === 'index');
     index = read?.info ?? null;
+    presentation = read?.presentation;
     if (read && read.info.schemaVersion === SCHEMA_VERSION) {
+      census = read.files;
       drift = await probe(workspace.root, impact, read.files);
     }
   } catch (error) {
     indexError = error instanceof Error ? error.message : String(error);
+  }
+
+  let includeWarnings: string[] = [];
+  // Reuses the census patched by drift; walks disk only when no probe result exists.
+  if (
+    options.presentation !== undefined &&
+    impact.include.some((pattern) => !pattern.startsWith('!') && pattern.endsWith('/*'))
+  ) {
+    try {
+      includeWarnings = includeWarningsOf(
+        impact.include,
+        await visiblePaths(workspace.root, census, drift),
+      );
+    } catch {
+      includeWarnings = []; // a failed scan must not break an otherwise valid status
+    }
   }
 
   const holder = readLockHolder(workspace.cacheDir);
@@ -294,6 +389,8 @@ export async function workspaceStatus(
     fix: degraded?.[1] ?? null,
     ...partial,
     ...(auditWarning !== null ? { auditWarning } : {}),
+    ...(presentation !== undefined ? { presentation } : {}),
+    ...(includeWarnings.length > 0 ? { includeWarnings } : {}),
   };
 }
 
