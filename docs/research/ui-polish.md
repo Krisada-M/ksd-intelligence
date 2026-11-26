@@ -135,3 +135,5 @@ STATUS degraded (typescript runtime missing) · run: ei setup
 ```
 
 The Markdown response includes the full plain response under `Details`. This is a real stdio bridge capture, not a live Antigravity display capture. AGY CLI 1.5.17 (`gemini-3.8-flash-low` for the second attempt) timed out before either probe tool ran. A separate interpretation check with `openai-codex/gpt-6.2-sol` failed before scoring with `usage_limit_reached`. Live output and model behavior for the opt-in remain **NOT VERIFIED**.
+
+Post-rebase AGY CLI 1.5.17 via `agy acp --stdio`: two sessions completed both read-only `ei_status` calls using disposable MCP servers. One session included passive stdio capture. Both wire responses showed `STATUS degraded`; only the opted-in response had the Markdown heading and the `degraded` table row. The ACP completion events omitted result content. An isolated repeat intended to score the exact next command timed out, so this proves live tool reachability and the wire distinction, not terminal rendering or model interpretation.
