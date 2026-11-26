@@ -15,11 +15,13 @@ const modernMeta = {
   'io.modelcontextprotocol/clientCapabilities': {},
 };
 
-async function start(env = {}, customArgs) {
-  const root = await mkdtemp(join(tmpdir(), 'ksd-mcp-'));
+async function start(env = {}, customArgs, sharedRoot) {
+  const root = sharedRoot ?? (await mkdtemp(join(tmpdir(), 'ksd-mcp-')));
   const args = customArgs ? customArgs(root) : [entry, '--root', root];
+  const childEnv = { ...process.env, EI_DISABLED: '', KSD_MCP_WORKFLOW: '' };
+  delete childEnv.KSD_MCP_MARKDOWN;
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, EI_DISABLED: '', KSD_MCP_WORKFLOW: '', ...env },
+    env: { ...childEnv, ...env },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   const frames = [];
@@ -74,7 +76,7 @@ async function start(env = {}, customArgs) {
       ]);
       if (child.exitCode === null) child.kill('SIGKILL');
     }
-    await rm(root, { recursive: true, force: true });
+    if (sharedRoot === undefined) await rm(root, { recursive: true, force: true });
   };
   return { root, child, send, request, frame, stop };
 }
@@ -161,6 +163,33 @@ describe('AGY MCP stdio adapter — protocol and security', () => {
     const status = await c.request(3, 'tools/call', { ...meta, name: 'ei_status', arguments: {} });
     assert.match(status.result.content[0].text, /^STATUS degraded/);
     assert.equal(status.result.resultType, 'complete');
+  });
+
+  it('changes only successful results when Markdown is enabled', async (t) => {
+    const plain = await start();
+    t.after(plain.stop);
+    const off = await start({ KSD_MCP_MARKDOWN: '0' }, undefined, plain.root);
+    t.after(off.stop);
+    const markdown = await start({ KSD_MCP_MARKDOWN: '1' }, undefined, plain.root);
+    t.after(markdown.stop);
+    const callStatus = async (client, id, args = {}) =>
+      (
+        await client.request(id, 'tools/call', {
+          _meta: modernMeta,
+          name: 'ei_status',
+          arguments: args,
+        })
+      ).result;
+    const baseline = (await callStatus(plain, 1)).content[0].text;
+    assert.equal((await callStatus(off, 1)).content[0].text, baseline);
+    const formatted = (await callStatus(markdown, 1)).content[0].text;
+    assert.equal(
+      formatted,
+      `## ei_status\n\n| Field | Result |\n| --- | --- |\n| state | degraded |\n\nDetails:\n\n\`\`\`text\n${baseline}\n\`\`\``,
+    );
+    const invalid = await callStatus(plain, 2, { extra: true });
+    assert.equal(invalid.isError, true);
+    assert.deepEqual(await callStatus(markdown, 2, { extra: true }), invalid);
   });
 
   it('publishes the documented AGY descriptions for every tool', async (t) => {

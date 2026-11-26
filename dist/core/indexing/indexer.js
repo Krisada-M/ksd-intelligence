@@ -40,6 +40,14 @@ function isConfigLevel(path) {
         name === 'ei.config.json' ||
         LOCKFILES.has(name));
 }
+const CONFIG_CHANGED = 'config changed: ';
+/** HUD wording only: a lockfile is a dependency change, not a config edit. */
+function lockfileHudReason(reason) {
+    if (!reason.startsWith(CONFIG_CHANGED))
+        return reason;
+    const path = reason.slice(CONFIG_CHANGED.length);
+    return LOCKFILES.has(basename(path)) ? `lockfile changed: ${path}` : reason;
+}
 function diffCensus(before, now) {
     const old = new Map(before.map((file) => [file.path, file]));
     const drift = {
@@ -222,7 +230,8 @@ export class Indexer {
             verify: 0,
             publish: 0,
         };
-        const stamp = extractorStamp(this.ts.version, impactConfigHash(request.impact));
+        const configHash = impactConfigHash(request.impact);
+        const stamp = extractorStamp(this.ts.version, configHash);
         const started = performance.now();
         const published = this.readPublished();
         const fingerprint = request.freshness === 'stat' && published !== null
@@ -236,7 +245,16 @@ export class Indexer {
         const drift = published === null ? null : diffCensus(published.files, census.records);
         const coldReason = this.coldReason(request, stamp, published, drift);
         if (coldReason !== null || published === null || drift === null) {
-            return this.cold(census, coldReason ?? 'no published index', stamp, request, phases, progress, hud, started);
+            // HUD-only wording: report.reason and build history keep the raw reason.
+            const stored = published?.meta.config_hash;
+            let shown;
+            if (coldReason === 'extractor stamp changed') {
+                shown =
+                    stored !== undefined && stored !== configHash
+                        ? 'config changed'
+                        : 'engine updated (extractor stamp changed)';
+            }
+            return this.cold(census, coldReason ?? 'no published index', stamp, request, phases, progress, hud, started, shown);
         }
         const contentDrift = drift.added.size + drift.changed.size + drift.deleted.size;
         if (contentDrift === 0 && drift.touched === 0) {
@@ -420,10 +438,11 @@ export class Indexer {
             oldProgram: group.program,
         });
     }
-    cold(census, reason, stamp, request, phases, progress, hud, runStarted) {
+    cold(census, reason, stamp, request, phases, progress, hud, runStarted, hudReason) {
+        const shown = hudReason ?? lockfileHudReason(reason);
         let started = performance.now();
         progress('program');
-        hud({ phase: 'program', kind: 'cold', reason });
+        hud({ phase: 'program', kind: 'cold', reason: shown });
         const programs = this.createPrograms(census.records);
         phases.program += performance.now() - started;
         const indexable = census.records.filter((r) => r.status === 'indexable').map((r) => r.path);
@@ -438,7 +457,7 @@ export class Indexer {
         const sourceFile = (path) => ownerGroup.get(path)?.program.getSourceFile(join(this.root, path));
         // EXTRACT-LOCAL: declarations from each file's syntax tree; their names scope the resolve.
         progress('extract', { files: indexable.length });
-        hud({ phase: 'extract', done: 0, total: indexable.length, kind: 'cold', reason });
+        hud({ phase: 'extract', done: 0, total: indexable.length, kind: 'cold', reason: shown });
         started = performance.now();
         const declarations = new Map();
         let extracted = 0;

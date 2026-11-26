@@ -43,6 +43,8 @@ In Antigravity IDE: open the agent panel's MCP Servers menu -> Manage MCP Server
 
 Avoid relying on the IDE's process working directory: it may be different from the repository. Restart or reload MCP in AGY after updating the config. `ei_status` reports degraded when the runtime/index is not ready; it does not build the index. `ei_impact` can trigger the normal bounded KSD index update and will report uncertainty when evidence is incomplete.
 
+Default MCP text is unchanged. The experimental `KSD_MCP_MARKDOWN=1` server environment option changes the text sent to the model for `ei_status`, `ei_impact`, `ei_changes`, and `ei_search`. Leave it unset for the original format. Live host and model acceptance are not yet verified for this option.
+
 ## Tools
 
 | Name | Availability | Behavior |

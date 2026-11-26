@@ -31,3 +31,19 @@ Gates at the tagged base, with research records only: `npm ci`, `npm run typeche
 `npm ci`, `node_modules/.bin/tsc -p src/policy/tsconfig.json`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (769 passed), and `node --test tests/packaging/npm-tarball.test.js` (1 passed) passed. Live `omp/19.2.1` in a real 80-column pseudo-terminal showed the collapsed `ei_status` header, expanded tree after `Ctrl+O`, KSD status segment, and `/engineering-proxy status` notice. The four-tool collapse/expand and byte-identity fixture is MOCK-ONLY; live execution covered `ei_status`.
 
 **Hard stop:** `EI_EVAL_MODEL=openai-codex/gpt-6.2-sol node evals/run.mjs` exited 2. `desktop-status` exited 1 before tool execution (`model unavailable`); all 10 cases were unscored. An isolated OMP preflight reported `No API key`. No authorized `EI_EVAL_HOME` was configured. Use the dedicated Codex login procedure in `docs/release-checklist.md`; do not change the evaluator, copy tokens, or advance to Round 3 before clearing the gate.
+
+**Gate cleared on rerun:** `EI_EVAL_MODEL=openai-codex/gpt-6.2-sol node evals/run.mjs` on `6142e8cfcbb2` in an isolated Linux aarch64 VM (Node 24.22.3, OMP 19.2.1, Bubblewrap 0.8.0). `Pass rate: 100.0% (10/10 scored); 0 not verified.` No evaluator or approval changes.
+
+## Round 3 — AGY and release metadata
+
+1. Agent-facing text, golden cases, and snapshots: the OMP and default MCP text, TOOLS.md, accepted snapshots, and golden cases are unchanged. Only the explicitly enabled Markdown path adds a table and wraps the original explanation in a code fence. Workflow and errors remain plain.
+2. Completeness, reach, factors, and verdict: the AGY presentation reads fixed summary fields from existing outcomes. It does not change any engine decision or feed back into analysis.
+3. Compatibility: the new stdio regression checks unset vs `0` with the same workspace root and compares the `1` details against the exact plain bytes. Invalid calls return identical errors.
+4. Side effects: the implementation adds no network, subprocess, dependency, configuration file, or repository write. Host probes used disposable test workspaces.
+5. Diff hygiene: no secret or personal path is included. Round 3 does not change any protected policy, golden, or snapshot file.
+
+macOS arm64, Node 24.22.0, sanitized environment: `npm ci`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (814 passed, 0 failed), `npm run check:dist`, and `node --test tests/packaging/npm-tarball.test.js` (1 passed). `ei doctor --deep --differential 300 --plain`: 0 active/cold differences, 0 counter differences, 1,962 of 1,962 references covered. `semgrep --config p/default --metrics=off --disable-version-check scripts/mcp/tools.mjs tests/packaging/agy-mcp.test.js`: 0 findings. `npm audit --omit=dev --audit-level=high`: 0 vulnerabilities. The unsanitized run failed in the pre-existing V2c environment-report test; no test was weakened.
+
+Round 3 **NOT VERIFIED**: both live AGY CLI attempts timed out before a probe tool call. The supplemental strong-model interpretation run returned `usage_limit_reached` before scoring. No post-rebase eval was run. Do not recommend enabling the Markdown option until live acceptance is recorded.
+
+After rebasing onto `e2be8fa54b31`, all seven deterministic gates passed again (814 tests and one tarball test). The rebased Linux candidate passed seven harness tests, including the Bubblewrap host-file denial. A single no-tool request on the exact strong model still returned `usage_limit_reached`; the final eval remains NOT VERIFIED. A real AGY ACP session completed both probe calls, and a passive stdio capture showed the expected Markdown/default distinction without changing degraded status. ACP omitted completed tool content, and the subsequent isolated next-command comparison timed out. Full live display and model guidance acceptance remain NOT VERIFIED.

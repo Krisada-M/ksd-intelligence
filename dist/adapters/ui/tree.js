@@ -342,9 +342,19 @@ function renderStatus(status, options) {
                     text: `${index.coverage.indexable} indexable · ${index.coverage.scanned} scanned · ${index.coverage.packages} packages`,
                 },
                 { text: `${index.graph.declarations} declarations · ${index.graph.edges} edges` },
+                section('extraction', ['ok', 'lexical', 'not-in-program', 'parse-error'].map((name) => ({
+                    text: `${name} ${(index.graph.extraction[name] ?? 0).toLocaleString('en-US')}`,
+                }))),
                 ...index.tsconfigErrors.map((text) => ({ text, role: 'unknown' })),
             ]
             : [{ text: status.indexError ?? 'none yet', role: 'unknown' }]),
+        ...(index
+            ? [
+                section('unindexed', Object.entries(index.coverage.reasons)
+                    .sort(([a, aCount], [b, bCount]) => bCount - aCount || a.localeCompare(b))
+                    .map(([reason, count]) => ({ text: `${reason} ${count.toLocaleString('en-US')}` }))),
+            ]
+            : []),
         section('runtime', [
             {
                 text: `${status.runtime.kind} ${status.runtime.version} · TypeScript ${status.typescript.ok ? status.typescript.runtime.version : status.typescript.reason}`,
@@ -353,6 +363,7 @@ function renderStatus(status, options) {
         section('config', [
             { text: status.config.path ?? 'defaults · run ei init' },
             ...status.config.errors.map((text) => ({ text, role: 'unknown' })),
+            ...(status.includeWarnings ?? []).map((text) => ({ text, role: 'warning' })),
         ]),
         section('store', [{ text: index?.path ?? status.cacheDir }]),
     ];

@@ -93,3 +93,47 @@ D68 status-only diff touches `src/policy/index.js`, `src/policy/src/runtime.ts`,
 | `/engineering-proxy status` values and warning | Accent `ON`, `OFF`, `BALANCED`, `ADAPTIVE`, `UNSET`, `INHERIT` in their fixed fields and accent `WARNING:`. Preserve values, punctuation, warnings, and notification severity. |
 
 Unstyled copy, disabled clear behavior, config, enforcement, and persistence are unchanged.
+
+## Round 3 — terminal capture and AGY comparison
+
+The AGY bridge formats the typed summary inside its existing response boundary. A renderer that serializes all internal details would expose paths and duplicate unbounded result data. The chosen formatter adds only fixed labels and typed scalar summaries; the original bounded details stay intact in a fence longer than any backtick run in the text. The original renderers still own all guidance. No second state store or protocol extension is needed.
+
+`ei index` and `ei status`, macOS arm64, 80 columns, with light and dark terminal palettes. Both captures emitted ANSI styling. Excerpts omit paths and variable timing:
+
+```text
+◆ index unchanged · 2 files
+✓ status ready
+├─ index
+├─ runtime
+├─ config
+└─ store
+```
+
+Live OMP 19.2.1 in an 80-column Linux aarch64 PTY showed the KSD segment and command notification in both palettes. The earlier light capture also showed the collapsed result. Excerpts omit paths and unrelated UI:
+
+```text
+○ 🛡 KSD: BALANCED
+Engineering Proxy: ON; mode: BALANCED (default); project default: UNSET
+ei_status
+⚠ status degraded · no index
+```
+
+Expanded output in both palettes was not verified. The Round 2 fixture still covers collapsed and expanded rendering without changing model content.
+
+AGY bridge wire capture, MCP `2026-07-28`, same disposable workspace in plain and Markdown modes. Original details compared byte for byte:
+
+```text
+STATUS degraded (typescript runtime missing) · run: ei setup
+```
+
+```markdown
+## ei_status
+
+| Field | Result |
+| --- | --- |
+| state | degraded |
+```
+
+The Markdown response includes the full plain response under `Details`. This is a real stdio bridge capture, not a live Antigravity display capture. AGY CLI 1.5.17 (`gemini-3.8-flash-low` for the second attempt) timed out before either probe tool ran. A separate interpretation check with `openai-codex/gpt-6.2-sol` failed before scoring with `usage_limit_reached`. Live output and model behavior for the opt-in remain **NOT VERIFIED**.
+
+Post-rebase AGY CLI 1.5.17 via `agy acp --stdio`: two sessions completed both read-only `ei_status` calls using disposable MCP servers. One session included passive stdio capture. Both wire responses showed `STATUS degraded`; only the opted-in response had the Markdown heading and the `degraded` table row. The ACP completion events omitted result content. An isolated repeat intended to score the exact next command timed out, so this proves live tool reachability and the wire distinction, not terminal rendering or model interpretation.

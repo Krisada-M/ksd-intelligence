@@ -1,3 +1,5 @@
+import type { WorkspaceStatus } from '../../core/engine/status.js';
+
 export interface HudEvent {
   phase: string;
   done?: number;
@@ -37,10 +39,8 @@ export interface HudSummary {
   previous?: HudPrevious;
   reason?: string;
   phases?: readonly { phase: string; durationMs: number }[];
-  indexed?: number;
-  outsideScope?: number;
-  errors?: number;
-  files?: number;
+  coverage?: NonNullable<WorkspaceStatus['presentation']> & { scanned: number };
+  includeWarnings?: readonly string[];
   drift?: string;
   activeIndex?: string;
   next?: string;
@@ -53,6 +53,9 @@ export interface HudSummary {
 const blocks = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉', '█'];
 const sparkBlocks = '⣀⣄⣤⣦⣶⣷⣿';
 const phaseOrder = ['scan', 'program', 'extract', 'resolve', 'verify', 'publish'];
+const phaseRamp = ['34', '36', '35', '95', '33', '94'];
+const minThroughputMs = 2000;
+const minThroughputSamples = 5;
 const reset = '\x1b[0m';
 
 function safe(text: string): string {
@@ -62,6 +65,32 @@ function safe(text: string): string {
 function duration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '?';
   return `${Number((ms / 1000).toFixed(2))}s`;
+}
+
+function wrap(text: string, prefix: string, columns: number): string[] {
+  const lines: string[] = [];
+  const indent = ' '.repeat(width(prefix));
+  let line = prefix;
+  let hasWord = false;
+  for (const word of safe(text).split(/ +/)) {
+    if (hasWord && width(`${line} ${word}`) > columns) {
+      lines.push(line);
+      line = indent;
+      hasWord = false;
+    }
+    let remaining = word;
+    const room = columns - width(line);
+    while (width(remaining) > room) {
+      const piece = fit(remaining, room);
+      lines.push(line + piece);
+      remaining = remaining.slice(piece.length);
+      line = indent;
+    }
+    line += `${hasWord ? ' ' : ''}${remaining}`;
+    hasWord = true;
+  }
+  lines.push(line);
+  return lines;
 }
 
 function width(text: string): number {
@@ -197,7 +226,8 @@ export function openHud(options: HudOptions): Hud | undefined {
         : [...phases.keys()];
     const currentIndex = phaseNames.indexOf(current.phase);
     const prefix = `${ascii ? '|' : '▌'}ei ${options.command}  `;
-    const suffix = `${current.kind ? ` · ${current.kind}` : ''}  ${duration(now() - started)}`;
+    const elapsed = now() - started;
+    const suffix = `${current.kind ? ` · ${current.kind}` : ''}  ${duration(elapsed)}`;
     const heading = `${prefix}${fit(options.repo, Math.max(0, columns - width(prefix) - width(suffix)))}${suffix}`;
     const body = [heading];
     if (!narrow && (options.previous || (current.kind === 'cold' && current.reason)))
@@ -236,12 +266,10 @@ export function openHud(options: HudOptions): Hud | undefined {
       const label = ` ${glyph[status]} ${phase.padEnd(8)} ${beam} ${count}`;
       body.push(label);
     }
-    if (!narrow)
+    if (!narrow && elapsed >= minThroughputMs && samples.length >= minThroughputSamples)
       body.push(
         '',
-        samples.length
-          ? ` files/s ${spark(samples, ascii)}   ${Math.round(latestRate).toLocaleString('en-US')}`
-          : ' files/s measuring',
+        ` files/s ${spark(samples, ascii)}   ${Math.round(latestRate).toLocaleString('en-US')}`,
       );
     if (current.file) body.push(` ${ascii ? '>' : '›'} ${safe(current.file)}`);
     erase();
@@ -278,7 +306,11 @@ export function openHud(options: HudOptions): Hud | undefined {
         observations.shift();
     }
     phases.set(event.phase, event);
-    current = event;
+    current = {
+      ...event,
+      kind: event.kind ?? current?.kind,
+      reason: event.reason ?? current?.reason,
+    };
     if (time - drawnAt < 100) return;
     clearTimeout(timer);
     timer = undefined;
@@ -336,56 +368,114 @@ export function renderHudSummary(input: HudSummary): string {
     if (diff < 0) sign = ascii ? '-' : '−';
     comparison = `  ${sign}${duration(Math.abs(diff))} vs last`;
   }
-  const count = input.files === undefined ? '' : ` · ${input.files.toLocaleString('en-US')} files`;
+  const coverage = success ? input.coverage : undefined;
+  const scanned = coverage?.scanned.toLocaleString('en-US');
+  const codeFiles = coverage?.codeFiles ?? 0;
+  const count =
+    scanned === undefined
+      ? ''
+      : ` · ${scanned} scanned · ${codeFiles.toLocaleString('en-US')} code files`;
   const header = `${mark} ${name}${input.kind ? `  ${input.kind}` : ''}${count} · ${duration(input.durationMs)}${comparison}`;
-  const lines = [color(fit(header, columns), success ? '32' : '31', enabled)];
-  if (input.reason) lines.push(`  ${safe(input.reason)}`);
+  const compiler = coverage?.extraction.ok ?? 0;
+  const lexical = coverage?.extraction.lexical ?? 0;
+  const notInProgram = coverage?.extraction['not-in-program'] ?? 0;
+  const errors = coverage?.extraction['parse-error'] ?? 0;
+  const indexed = compiler + lexical + notInProgram + errors;
+  const fraction = codeFiles > 0 ? indexed / codeFiles : 0;
+  const lowCoverage = codeFiles > 0 && fraction < 0.8;
+  const highLexical = lexical * 5 > indexed;
+  let tone = '32';
+  if (lowCoverage || highLexical) tone = '33';
+  if (!success || (codeFiles > 0 && fraction < 0.3)) tone = '31';
+  const lines = wrap(header, '', columns).map((line) => color(line, tone, enabled));
+  if (input.reason) lines.push(...wrap(input.reason, '  ', columns));
   if (input.drift) lines.push(` drift     ${safe(input.drift)}`);
   if (input.activeIndex && !success) lines.push(` in use    ${safe(input.activeIndex)}`);
   const phases =
     input.phases?.filter((phase) => Number.isFinite(phase.durationMs) && phase.durationMs >= 0) ??
     [];
   const totalTime = phases.reduce((sum, phase) => sum + phase.durationMs, 0);
-  if (success && phases.length && totalTime > 0) {
-    const size = Math.min(24, columns - 12);
+  if (success && phases.length) {
+    const extra = Math.max(0, Math.min(24, columns - 12) - phases.length);
     let spent = 0;
+    let used = 0;
     const segments = phases.map((phase, index) => {
-      const start = Math.round((spent / totalTime) * size);
       spent += phase.durationMs;
-      const end = index === phases.length - 1 ? size : Math.round((spent / totalTime) * size);
-      const ramp = ['32', '34', '35', '95'];
-      let stroke = index % 2 ? '─' : '━';
-      if (ascii) stroke = index % 2 ? '-' : '=';
-      return color(
-        stroke.repeat(Math.max(0, end - start)),
-        ramp[index % ramp.length] ?? '32',
+      const end = totalTime > 0 ? Math.round((spent / totalTime) * extra) : 0;
+      let stroke = '━';
+      if (ascii) stroke = phase.phase === 'publish' ? 'u' : (phase.phase[0] ?? '?');
+      const segment = color(
+        stroke.repeat(1 + end - used),
+        phaseRamp[index % phaseRamp.length] ?? '34',
         enabled,
       );
+      used = end;
+      return segment;
     });
     lines.push(
       '',
       ` timeline  ${segments.join('')}`,
-      `           ${phases.map((phase) => safe(phase.phase)).join(' ')}`,
+      ...wrap(
+        phases
+          .map(
+            ({ phase, durationMs }) =>
+              `${phase} ${durationMs < 1000 ? `${durationMs}ms` : duration(durationMs)}`,
+          )
+          .join(' · '),
+        '           ',
+        columns,
+      ),
     );
   }
-  if (success && input.throughput?.length)
-    lines.push(
-      ` files/s   ${spark(input.throughput, ascii)}   ${Math.round(input.throughput[input.throughput.length - 1] ?? 0).toLocaleString('en-US')}`,
-    );
+  const throughput = input.throughput;
   if (
     success &&
-    input.indexed !== undefined &&
-    input.outsideScope !== undefined &&
-    input.indexed + input.outsideScope > 0
-  ) {
-    const percentage = Math.round((100 * input.indexed) / (input.indexed + input.outsideScope));
+    input.durationMs >= minThroughputMs &&
+    throughput &&
+    throughput.length >= minThroughputSamples
+  )
     lines.push(
-      ` coverage  ${bar(input.indexed / (input.indexed + input.outsideScope), Math.min(16, columns - 15), enabled ? '256' : 'none', ascii)} ${percentage}%`,
+      ` files/s   ${spark(throughput, ascii)}   ${Math.round(throughput.at(-1) ?? 0).toLocaleString('en-US')}`,
     );
+  const outsideScope = coverage?.outsideScope ?? 0;
+  if (codeFiles > 0) {
+    const barLine = bar(fraction, Math.min(16, columns - 16), 'none', ascii);
+    lines.push(color(` coverage  ${barLine} ${Math.round(fraction * 100)}%`, tone, enabled));
     lines.push(
-      `           ${input.indexed.toLocaleString('en-US')} indexed · ${input.outsideScope.toLocaleString('en-US')} outside scope${input.errors === undefined ? '' : ` · ${input.errors.toLocaleString('en-US')} errors`}`,
+      ...wrap(
+        `${indexed.toLocaleString('en-US')} indexed · ${outsideScope.toLocaleString('en-US')} outside scope`,
+        '           ',
+        columns,
+      ),
+    );
+    const missing =
+      notInProgram === 0 ? '' : ` · ${notInProgram.toLocaleString('en-US')} not in program`;
+    lines.push(
+      ...wrap(
+        `${compiler.toLocaleString('en-US')} compiler · ${lexical.toLocaleString('en-US')} lexical only · ${errors.toLocaleString('en-US')} errors${missing}`,
+        '           ',
+        columns,
+      ),
     );
   }
-  if (input.next) lines.push('', ` ${ascii ? '>' : '›'} ${safe(input.next)}`);
+  const hints = [...(input.includeWarnings ?? [])];
+  if (lowCoverage) {
+    if (outsideScope > 0) {
+      hints.push(
+        `${outsideScope.toLocaleString('en-US')} code files outside scope: ei_impact will be partial; check include in ei.config.json`,
+      );
+    } else {
+      hints.push(
+        `${(codeFiles - indexed).toLocaleString('en-US')} code files unindexed: ei_impact will be partial; check ei status`,
+      );
+    }
+  }
+  if (highLexical)
+    hints.push(
+      `${lexical.toLocaleString('en-US')} files are not in a TypeScript program: ei_impact will be partial; check tsconfig include / allowJs`,
+    );
+  if (!lowCoverage && !highLexical && input.next) hints.push(input.next);
+  if (hints.length > 0) lines.push('');
+  for (const hint of hints) lines.push(...wrap(hint, ascii ? ' > ' : ' › ', columns));
   return `${lines.map((line) => fitAnsi(line, columns)).join('\n')}\n`;
 }
