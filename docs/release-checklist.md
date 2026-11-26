@@ -74,7 +74,7 @@ omp -p --model claude-haiku-4-5 'In this clone, call ei_status, ei_search (query
 omp
 ```
 
-In the interactive marketplace session, confirm the 🛡 KSD indicator and run `/engineering-proxy status`. Use the printed M1 instructions (S8 is a follow-up in the S5 session); the explicit loads in S1–S6 disable discovery so they do not duplicate the installed plugin. If the test account has the old policy plugin, uninstall it first. For AGY, install the candidate tarball (`npm pack .`, `npm install -g ./krisada-m-ksd-intelligence-1.0.0.tgz` using the filename printed by npm), use [the setup guide](integrations/antigravity.md), and observe real tool discovery and calls. Record architecture, runtime versions, tool results, and status. Protocol tests alone are not live AGY evidence.
+In the interactive marketplace session, confirm the EROSIANO indicator and run `/erosiano-dev status`. The legacy alias must delegate to the same owner. Verify a single engineering policy marker and the native ei_* tools. Use the printed M1 instructions (S8 is a follow-up in the S5 session); the explicit loads in S1–S6 disable discovery so they do not duplicate the installed plugin. If the test account has the old policy plugin, uninstall it first. For AGY, install the candidate tarball (`npm pack .`, `npm install -g ./krisada-m-ksd-intelligence-1.0.0.tgz` using the filename printed by npm), use [the setup guide](integrations/antigravity.md), and observe real tool discovery and calls. Record architecture, runtime versions, tool results, and status. Protocol tests alone are not live AGY evidence.
 
 After review and both OS smoke checks:
 

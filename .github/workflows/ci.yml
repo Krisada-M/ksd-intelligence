@@ -38,3 +38,61 @@ jobs:
       - run: npm run format:check
       - run: npm test
       - run: npm run check:dist
+      - run: npm run verify:engineering
+      - run: node scripts/generate-agy-engineering.mjs
+
+  omp-composition:
+    name: Real OMP composition / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: candidate
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Read reviewed engineering pin
+        id: engineering
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/engineering-bundle.mjs
+          pin="$(node -p "require('./engineering.lock.json').commit")"
+          [[ "$pin" =~ ^[a-f0-9]{40}$ ]]
+          echo "commit=$pin" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: Krisada-M/ksd-engineering
+          ref: ${{ steps.engineering.outputs.commit }}
+          path: engineering
+          persist-credentials: false
+      - name: Verify exact upstream Git blobs
+        working-directory: candidate
+        run: node scripts/verify-engineering-upstream.mjs "$GITHUB_WORKSPACE/engineering"
+      - name: Download and verify pinned OMP v19.2.1
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)-$(uname -m)" in
+            Linux-x86_64) asset=omp-linux-x64; digest=e8b937f9bf023baa147bdd300ad5421af0a6ef8b1f350c47a9a93d5fca94feca ;;
+            Linux-aarch64) asset=omp-linux-arm64; digest=92d4cce4b14814f6b838aa86dcec6359f0cb089cbcc300e8463cbb5326991fe0 ;;
+            Darwin-arm64) asset=omp-darwin-arm64; digest=43943119837612b2da72250ab7efe22ff8ca239eabebd4f702f34e3a144fdd3d ;;
+            Darwin-x86_64) asset=omp-darwin-x64; digest=4face26750f5679857a606a61df22b1587925d4b308d5938de470d8c780cd871 ;;
+            *) echo 'Unsupported host architecture' >&2; exit 1 ;;
+          esac
+          binary="$RUNNER_TEMP/ksd-omp-19.2.1"
+          curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --connect-timeout 15 --max-time 180 "https://github.com/can1357/oh-my-pi/releases/download/v19.2.1/$asset" -o "$binary"
+          node --input-type=module -e 'import {createHash} from "node:crypto"; import {readFileSync} from "node:fs"; if(createHash("sha256").update(readFileSync(process.argv[1])).digest("hex")!==process.argv[2]) process.exit(1)' "$binary" "$digest"
+          chmod 0700 "$binary"
+          echo "OMP_SMOKE_BINARY=$binary" >> "$GITHUB_ENV"
+      - name: Single marketplace installation and native tool smoke
+        working-directory: candidate
+        shell: bash
+        run: node scripts/smoke-composed-omp.mjs "$OMP_SMOKE_BINARY" "$GITHUB_WORKSPACE/engineering"

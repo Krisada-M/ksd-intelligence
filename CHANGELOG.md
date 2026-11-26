@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — D70 engineering composition
+
+- Single OMP composition root using pinned erosiano-dev instead of the active v0.6 policy. Native ei_* discovery, new baseline/practice tools and updated companion CLI/ESLint exports. Retain original v0.6 tests as historical evidence, not a second runtime.
+- Add AGY-native balanced rule and on-demand engineering review skill; existing fixed-root MCP remains explicit per workspace. Live AGY host acceptance pending.
+
 ## 1.1.0 — UI polish
 
 - Added compact result trees for terminal commands and expandable OMP tool results. Non-interactive, `--plain`, and JSON output retain their existing formats.

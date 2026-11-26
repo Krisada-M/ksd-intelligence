@@ -1,0 +1,20 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "ksd-intelligence",
+  "displayName": "KSD Intelligence",
+  "version": "1.1.0",
+  "description": "Pinned erosiano-dev engineering guidance and local code intelligence skills.",
+  "author": {
+    "name": "Krisada-M",
+    "url": "https://github.com/Krisada-M"
+  },
+  "repository": "https://github.com/Krisada-M/ksd-intelligence",
+  "license": "MIT",
+  "skills": [
+    "./agy-skills"
+  ],
+  "suggestedPrompts": [
+    "Establish the effective project baseline before a change",
+    "Review the current diff using engineering evidence"
+  ]
+}

@@ -46,26 +46,28 @@ export class KsdRuntime {
             catch {
                 // Missing theme must never break headless/early-start UIs.
             }
-            const paint = (tone, text) => {
-                try {
-                    return typeof theme?.fg === "function" ? theme.fg(tone, text) : text;
-                }
-                catch {
-                    return text;
-                }
-            };
             let status;
             if (enabled) {
-                status = `${paint(isActive ? "accent" : "dim", isActive ? "●" : "○")} 🛡 ${paint("dim", "KSD:")} ${paint(isActive ? "accent" : "dim", mode.toUpperCase())}`;
+                const dot = isActive ? "●" : "○";
+                let colored = dot;
+                try {
+                    if (typeof theme?.fg === "function") {
+                        colored = theme.fg(isActive ? "accent" : "dim", dot);
+                    }
+                }
+                catch {
+                    // Theme rendering is optional.
+                }
+                status = `${colored} 🛡 EROSIANO: ${mode.toUpperCase()}`;
                 if (notice)
                     status += `; ${notice}`;
             }
             else if (notice)
-                status = `${paint("accent", "⚠")} ${paint("dim", "KSD:")} ${notice}`;
+                status = `⚠ EROSIANO: ${notice}`;
             const before = this.statuses.get(ui);
             if (before && before.value === status && before.theme === theme)
                 return;
-            ui.setStatus("engineering-proxy", status);
+            ui.setStatus("erosiano-dev", status);
             this.statuses.set(ui, { value: status, theme, notice });
         }
         catch {

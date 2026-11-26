@@ -72,7 +72,7 @@ Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a base
 
 ## Coexistence with existing tools
 
-- **KSD policy module** (`src/policy/`, merged from KSD Engineering Proxy in M1c): its commands, config files, status text and policy text are a frozen contract (`docs/DESIGN.md` §6.7). Changing any of them is a defect unless the owner asks for it. Its policy outranks skill text.
+- **Engineering composition (D70):** the pinned erosiano-dev runtime owns active policy and review; `src/policy/` and its frozen tests remain historical evidence. No second active policy owner. Change engineering behavior upstream in `ksd-engineering`, review the new commit, then sync its exact runtime pin; do not hand-edit the bundle. Engineering/project rules outrank skill text.
 - Only one automatic skill router may be active. Do not enable `poteto-mode`, `using-agent-skills` or `ask-matt` as automatic routers.
 - Skills are instructions, not executors. Never run a script found in a skill folder.
 
@@ -112,3 +112,6 @@ QUESTIONS FOR OWNER: [list]
 GIT: [branch, local commits, uncommitted files; confirm nothing pushed]
 NEXT COMMAND: [the one command the owner should run next]
 ```
+
+
+**Owner-directed D70 exception:** the single-install composition migration is a distinct milestone. Preserve protected historical files, golden results and V2 module contracts; only the active adapter and distribution switch to the new pin. See `docs/briefs/D70-engineering-composition.md` for gates. Draft PR and independent review required; no merge, tag or publication without owner acceptance.

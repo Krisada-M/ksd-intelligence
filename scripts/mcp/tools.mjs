@@ -20,6 +20,7 @@ import { renderWorkflow } from '../../dist/workflow/render.js';
 import { rootsFromEnv } from '../../dist/workflow/catalog.js';
 import { readLock, defaultLockPath } from '../../dist/workflow/sources.js';
 import { WorkflowError } from '../../dist/workflow/types.js';
+import { ENGINEERING_TOOLS, callEngineering } from './engineering.mjs';
 
 const objectSchema = (properties, required = []) => ({
   type: 'object',
@@ -267,7 +268,14 @@ function validate(name, args) {
 export function createTools({ root, env = process.env }) {
   const enabled = env.EI_DISABLED !== '1';
   const workflowEnabled = enabled && env.KSD_MCP_WORKFLOW === '1';
-  const definitions = enabled ? [...BASE_TOOLS, ...(workflowEnabled ? [WORKFLOW_TOOL] : [])] : [];
+  const engineeringEnabled = enabled && env.KSD_MCP_ENGINEERING === '1';
+  const definitions = enabled
+    ? [
+        ...BASE_TOOLS,
+        ...(workflowEnabled ? [WORKFLOW_TOOL] : []),
+        ...(engineeringEnabled ? ENGINEERING_TOOLS : []),
+      ]
+    : [];
   const cacheHome =
     env !== process.env && typeof env.HOME === 'string' && env.HOME !== '' ? env.HOME : undefined;
   let sessionPromise;
@@ -311,6 +319,9 @@ export function createTools({ root, env = process.env }) {
   async function call(name, args, signal, onProgress = () => {}) {
     if (!definitions.some((tool) => tool.name === name))
       return result('TOOL_UNAVAILABLE: tool is disabled or unknown', true);
+    if (engineeringEnabled && ENGINEERING_TOOLS.some((tool) => tool.name === name)) {
+      return callEngineering(root, name, args, signal);
+    }
     const started = performance.now();
     const invalid = validate(name, args);
     if (invalid) {

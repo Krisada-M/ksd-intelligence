@@ -1,43 +1,29 @@
-// Copies the migrated KSD policy module (plain JavaScript, files unchanged) into the
-// build trees so both the compiled extension (dist/) and the compiled tests
-// (dist-test/src/) can resolve ../../policy/index.js at runtime.
-// KSD's own src/*.ts stays uncompilled here: its built dist/ ships committed (PROVENANCE.md).
+// Build the pinned engineering runtime without downloading anything. The historical
+// frozen v0.6 source/tests remain intact; only erosiano-dev is shipped/activated.
 import { cpSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readEngineeringLock, verifyEngineeringBundle } from './engineering-bundle.mjs';
 
-const root = new URL('..', import.meta.url).pathname;
-const source = join(root, 'src', 'policy');
-
-const entries = [
-  'index.js',
-  'index.d.ts',
-  'policy.js',
-  'policy.d.ts',
-  'config.js',
-  'sdlc.js',
-  'change-scope.js',
-  'check-changed.js',
-  'review-verdict.js',
-  'eslint-rules',
-  'dist',
-  'package.json',
-];
+const root = fileURLToPath(new URL('..', import.meta.url));
+const source = join(root, 'src', 'engineering');
+const lock = readEngineeringLock(root);
+verifyEngineeringBundle(source, lock);
 
 function copyInto(target) {
   rmSync(target, { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
-  for (const entry of entries) {
-    cpSync(join(source, entry), join(target, entry), { recursive: true });
-  }
+  cpSync(source, target, { recursive: true });
+  verifyEngineeringBundle(target, lock);
 }
 
-copyInto(join(root, 'dist', 'policy'));
+// Obsolete generated runtime is no longer part of the distribution.
+rmSync(join(root, 'dist', 'policy'), { recursive: true, force: true });
+copyInto(join(root, 'dist', 'engineering'));
 
-// npm test compiles tests after `npm run build`; --test-tree mirrors the module next to
-// the compiled extension copy inside dist-test/src/.
 if (process.argv.includes('--test-tree')) {
   const testTree = join(root, 'dist-test', 'src');
   if (!existsSync(testTree))
     throw new Error('dist-test/src not found; compile tests first (tsc -p tests/tsconfig.json)');
-  copyInto(join(testTree, 'policy'));
+  copyInto(join(testTree, 'engineering'));
 }

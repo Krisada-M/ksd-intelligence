@@ -3,6 +3,7 @@ dist-test/
 node_modules/
 spikes/
 src/policy/
+src/engineering/
 tests/policy/
 tests/fixtures/
 examples/

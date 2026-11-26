@@ -37,10 +37,21 @@ describe('npm tarball (D65)', () => {
     const packed = Array.isArray(packResult) ? packResult[0] : packResult[scope];
     assert.equal(packed?.name, scope, 'npm pack must describe the local package');
     const paths = packed.files.map((file) => file.path);
-    for (const required of ['LICENSE', 'README.md', 'dist/adapters/cli/main.js']) {
+    for (const required of [
+      'LICENSE',
+      'README.md',
+      'dist/adapters/cli/main.js',
+      'dist/engineering/index.js',
+      'dist/engineering/practices.json',
+      'engineering.lock.json',
+      '.antigravity-plugin/plugin.json',
+      'rules/engineering.md',
+      'agy-skills/erosiano-review/SKILL.md',
+    ]) {
       assert.ok(paths.includes(required), `tarball lacks ${required}`);
     }
     for (const path of paths) {
+      assert.ok(!path.startsWith('dist/policy/'), `tarball leaks obsolete policy ${path}`);
       assert.ok(
         !/^(tests|docs|spikes|src|\.scratch|\.github|dist-test)\//.test(path),
         `tarball leaks ${path}`,
@@ -70,12 +81,26 @@ describe('npm tarball (D65)', () => {
     );
     for (const { stdout, usage } of help) assert.match(stdout, usage);
 
-    // The npm launchers still delegate non-help invocations to the frozen policy bins.
+    // The npm launchers delegate non-help invocations to the pinned engineering bins.
     for (const name of ['ksd-check-changed', 'ksd-review-verdict']) {
       const result = spawnSync(join(binDir, name), [], { encoding: 'utf8', cwd: target });
       assert.equal(result.status, 2);
       assert.match(result.stderr, /Usage:/);
     }
+
+    const practices = spawnSync(join(binDir, 'erosiano-practices'), ['--group', 'typescript'], {
+      encoding: 'utf8',
+      cwd: target,
+    });
+    assert.equal(practices.status, 0, practices.stderr);
+    assert.match(practices.stdout, /T02/);
+    const baseline = spawnSync(
+      join(binDir, 'erosiano-baseline'),
+      ['--root', target, '--scope', '.'],
+      { encoding: 'utf8', cwd: target },
+    );
+    assert.equal(baseline.status, 0, baseline.stderr);
+    assert.equal(JSON.parse(baseline.stdout).coverage, 'SAMPLED_EVIDENCE_ONLY');
 
     // `ei` with no arguments prints usage and exits 2; it must not crash on a missing file.
     let usage = '';

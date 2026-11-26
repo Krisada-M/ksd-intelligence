@@ -2,6 +2,6 @@
 import { runPolicyBin } from './policy-bin.js';
 
 await runPolicyBin(
-  new URL('../../policy/review-verdict.js', import.meta.url),
+  new URL('../../engineering/review-verdict.js', import.meta.url),
   'ksd-review-verdict --report assessment.json',
 );

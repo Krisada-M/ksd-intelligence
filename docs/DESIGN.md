@@ -25,10 +25,10 @@ The library **informs**. The agent decides and acts. The owner approves anything
 1. **Correctness over savings.** A wrong "low risk" is worse than a slow answer.
 2. **Evidence or `unknown`.** Every claim carries file, span, extractor and strength. Gaps are named, never hidden.
 3. **Read-only by default.** No tool edits code, runs skill scripts, or calls the network. The only network actions in the whole library are owner-run CLI commands (`ei embeddings install`) and the GitLab adapter when enabled.
-4. **OMP stays in charge** of models, permissions, sessions and approvals. The KSD policy module (merged from KSD Engineering Proxy, D39) stays in charge of style and per-turn policy, with its behaviour unchanged.
+4. **OMP stays in charge** of models, permissions, sessions and approvals. The pinned erosiano-dev bundle is the single engineering policy implementation in the composed product (D70).
 5. **Fail open for advice, fail closed for trust.** A broken index never breaks a session. A tampered skill is never delivered.
 6. **Add a module only on evidence.** Each V2 module has an entry gate (§13). If it does not pass, the module is not built. Exception: the six V1.5 items the owner brought forward (D28).
-7. **Small and boring.** TypeScript, no servers, no daemons. The only always-on hook is the KSD policy module's existing per-turn injection, carried over unchanged; intelligence capabilities add none. Runtime dependencies only when justified and approved: `typescript` (impact engine) and an optional local embedding runtime (M6) are the anticipated ones.
+7. **Small and boring.** TypeScript, no servers, no daemons. The only OMP always-on engineering hook is the composed erosiano-dev per-turn injection; intelligence capabilities add none. Runtime dependencies only when justified and approved: `typescript` (impact engine) and an optional local embedding runtime (M6) are the anticipated ones.
 
 ## 3. System context
 
@@ -51,7 +51,7 @@ The library **informs**. The agent decides and acts. The owner approves anything
 | Neighbour | Relationship | Rule |
 |---|---|---|
 | OMP | Host. Loads the extension, owns approvals | Use only verified extension APIs (§10.1). Never patch OMP or `~/.omp/**` |
-| KSD Engineering Proxy | **Merged into this library** as the `policy` module (D39); the old plugin is uninstalled on cut-over | Commands, config files, status text and policy text unchanged (§6.7, §10.2) |
+| erosiano-dev | Pinned upstream engineering runtime (D70), composed once by KSD | No second installed policy owner; retain v0.6 historical tests (§6.7, §10.2) |
 | Ponytail, Caveman | Other installed OMP plugins | Coexist; never mutate their state. Caveman may compress tool output (§10.1) |
 | Skill sources (Matt, poteto/pstack, Osmani) | Instruction text | Loaded from pinned checkouts with sha256 lock. Never bundled, never executed |
 | GitNexus | Possibly installed (`.gitnexus/` seen) | Not a dependency. Used only as a comparison baseline in M3 |
@@ -260,7 +260,9 @@ Learnings are reviewable claims anchored to a symbol or file, stored in the repo
 
 Runs or reads existing tools (repo test/lint scripts, `tsc`, GitLab pipeline results, uiMatch) and returns what actually happened: command, revision, exit code, artifacts, timestamp, and `PASS · FAIL · SKIPPED · ERROR · NOT_VERIFIED`. Never infers PASS. Running commands goes through OMP's approval.
 
-### 6.7 KSD policy module — `DONE` (M1c, D39)
+### 6.7 Historical KSD v0.6 policy contract — `DONE` (M1c, D39; superseded for activation by D70)
+
+The frozen v0.6 files and test snapshots below remain historical evidence only. New product runtime and commands use the pinned erosiano-dev library in `src/engineering`/`dist/engineering`. They do not modify the historical contract.
 
 KSD Engineering Proxy v0.6.0 moves into this library as `src/policy/`, so one install provides the skill router, the code intelligence tools and the personal engineering policy. The move is a migration, not a rewrite: what the owner sees and types does not change.
 
@@ -509,7 +511,7 @@ AGY's stdio server advertises status, impact, changes and search by default. Ena
 
 `ei_verify` (V2c) registers only when `verification.enabled` is true. It declares `exec` for a `check` call and `read` for a `report` call. `ei_learning` (V2d) registers only when `knowledge.enabled` is true, with `read` approval. `ei_context` and `ei_retrieve` are **PLANNED (V2)**; `ei_gitlab` is dropped (D67).
 
-V1 adds no automatic EI prompt hook; the frozen KSD policy module still registers its own hooks.
+V1 adds no automatic EI prompt hook; D70 composes the new engineering policy hooks instead of the frozen module.
 
 ### 8.2 CLI (`ei`)
 
@@ -555,9 +557,9 @@ Verified on 2026-11-09 (prototype, OMP 18.18.2) and on 2026-11-11 (TS adapter, O
 
 **Release rule (D41):** `main` is the release branch. Only accepted milestones land on `main`, through a PR, together with their version bump and committed `dist/`. Development happens on branches; agents never leave unaccepted work on `main`. Because a fresh install takes `main`'s head, this rule, not the version number alone, is what makes the installed plugin the stable channel. No separate `release` branch.
 
-### 10.2 KSD (merged)
+### 10.2 Engineering composition (D70)
 
-Merged as the policy module (§6.7). The extension entry registers the KSD hooks and commands and the `ei_*` tools from one module. Cut-over: uninstall the old `engineering-proxy@engineering-proxy` plugin before or together with installing this one, so the policy is never injected twice; rollback is reinstalling the old plugin at 0.6.0. The `Krisada-M/ksd-engineering` repository is archived (not deleted) after the cut-over and its README points here.
+`ksd-engineering` remains the upstream source of truth. A reviewed exact commit and allowlisted Git blob IDs/modes pin the vendored runtime. The OMP entry calls its factory once with a native intelligence default; AGY uses generated native rules and on-demand skills, with explicit fixed-root MCP. No network sync at runtime, no reverse dependency, no additional legacy compatibility mode. The old standalone and current standalone engineering extensions must be removed before installing the composed product. The historical module and tests are retained, but its generated distribution is removed. See the D70 brief for release and cross-host gates.
 
 ### 10.3 Skill sources
 
@@ -728,6 +730,7 @@ Delivery order: context → verification → knowledge → compression (GitLab d
 | D67 | **Owner decision 2026-11-26:** the GitLab adapter (V2b, `ei_gitlab`) is dropped from V2. The library gets no network code beyond the owner-run `ei setup`; V2c reads only local results (allowlisted checks, JUnit/TAP files) and has no pipeline source. Supersedes D16 and the GitLab parts of D64. The `.gitlab-ci.yml` skill-update job is CI configuration, not library code, and is unaffected | 2026-11-26 |
 | D68 | **Owner request 2026-11-26: UI polish (`1.1.0`).** Nicer output on four surfaces, compact-tree results plus an animated HUD for `ei index` / `ei setup` / `ei doctor` (owner's choice): `ei` CLI, OMP tool results, the KSD status segment and `/engineering-proxy status`, and AGY (`docs/briefs/UI-polish.md`). Presentation only: tool `content` text, TOOLS.md, snapshots and golden cases stay byte-identical, proven by a test per surface; styling reads `details`. For the KSD policy module this unfreezes presentation only (colour, symbols, order, spacing); words, modes, commands, config keys and behaviour stay. No runtime dependency. AGY text changes only behind an opt-in flag | 2026-11-26 |
 | D69 | **Owner exception 2026-11-26: lane runs.** After `v1.0.0`, one session may build several V2 or UI-polish milestones back to back without the stop between milestones (`AGENTS.md`). Conditions: own branch and worktree per milestone, gates and a self-review file each round, evals ≥ 9/10 with the strong model after each milestone, a current handoff file, stop at the first hard stop. Push, merge and cross-vendor review stay with the owner, per milestone | 2026-11-26 |
+| D70 | **Owner-directed single-install architecture (candidate):** keep `ksd-engineering` as the source of truth for erosiano-dev; KSD Intelligence consumes an exact verified runtime pin and is the sole installed engineering/intelligence product. Supersedes D39's frozen active policy and archival decision; historical source and oracle remain unchanged. OMP composes the new factory once, AGY gets native rule/skill packaging plus fixed-root local MCP. No new runtime download, no reverse dependency, no legacy activation mode. Separate owner acceptance and live verification required. | 2026-11-26 |
 
 Each decision gets a short ADR in `docs/adr/` when the milestone that depends on it starts. Changing a decision needs a new ADR that supersedes the old one.
 

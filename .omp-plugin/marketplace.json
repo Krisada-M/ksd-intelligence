@@ -4,13 +4,13 @@
     "name": "Krisada-M"
   },
   "metadata": {
-    "description": "KSD engineering policy plus ei_* code-intelligence tools and unified AGY/OMP engineering skills",
+    "description": "Single-install erosiano-dev engineering core, ei_* intelligence tools and AGY/OMP skills",
     "version": "1.1.0"
   },
   "plugins": [
     {
       "name": "ksd-intelligence",
-      "description": "KSD engineering policy (balanced/adaptive, status segment, /engineering-review), unified engineering skills, and ei_* tools",
+      "description": "Pinned erosiano-dev policy and practices, unified skills and native ei_* tools",
       "source": "./",
       "version": "1.1.0"
     }

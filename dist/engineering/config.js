@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 // Single source of truth for the supported modes; exported under the historical name.
 import { KSD_MODES } from "./sdlc.js";
@@ -9,7 +9,7 @@ export const SUPPORTED_MODES = KSD_MODES;
 const DEFAULT = Object.freeze({ enabled: true, enforcement: "balanced" });
 
 export function getGlobalConfigPath() {
-  return join(homedir(), ".omp", "agent", "engineering-proxy.json");
+  return join(homedir(), ".omp", "agent", "erosiano-dev.json");
 }
 
 function realPath(path) {
@@ -41,8 +41,8 @@ function readScopedConfig(path, label) {
   let parsed;
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    return { present: true, values: {}, error: `Cannot parse ${label}: ${error.message}` };
+  } catch {
+    return { present: true, values: {}, error: `Cannot parse ${label}` };
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
@@ -54,11 +54,29 @@ function readScopedConfig(path, label) {
   return { present: true, values: parsed };
 }
 
+function selectConfig(path, legacyPath, label) {
+  const current = readScopedConfig(path, label);
+  const legacy = legacyPath ? readScopedConfig(legacyPath, `${label} (legacy)`) : { present: false, values: {} };
+  if (!current.present && legacy.present) return { ...legacy, source: legacyPath, legacy: true };
+  if (!legacy.present) return { ...current, source: path };
+
+  const conflict = current.error || legacy.error || JSON.stringify(current.values) !== JSON.stringify(legacy.values);
+  const warning = `${label}: new config is authoritative; legacy config ignored${conflict ? " (different or invalid values)" : ""}`;
+
+  return { ...current, source: path, warning };
+}
+
+function legacyGlobalPath(path) {
+  if (basename(path) === "erosiano-dev.json") return join(dirname(path), "engineering-proxy.json");
+
+  return undefined;
+}
+
 export function loadConfig(cwd, { globalConfigPath = getGlobalConfigPath() } = {}) {
   const root = findProjectRoot(cwd);
-  const projectConfigPath = join(root, ".engineering-proxy.json");
-  const global = readScopedConfig(globalConfigPath, "global engineering-proxy.json");
-  const project = readScopedConfig(projectConfigPath, ".engineering-proxy.json");
+  const projectConfigPath = join(root, ".erosiano-dev.json");
+  const global = selectConfig(globalConfigPath, legacyGlobalPath(globalConfigPath), "global erosiano-dev.json");
+  const project = selectConfig(projectConfigPath, join(root, ".engineering-proxy.json"), ".erosiano-dev.json");
   const configError = global.error ?? project.error;
   const enforcementSource = project.values.enforcement !== undefined ? "project"
     : global.values.enforcement !== undefined ? "global" : "default";
@@ -72,6 +90,9 @@ export function loadConfig(cwd, { globalConfigPath = getGlobalConfigPath() } = {
     globalConfigPresent: global.present,
     projectConfigPath,
     globalConfigPath,
+    projectConfigSource: project.source,
+    globalConfigSource: global.source,
+    configWarnings: [global.warning, project.warning].filter(Boolean),
     projectEnforcement: project.values.enforcement,
     globalEnforcement: global.values.enforcement,
     enforcementSource,
@@ -84,10 +105,12 @@ export function setScopedMode(cwd, scope, mode, { globalConfigPath = getGlobalCo
   if (scope !== "global" && scope !== "repo") throw new Error("Scope must be global or repo");
   if (mode !== null && !SUPPORTED_MODES.includes(mode)) throw new Error("Unsupported enforcement mode");
 
-  const path = scope === "global" ? globalConfigPath : join(findProjectRoot(cwd), ".engineering-proxy.json");
-  const existing = readScopedConfig(path, scope === "global" ? "global engineering-proxy.json" : ".engineering-proxy.json");
+  const root = findProjectRoot(cwd);
+  const path = scope === "global" ? globalConfigPath : join(root, ".erosiano-dev.json");
+  const legacyPath = scope === "global" ? legacyGlobalPath(path) : join(root, ".engineering-proxy.json");
+  const existing = selectConfig(path, legacyPath, scope === "global" ? "global erosiano-dev.json" : ".erosiano-dev.json");
   if (existing.error) throw new Error(existing.error);
-  if (mode === null && existing.values.enforcement === undefined) return path;
+  if (mode === null && existing.values.enforcement === undefined && !existing.legacy) return path;
 
   const next = { ...existing.values };
   if (mode === null) delete next.enforcement;
