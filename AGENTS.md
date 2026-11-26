@@ -39,6 +39,8 @@ In scope, in order:
 | V2d | Anchored knowledge | `ei_learning`: owner-approved learnings in `.ksd/learnings/` | `docs/briefs/V2d-knowledge.md` (draft) |
 | V2e | Recoverable compression | `ei_retrieve` + OMP hook if one exists; byte-exact recovery | `docs/briefs/V2e-compression.md` (draft) |
 
+**UI polish (D68, `1.1.0`, independent of V2):** CLI, OMP tool results, KSD status and AGY presentation; the text the model reads stays byte-identical. Brief: `docs/briefs/UI-polish.md`.
+
 Order, the rules that replace the gates, and the V2 safety rules: `docs/briefs/V2-README.md`. Each module ships disabled and must leave V1 output unchanged when disabled.
 
 Round order, common rules and the one-line prompts are in `docs/briefs/README.md`. A draft brief starts with its Round 0 (reconcile) and is not built from until the owner accepts the corrections. A milestone without a brief is not started. Design for all of them is in `docs/DESIGN.md`; tool text in `docs/TOOLS.md`.
@@ -48,6 +50,8 @@ Out of scope until the owner says otherwise: MCP adapters other than the explici
 **Owner-directed integration exception (2026-11-19):** MAGY1 is approved as a self-contained adapter-only milestone with brief `docs/briefs/MAGY1-mcp.md`. It may reuse the existing compiled KSD Core but must not alter policy, OMP behavior, index contracts or golden results; it requires a Draft PR, the existing quality gates and five documented self-review passes. AGY live-host support remains NOT VERIFIED until a separate manual smoke check.
 
 Work on **one milestone at a time**. M1d establishes CI before M2a; CI is a baseline, not proof that the index/impact engine works. When a milestone is done, stop and report. Do not start the next milestone.
+
+**Lane runs (owner exception, D69, 2026-11-26).** After `v1.0.0`, the owner may start a *lane run*: one session that does several milestones from `docs/briefs/V2-README.md` and `docs/briefs/UI-polish.md` back to back, as listed in the owner's lane prompt. A lane run may skip the stop between milestones only if: each milestone has its own branch from `v1.0.0` (or the 1.0.0 commit) in its own worktree; every round's gates pass and its self-review file is written before the next round; the evals stay at or above 9/10 with the strong model after each milestone; and a handoff file is kept current. Every other rule in this file still applies, including the hard stops in the brief, no push, tag, merge or publish, frozen paths and the cross-vendor review before any merge. A lane run stops at the first hard stop and does not continue to the next milestone.
 
 ## Evidence rules (non-negotiable)
 

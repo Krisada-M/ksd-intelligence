@@ -25,12 +25,36 @@ import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { engineVersion } from '../../core/engine/typescript.js';
-import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
+import {
+  loadWorkspace,
+  readProjectConfigSync,
+  resolveWorkspaceCache,
+} from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession, type ImpactSessionOptions } from '../../core/impact/session.js';
 import { isRecord } from '../../core/kernel/guards.js';
+import {
+  impactLearningsLine,
+  proposeLearning,
+  snapshot,
+  withAnchorIndex,
+} from '../../core/knowledge/knowledge.js';
+import {
+  learningsFor,
+  quoteClaim,
+  renderLearningList,
+  PROPOSAL_LABEL,
+} from '../../core/knowledge/render.js';
+import type { ProjectConfig } from '../../core/kernel/config.js';
 import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
 import { renderSearchOutcome } from '../../core/search/render.js';
+import { changesVerificationNote, renderVerifyOutcome } from '../../core/verify/render.js';
+import {
+  loadVerificationState,
+  runVerification,
+  validateVerifyInput,
+  type VerifyOptions,
+} from '../../core/verify/verify.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
 import { prepareWorkflow } from '../../workflow/loader.js';
 import { renderWorkflow } from '../../workflow/render.js';
@@ -82,6 +106,18 @@ interface ChangesParams {
 interface SearchParams {
   query: string;
   limit?: number;
+}
+
+interface LearningParams {
+  action: string;
+  target?: string;
+  claim?: string;
+  source?: string;
+}
+
+interface VerifyParams {
+  check?: string;
+  report?: string;
 }
 
 interface ToolResult {
@@ -168,6 +204,7 @@ function impactView(details: unknown): ResultView | undefined {
   }));
   return {
     kind: 'impact',
+    learningsLine: typeof first.learningsLine === 'string' ? first.learningsLine : undefined,
     value: {
       answers,
       index: {
@@ -182,8 +219,17 @@ function impactView(details: unknown): ResultView | undefined {
 function resultView(kind: PresentedTool, details: unknown): ResultView | undefined {
   if (kind === 'impact') return impactView(details);
   if (kind === 'status' && isWorkspaceStatus(details)) return { kind: 'status', value: details };
-  if (kind === 'changes' && isChangesResult(details))
-    return { kind: 'changes', value: { kind: 'result', value: details } };
+  if (kind === 'changes' && isChangesResult(details)) {
+    const note = 'verificationNote' in details ? details.verificationNote : undefined;
+    const verificationNote = isRecord(note)
+      ? {
+          line: typeof note.line === 'string' ? note.line : undefined,
+          nextHint: typeof note.nextHint === 'string' ? note.nextHint : undefined,
+        }
+      : undefined;
+
+    return { kind: 'changes', value: { kind: 'result', value: details }, verificationNote };
+  }
   if (kind === 'search' && isSearchResult(details))
     return { kind: 'search', value: { kind: 'result', value: details } };
   return undefined;
@@ -250,7 +296,9 @@ interface OmpToolDefinition<P> {
   label: string;
   description: string;
   parameters: SchemaLike;
-  approval: 'read';
+  /** OMP tier (omp://approval-mode.md): every V1 tool is `read`; `ei_verify` decides per call. */
+  approval: 'read' | ((args: unknown) => 'read' | 'exec');
+  formatApprovalDetails?: (args: unknown) => string[] | undefined;
   renderCall?(args: P, options: RenderOptions): Rows | undefined;
   renderResult?(result: ToolResult, options: RenderOptions): Rows;
   execute(
@@ -273,8 +321,12 @@ export interface ExtensionDeps {
   skillsDir?: string;
   cacheHome?: string;
   impactSession?: ImpactSessionOptions;
+  /** Where the load-time config is read to decide which V2 tools register (default: cwd). */
+  cwd?: string;
   /** Injectable for tests; defaults to the real KSD policy entry. */
   createPolicyExtension?: (pi: OmpExtensionApi) => void;
+  /** Injectable for tests; defaults to the real check runner. */
+  verifyRunner?: VerifyOptions['runner'];
 }
 
 function errorResult(message: string): ToolResult {
@@ -560,7 +612,16 @@ function registerEiImpact(
         });
         if (signal?.aborted) return errorResult('Cancelled');
 
-        const text = renderImpact(batch);
+        const keys = impactDetails(batch).flatMap((item) =>
+          'target' in item && typeof item.target === 'string' ? [item.target] : [],
+        );
+        const learningsLine = await impactLearningsLine(workspace, session, keys, signal);
+        const impactText = renderImpact(batch);
+        // Appended after the V1 block, never inside it; absent when knowledge is off or empty.
+        const text =
+          learningsLine === undefined || impactText === 'Cancelled'
+            ? impactText
+            : `${impactText}\n${learningsLine}`;
         if (text === 'Cancelled') return errorResult('Cancelled');
         recordAudit(
           workspace.cacheDir,
@@ -578,7 +639,7 @@ function registerEiImpact(
         const details = impactDetails(batch);
         const first = details[0];
         if (first !== undefined) {
-          const presented = { ...first, presentationIndex: batch.index };
+          const presented = { ...first, presentationIndex: batch.index, learningsLine };
           details[0] = presented;
         }
         const failed = batch.answers.some((answer) => answer.kind === 'failure');
@@ -718,7 +779,15 @@ function registerEiChanges(
         });
         if (signal?.aborted) return errorResult('Cancelled');
 
-        const text = renderChangesOutcome(outcome);
+        const verification = await loadVerificationState(workspace);
+        const verificationNote =
+          verification &&
+          changesVerificationNote(
+            verification.reports,
+            verification.revision,
+            verification.checkNames,
+          );
+        const text = renderChangesOutcome(outcome, undefined, verificationNote);
         if (text === 'Cancelled') return errorResult('Cancelled');
         recordAudit(
           workspace.cacheDir,
@@ -739,7 +808,11 @@ function registerEiChanges(
         if (outcome.kind === 'guidance') {
           return { content: [{ type: 'text', text }], details: outcome };
         }
-        return { content: [{ type: 'text', text }], details: outcome.value };
+        return {
+          content: [{ type: 'text', text }],
+          details:
+            verificationNote === undefined ? outcome.value : { ...outcome.value, verificationNote },
+        };
       } catch (error) {
         if (signal?.aborted) return errorResult('Cancelled');
         const cache = await tryResolveCache(ctx?.cwd, deps.cacheHome);
@@ -897,6 +970,145 @@ function registerEiSearch(
   });
 }
 
+const LEARNING_DESCRIPTION =
+  'Read the project decisions recorded for code you are about to change, or propose one. `action: "list"` with an optional `target` (path#name or a file path) returns recorded learnings as quoted data with their source and status; only an unchanged owner-confirmed or test-verified learning is a decision, everything else is an unconfirmed note. `action: "propose"` with `claim`, `target` and `source` ("model-inferred" or "code-observed") stores a proposal for the owner to approve; it never writes to the repository.';
+
+function registerEiLearning(
+  pi: OmpExtensionApi,
+  deps: ExtensionDeps,
+  sessions: Map<string, ImpactSession>,
+): void {
+  const z = pi.zod;
+  pi.registerTool<LearningParams>({
+    name: 'ei_learning',
+    label: 'KSD Project Learnings',
+    description: LEARNING_DESCRIPTION,
+    parameters: z.object({
+      action: z.enum(['list', 'propose']),
+      target: z.string().optional().describe('path#name or a repository file path'),
+      claim: z
+        .string()
+        .optional()
+        .describe('propose: the decision in one or two sentences (max 1,000 characters)'),
+      source: z.enum(['model-inferred', 'code-observed']).optional(),
+    }),
+    approval: 'read',
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (signal?.aborted) return errorResult('Cancelled');
+      try {
+        const action = isRecord(params) ? params.action : undefined;
+        if (action !== 'list' && action !== 'propose') {
+          return errorResult('INVALID_INPUT: action must be "list" or "propose"');
+        }
+        const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+        let session = sessions.get(workspace.cacheDir);
+        if (session === undefined) {
+          session = new ImpactSession(workspace, deps.impactSession);
+          sessions.set(workspace.cacheDir, session);
+        }
+        if (action === 'propose') {
+          const outcome = await withAnchorIndex(
+            session,
+            (index) => proposeLearning(workspace, index, params),
+            signal,
+          );
+          if (outcome.kind === 'failure') return errorResult(`${outcome.code}: ${outcome.message}`);
+          const text = [
+            `PROPOSED ${outcome.value.id} — ${PROPOSAL_LABEL}; stored outside the repository`,
+            `  > ${quoteClaim(outcome.value.claim)}`,
+            'Next: tell the owner; it takes effect only after `ei learning approve`.',
+          ].join('\n');
+          return { content: [{ type: 'text', text }], details: outcome.value };
+        }
+        const target =
+          isRecord(params) && typeof params.target === 'string' ? params.target.trim() : '';
+        const snap = await withAnchorIndex(session, (index) => snapshot(workspace, index), signal);
+        const scoped =
+          target === ''
+            ? snap
+            : {
+                ...snap,
+                learnings: learningsFor(snap.learnings, [target]),
+                proposals: learningsFor(snap.proposals, [target]),
+              };
+        const text = renderLearningList({ scope: target === '' ? 'all' : target, ...scoped });
+        return { content: [{ type: 'text', text }], details: scoped };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return errorResult(
+          `ei_learning failed: ${message}. Continue without learnings and say so.`,
+        );
+      }
+    },
+  });
+}
+
+// A call naming a check runs a process, so it asks at OMP's `exec` tier; reading a file is `read`.
+function verifyApproval(args: unknown): 'read' | 'exec' {
+  if (isRecord(args) && typeof args.report === 'string' && args.check === undefined) return 'read';
+  return 'exec';
+}
+
+function registerEiVerify(
+  pi: OmpExtensionApi,
+  deps: ExtensionDeps,
+  env: NodeJS.ProcessEnv,
+  loadConfig: ProjectConfig,
+): void {
+  const z = pi.zod;
+  const checkNames = (loadConfig.verification.checks ?? []).map((check) => check.name);
+  const reportNames = (loadConfig.verification.reports ?? []).map((report) => report.name);
+  const configured = [
+    checkNames.length > 0 ? `Checks: ${checkNames.join(', ')}.` : 'No checks configured.',
+    reportNames.length > 0 ? `Result files: ${reportNames.join(', ')}.` : '',
+  ]
+    .filter((part) => part !== '')
+    .join(' ');
+
+  pi.registerTool<VerifyParams>({
+    name: 'ei_verify',
+    label: 'KSD Verification Evidence',
+    description:
+      `Before you say tests, typecheck or lint pass, call this to get a recorded result. Pass \`check\` with a name the owner configured; it runs that exact command and returns PASS, FAIL, SKIPPED, ERROR or NOT_VERIFIED with the git revision. Pass \`report\` instead to read a configured JUnit/TAP file. Only a PASS result supports a claim that tests pass. Running a check asks for approval. ${configured}`.trim(),
+    parameters: z.object({
+      check: z.string().optional().describe('Name of an owner-configured check, e.g. "test"'),
+      report: z.string().optional().describe('Name of an owner-configured result file'),
+    }),
+    approval: verifyApproval,
+    formatApprovalDetails: (args) => {
+      if (!isRecord(args) || typeof args.check !== 'string') return undefined;
+      const name = args.check;
+      // Show the argv that will run, read fresh from the committed config.
+      const config = readProjectConfigSync(deps.cwd ?? process.cwd());
+      const check = config?.verification.checks?.find((entry) => entry.name === name);
+      return check === undefined
+        ? [`Check "${name}" is not configured; nothing will run`]
+        : [`Command: ${check.command.join(' ')}`, `Timeout: ${check.timeoutSec} s`];
+    },
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      if (signal?.aborted) return errorResult('Cancelled');
+      try {
+        const valid = validateVerifyInput(params);
+        if (!valid.ok) return errorResult(`INVALID_INPUT: ${valid.message}`);
+        const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+        const outcome = await runVerification(workspace, valid.request, {
+          env,
+          signal,
+          ...(deps.verifyRunner === undefined ? {} : { runner: deps.verifyRunner }),
+        });
+        const text = renderVerifyOutcome(outcome, engineVersion());
+        if (outcome.kind === 'failure') return errorResult(text);
+        return { content: [{ type: 'text', text }], details: outcome.value };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return errorResult(
+          `NOT_VERIFIED: ei_verify could not complete (${message}). Do not claim tests pass.`,
+        );
+      }
+    },
+  });
+}
+
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(
   pi: OmpExtensionApi,
@@ -944,5 +1156,27 @@ export default function ksdIntelligenceExtension(
     registerEiSearch(pi, deps, env, sessions);
   } catch (error) {
     warnLoad('ei_search tool', error);
+  }
+
+  let config: ProjectConfig | null;
+  try {
+    config = readProjectConfigSync(deps.cwd ?? process.cwd());
+  } catch (error) {
+    warnLoad('V2 tool configuration', error);
+    return;
+  }
+  if (config === null) return;
+
+  // Keep registration failures isolated so one module cannot hide the other.
+  try {
+    if (config.knowledge.enabled) registerEiLearning(pi, deps, sessions);
+  } catch (error) {
+    warnLoad('ei_learning tool', error);
+  }
+
+  try {
+    if (config.verification.enabled) registerEiVerify(pi, deps, env, config);
+  } catch (error) {
+    warnLoad('ei_verify tool', error);
   }
 }

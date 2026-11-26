@@ -231,7 +231,7 @@ function outcomeHeader(name, outcome, options) {
     const role = outcome.kind === 'failure' ? 'error' : 'unknown';
     return styled(`${symbol(role, options)} ${name} ${outcome.code}: ${outcome.message}`, role, options);
 }
-function renderChanges(outcome, options) {
+function renderChanges({ value: outcome, verificationNote }, options) {
     const unavailable = outcomeHeader('changes', outcome, options);
     if (unavailable !== null)
         return [unavailable];
@@ -274,8 +274,17 @@ function renderChanges(outcome, options) {
         rows.push(section('tests', result.impact.tests.map((path) => ({ text: label(path), location: path, tag: 'test' }))));
     if (result.impact.completeness.reasons.length)
         rows.push(section('gaps', result.impact.completeness.reasons.map((text) => ({ text, role: 'unknown' }))));
-    if (result.verdict.requiredActions.length)
-        rows.push(section('next', result.verdict.requiredActions.map((text) => ({ text }))));
+    const changed = result.nothingChanged !== true && result.changedFiles.length > 0;
+    if (changed && verificationNote?.line !== undefined) {
+        rows.push(section('verification', [{ text: verificationNote.line }]));
+    }
+    const nextHint = changed ? verificationNote?.nextHint : undefined;
+    if (result.verdict.requiredActions.length || nextHint !== undefined) {
+        const next = result.verdict.requiredActions.map((text) => ({ text }));
+        if (nextHint !== undefined)
+            next.push({ text: nextHint.trimStart() });
+        rows.push(section('next', next));
+    }
     return [
         header,
         ...linesFor(rows, options),
@@ -416,13 +425,18 @@ function renderSkills(input, options) {
     ];
 }
 export function renderResultView(input, options) {
-    if (input.kind === 'impact')
-        return input.value.answers.flatMap((answer, index) => [
+    if (input.kind === 'impact') {
+        const rows = input.value.answers.flatMap((answer, index) => [
             ...(index ? [''] : []),
             ...renderImpactAnswer(answer, input.value, options),
         ]);
+        if (!options.collapsed && input.learningsLine !== undefined) {
+            rows.push(safe(input.learningsLine));
+        }
+        return rows;
+    }
     if (input.kind === 'changes')
-        return renderChanges(input.value, options);
+        return renderChanges(input, options);
     if (input.kind === 'search')
         return renderSearch(input.value, options);
     if (input.kind === 'status')

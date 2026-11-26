@@ -1,4 +1,5 @@
 import type { AuditSummary } from '../../core/audit/summary.js';
+import type { ChangesExtraLines } from '../../core/changes/render.js';
 import type { WorkspaceStatus } from '../../core/engine/status.js';
 import type { FileImpactResult, ImpactAnswer } from '../../core/impact/query.js';
 import type { ImpactBatch } from '../../core/impact/session.js';
@@ -21,8 +22,8 @@ export interface ViewOptions {
 }
 
 export type ResultView =
-  | { kind: 'impact'; value: ImpactBatch }
-  | { kind: 'changes'; value: Outcome<ChangesResult> }
+  | { kind: 'impact'; value: ImpactBatch; learningsLine?: string }
+  | { kind: 'changes'; value: Outcome<ChangesResult>; verificationNote?: ChangesExtraLines }
   | { kind: 'search'; value: Outcome<SearchResult> }
   | { kind: 'status'; value: WorkspaceStatus }
   | { kind: 'audit'; value: AuditSummary }
@@ -359,7 +360,10 @@ function outcomeHeader(
   );
 }
 
-function renderChanges(outcome: Outcome<ChangesResult>, options: ViewOptions): string[] {
+function renderChanges(
+  { value: outcome, verificationNote }: Extract<ResultView, { kind: 'changes' }>,
+  options: ViewOptions,
+): string[] {
   const unavailable = outcomeHeader('changes', outcome, options);
   if (unavailable !== null) return [unavailable];
   if (outcome.kind !== 'result') return [];
@@ -428,13 +432,16 @@ function renderChanges(outcome: Outcome<ChangesResult>, options: ViewOptions): s
         result.impact.completeness.reasons.map((text) => ({ text, role: 'unknown' })),
       ),
     );
-  if (result.verdict.requiredActions.length)
-    rows.push(
-      section(
-        'next',
-        result.verdict.requiredActions.map((text) => ({ text })),
-      ),
-    );
+  const changed = result.nothingChanged !== true && result.changedFiles.length > 0;
+  if (changed && verificationNote?.line !== undefined) {
+    rows.push(section('verification', [{ text: verificationNote.line }]));
+  }
+  const nextHint = changed ? verificationNote?.nextHint : undefined;
+  if (result.verdict.requiredActions.length || nextHint !== undefined) {
+    const next = result.verdict.requiredActions.map((text) => ({ text }));
+    if (nextHint !== undefined) next.push({ text: nextHint.trimStart() });
+    rows.push(section('next', next));
+  }
   return [
     header,
     ...linesFor(rows, options),
@@ -607,12 +614,18 @@ function renderSkills(
 }
 
 export function renderResultView(input: ResultView, options: ViewOptions): string[] {
-  if (input.kind === 'impact')
-    return input.value.answers.flatMap((answer, index) => [
+  if (input.kind === 'impact') {
+    const rows = input.value.answers.flatMap((answer, index) => [
       ...(index ? [''] : []),
       ...renderImpactAnswer(answer, input.value, options),
     ]);
-  if (input.kind === 'changes') return renderChanges(input.value, options);
+    if (!options.collapsed && input.learningsLine !== undefined) {
+      rows.push(safe(input.learningsLine));
+    }
+
+    return rows;
+  }
+  if (input.kind === 'changes') return renderChanges(input, options);
   if (input.kind === 'search') return renderSearch(input.value, options);
   if (input.kind === 'status') return renderStatus(input.value, options);
   if (input.kind === 'audit') return renderAudit(input.value, options);

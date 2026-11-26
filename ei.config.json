@@ -44,7 +44,12 @@
     "enabled": false
   },
   "verification": {
-    "enabled": false
+    "enabled": false,
+    "checks": [
+      { "name": "test", "command": ["npm", "test"], "timeoutSec": 600 },
+      { "name": "typecheck", "command": ["npm", "run", "typecheck"], "timeoutSec": 600 },
+      { "name": "lint", "command": ["npm", "run", "lint"], "timeoutSec": 600 }
+    ]
   },
   "gitlab": {
     "enabled": false,
