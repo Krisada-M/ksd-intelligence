@@ -14,4 +14,11 @@ Latest `origin/main` observed: `e2be8fa54b31`. Local and remote `v1.0.0` refs di
 
 The Round 3 product commit rebased onto `e2be8fa54b31` as `dced6a35e2c4`. After that rebase, `npm ci`, `npm run typecheck`, `npm run lint`, `npm run format:check`, `npm test` (814/814), `npm run check:dist`, and `node --test tests/packaging/npm-tarball.test.js` (1/1) passed. The exact candidate is staged in the isolated Linux VM; `node --test evals/run.test.mjs` passed 7/7, including host-file isolation.
 
+Owner decisions for the next modules:
+
+- V2a may reuse the existing fixed read-only Git merge-base and changed-path helpers. This does not authorize caller-supplied Git commands, an index build by `ei_context`, or repository writes.
+- V2e promises exact recovery of eligible payloads delivered to OMP's result hook, not of raw subprocess bytes upstream of the hook. Live hook replacement and exact retrieval round-trip still need evidence.
+
+The isolated UI eval rerun used the previously verified rebased product commit `dced6a35e2c4`, not the uncommitted UI edits now in the local worktree. It exited 2: `desktop-status` stopped before tool execution, 0/10 cases scored, and the transcript contained the Codex quota error. The new approvals resolve the V2 design questions, not the separate UI eval gate.
+
 Next: after the provider quota resets, run the staged candidate in the authorized VM with `lanea run` (invokes `EI_EVAL_MODEL=openai-codex/gpt-6.2-sol node evals/run.mjs`). Establish live AGY display/guidance acceptance and capture it at 80 columns. Do not start V2a or V2e until UI clears.
