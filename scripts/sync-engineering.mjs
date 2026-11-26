@@ -48,7 +48,9 @@ try {
   }
   verifyEngineeringBundle(source, next);
   writeFileSync(join(root, 'engineering.lock.json'), JSON.stringify(next, null, 2) + '\n');
-  console.log('Pinned engineering source updated; run rule generation, build and tests; review git diff.');
+  console.log(
+    'Pinned engineering source updated; run rule generation, build and tests; review git diff.',
+  );
 } finally {
   rmSync(stage, { recursive: true, force: true });
 }

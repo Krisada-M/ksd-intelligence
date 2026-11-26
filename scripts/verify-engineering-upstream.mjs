@@ -6,7 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { readEngineeringLock, verifyEngineeringBundle } from './engineering-bundle.mjs';
 
 const checkout = process.argv[2];
-assert.ok(process.argv.length === 3 && checkout && isAbsolute(checkout), 'Expected upstream checkout');
+assert.ok(
+  process.argv.length === 3 && checkout && isAbsolute(checkout),
+  'Expected upstream checkout',
+);
 const root = fileURLToPath(new URL('..', import.meta.url));
 const lock = readEngineeringLock(root);
 verifyEngineeringBundle(join(root, 'src', 'engineering'), lock);

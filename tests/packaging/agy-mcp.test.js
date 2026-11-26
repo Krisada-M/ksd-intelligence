@@ -18,7 +18,12 @@ const modernMeta = {
 async function start(env = {}, customArgs, sharedRoot) {
   const root = sharedRoot ?? (await mkdtemp(join(tmpdir(), 'ksd-mcp-')));
   const args = customArgs ? customArgs(root) : [entry, '--root', root];
-  const childEnv = { ...process.env, EI_DISABLED: '', KSD_MCP_WORKFLOW: '', KSD_MCP_ENGINEERING: '' };
+  const childEnv = {
+    ...process.env,
+    EI_DISABLED: '',
+    KSD_MCP_WORKFLOW: '',
+    KSD_MCP_ENGINEERING: '',
+  };
   delete childEnv.KSD_MCP_MARKDOWN;
   const child = spawn(process.execPath, args, {
     env: { ...childEnv, ...env },
