@@ -1,22 +1,20 @@
 # Lane B handoff
 
-Lane B builds V2c (`v2c-verify`) and V2d (`v2d-knowledge`), each from tag `v1.0.0` (`f2b0f5a`), each rebased onto `origin/main` before it is finished. Worktrees: `../ksd-laneB` (V2c) and `../ksd-laneB-v2d` (V2d). Nothing pushed.
+Lane B built V2c (`v2c-verify`) and V2d (`v2d-knowledge`) from tag `v1.0.0` (`f2b0f5a`).
 
 ## Done
 
-- V2c Rounds 0–2: `docs/research/v2c-round0.md`, `v2c-selfreview.md`, `v2c-value-check.md`. Gates green; `node evals/run.mjs` with `openai-codex/gpt-6.2-sol`: 10/10.
-
-## In progress
-
-- V2d Rounds 0–2 on `v2d-knowledge` (see that branch's copy of this file).
+- V2c Rounds 0–2: `v2c-round0.md`, `v2c-selfreview.md`, and `v2c-value-check.md`. The build-round evals scored 10/10 (`openai-codex/gpt-6.2-sol`).
+- V2d Rounds 0–2: `v2d-round0.md`, `v2d-selfreview.md`, and `v2d-value-check.md`. The build-round evals scored 10/10 on the same model. PR #44 is on `origin/main`.
 
 ## Next command
 
 ```sh
-git -C ../ksd-laneB-v2d log --oneline v1.0.0..HEAD
+git log --oneline origin/main..v2c-verify
 ```
 
 ## Open questions for the owner
 
-- V2c value check showed no difference on the brief's metric (0 vs 0 unsupported pass claims) and 0/5 → 4/5 evidence-backed answers. Enable or keep off?
-- Round 3 (different-vendor review) is required for V2c (exec surface) and not part of this lane.
+- The five V2d value-check learnings were unconfirmed proposals in throwaway clones. None was approved.
+- The V2c value check found no reduction in unsupported pass claims; the V2d value check found no improvement in respecting learnings. Neither result supports enabling the module.
+- The cross-vendor reviews requested changes on both branches. Resolving overlap with `origin/main` does not resolve the review findings.
