@@ -5,7 +5,7 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
-import { promisify } from 'node:util';
+import { promisify, stripVTControlCharacters } from 'node:util';
 import extension, {
   type ExtensionDeps,
   type OmpExtensionApi,
@@ -330,10 +330,10 @@ describe('M2b Step 3.2 — ei_impact OMP tool and CLI', () => {
     assert.ok(statusTool?.renderResult);
     const status = await statusTool.execute('call', {}, undefined, undefined, { cwd: repo });
     const statusText = status.content[0]?.text;
-    assert.match(
-      statusTool.renderResult(status, { expanded: false, isPartial: false }).render(80)[0] ?? '',
-      /status (ready|degraded)/,
-    );
+    const statusHeader = statusTool
+      .renderResult(status, { expanded: false, isPartial: false })
+      .render(80)[0];
+    assert.match(stripVTControlCharacters(statusHeader ?? ''), /status (ready|degraded)/);
     assert.ok(
       statusTool
         .renderResult(status, { expanded: true, isPartial: false })
@@ -378,10 +378,10 @@ describe('M2b Step 3.2 — ei_impact OMP tool and CLI', () => {
         engine: { version: '1.1.0' },
       },
     };
-    assert.match(
-      changesTool.renderResult(changes, { expanded: false, isPartial: false }).render(80)[0] ?? '',
-      /changes proceed/,
-    );
+    const changesHeader = changesTool
+      .renderResult(changes, { expanded: false, isPartial: false })
+      .render(80)[0];
+    assert.match(stripVTControlCharacters(changesHeader ?? ''), /changes proceed/);
     assert.ok(
       changesTool
         .renderResult(changes, { expanded: true, isPartial: false })
