@@ -1,10 +1,10 @@
 # Antigravity (AGY) — local MCP integration
 
-**Status:** MCP stdio adapter merged to `main`. Earlier schema 4 build: live AGY on Linux **VERIFIED** ([MAGY1 record](../reviews/MAGY1-self-review.md)). Live AGY on the 1.0.0 candidate and live AGY on macOS are **NOT VERIFIED**. This adapter does not transfer OMP policy, commands or approvals into Antigravity.
+**Status:** MCP stdio adapter merged to `main`. Earlier schema 4 build: live AGY on Linux **VERIFIED** ([MAGY1 record](../reviews/MAGY1-self-review.md)). Live AGY on the 1.0.0 candidate and live AGY on macOS are **NOT VERIFIED**. This adapter does not transfer OMP lifecycle or approvals into Antigravity. D70 adds native rule and skill packaging below, generated from the shared engineering policy.
 
 ## Architecture
 
-AGY (MCP client) -> local `node scripts/agy-mcp.mjs --root <path> [--workflow]` (or `node dist/adapters/cli/main.js mcp --root <path> [--workflow]`) -> KSD compiled Core (`dist/core`, `dist/workflow`) -> per-repository SQLite index. OMP's extension remains unchanged. No TCP server, credentials or network activity are required by the MCP process.
+AGY (MCP client) -> local `node scripts/agy-mcp.mjs --root <path> [--workflow]` (or `node dist/adapters/cli/main.js mcp --root <path> [--workflow]`) -> KSD compiled Core (`dist/core`, `dist/workflow`) -> per-repository SQLite index. The OMP adapter composes the same pinned engineering core independently. No TCP server, credentials or network activity are required by the MCP process.
 
 The AGY MCP configuration defines a **fixed absolute repository root**. Tool arguments cannot change it. Each repository needs its own server instance/config entry; do not share a process between unrelated workspaces. An optional companion skill template is provided at `docs/examples/antigravity-skill-ksd-intelligence/SKILL.md` to guide Antigravity agents on calling `ei_status` / `ei_impact` / `ei_workflow` and falling back to the `ei` CLI for multi-repository indexing and queries.
 
@@ -74,11 +74,13 @@ For native AGY skill discovery of KSD's platform-agnostic skill catalog (`skills
 1. Run `npm test`, `npm run lint` and `npm run check:dist` on macOS and Linux. CI tests the transport and KSD engine on its runner architecture, not a real AGY host.
 2. In **real AGY** on each target OS family, configure exactly one workspace root, verify connected status and discover `ei_status` / `ei_impact`.
 3. Call `ei_status`, `ei_impact` on a known symbol, then edit a file and rerun; compare results with the KSD CLI/OMP on the same root and index generation.
-4. Confirm disabled tools and malformed requests do not expose data or crash AGY. Confirm the old OMP policy and `ei_workflow` are unchanged.
+4. Confirm disabled tools and malformed requests do not expose data or crash AGY. Confirm the composed OMP policy is not duplicated and existing `ei_workflow` output is unchanged.
 5. Record exact AGY version, Node version, OS/arch, raw tool responses, and any missing permission prompts. Until these steps are performed, classify **AGY LIVE: NOT VERIFIED**.
 
-AGY's native Plugin packaging and Skill packaging are intentionally separate milestones; this PR implements local MCP tools, not a full installable AGY plugin.
+The original MCP milestone did not include native plugin packaging; D70 adds it below.
 
 ## D70 candidate: native engineering plugin
 
 The repository also packages an Antigravity-native manifest, a generated balanced engineering rule and `erosiano-review` skill. Run `agy plugin validate /absolute/path/to/ksd-intelligence`, install the reviewed local candidate using `agy plugin install /absolute/path/to/ksd-intelligence`, then confirm the plugin's rule and skill discovery. Install only this product; remove older duplicated global policy rules/skills deliberately. The native rule is static; OMP session overrides and environment flags are not simulated in AGY. The local MCP config remains per workspace and fixed-root, not a plugin-global root guess. The terminal package includes `erosiano-baseline` and `erosiano-practices`; use only the host-approved project root. Real AGY validation, installation and rule/skill activation are NOT VERIFIED until observed.
+
+For optional engineering tools, set `KSD_MCP_ENGINEERING=1` in the workspace server environment and append `erosiano_baseline` and `erosiano_resolve_practices` to `enabledTools`. They accept bounded relative scopes and supplied observations, refuse root overrides and stale fingerprints, and do not execute Git or native project checks. Unset the flag to retain the original tool list. `EI_DISABLED=1` disables the whole MCP surface. A matched sample is not complete semantic verification.

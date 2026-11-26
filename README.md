@@ -53,6 +53,8 @@ Configure AGY to launch `ei mcp --root /absolute/path/to/project`. In AGY's MCP 
 }
 ```
 
+To expose the same engineering resolver through MCP, explicitly set `env: { "KSD_MCP_ENGINEERING": "1" }` on this server and append `erosiano_baseline` and `erosiano_resolve_practices` to `enabledTools`. The first captures scoped hashes; the second resolves practices using a supplied current fingerprint and path provenance. Both use the configured root, never a tool-supplied root or subprocess. Leave the flag unset to keep the original tool list.
+
 Use the absolute path to `ei` if AGY does not inherit your npm bin `PATH`. This is a stdio process, not an HTTP server. The root cannot change through a tool call; use a separate server entry for each project. To expose workflow, append `--workflow`, add `ei_workflow` to `enabledTools`, and set the skill roots below. See the [AGY guide](https://github.com/Krisada-M/ksd-intelligence/blob/main/docs/integrations/antigravity.md).
 
 ## Set up a repository
@@ -181,3 +183,14 @@ For npm rollback, reinstall a previous approved version or saved tarball, then r
 ## Engineering bundle provenance
 
 [`engineering.lock.json`](engineering.lock.json) pins the exact upstream commit and every allowed runtime Git blob/mode. `src/engineering/` contains byte-identical runtime files; build verifies them offline and copies them to `dist/engineering/`, never fetching dependencies at agent startup. The old `src/policy/` and its frozen tests remain historical contract evidence; no legacy policy is registered or distributed under `dist/policy/`. `npm run verify:engineering` validates both source and distribution. The exported ESLint rules and all four engineering companion CLIs now use the new bundle. To update the core, review the upstream PR, update the pin and bytes together using the sync script, regenerate host assets, build, run CI, then approve the composed product. See [provenance](PROVENANCE.md).
+
+```sh
+# Owner-run, from the consuming repo with a trusted upstream checkout and reviewed full commit.
+node scripts/sync-engineering.mjs /absolute/path/to/ksd-engineering <exact-commit>
+node scripts/generate-agy-engineering.mjs --write
+npm run build
+npm run verify:engineering
+npm test
+```
+
+The upstream allowlist is explicit; newly introduced runtime files require a reviewed change to it. Commit the pin, source, dist and generated AGY rule together. CI also checks the source blob IDs against the separately checked-out upstream commit. No runtime dependency is added.

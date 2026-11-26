@@ -12,7 +12,7 @@ export function renderAgyRule() {
   const body = lines
     .join('\n')
     .replace(
-      'Ponytail owns YAGNI/simplification and /ponytail-review; don\'t duplicate or invoke it.',
+      "Ponytail owns YAGNI/simplification and /ponytail-review; don't duplicate or invoke it.",
       'Ponytail owns YAGNI/simplification when present; do not duplicate it or invoke its review automatically.',
     )
     .replace('SDLC: /erosiano-dev review.', 'For SDLC review, use the erosiano-review skill.');

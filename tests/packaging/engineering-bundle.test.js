@@ -31,5 +31,8 @@ test('AGY manifest and generated rule use the same version and balanced policy s
   assert.equal(manifest.version, readJson('package.json').version);
   assert.deepEqual(manifest.skills, ['./agy-skills']);
   assert.equal(readFileSync(join(root, 'rules', 'engineering.md'), 'utf8'), renderAgyRule());
-  assert.match(readFileSync(join(root, 'agy-skills/erosiano-review/SKILL.md'), 'utf8'), /name: erosiano-review/);
+  assert.match(
+    readFileSync(join(root, 'agy-skills/erosiano-review/SKILL.md'), 'utf8'),
+    /name: erosiano-review/,
+  );
 });
