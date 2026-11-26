@@ -169,6 +169,17 @@ const result = (message, isError = false) => ({
   ...(isError ? { isError: true } : {}),
 });
 
+// Keep the existing bounded guidance. Only fixed labels and typed summaries enter the table.
+function presented(env, name, text, field, value, isError = false) {
+  if (env.KSD_MCP_MARKDOWN !== '1' || isError) return result(text, isError);
+  let fenceLength = 3;
+  for (const [run] of text.matchAll(/`{3,}/g)) fenceLength = Math.max(fenceLength, run.length + 1);
+  const fence = '`'.repeat(fenceLength);
+  return result(
+    `## ${name}\n\n| Field | Result |\n| --- | --- |\n| ${field} | ${value} |\n\nDetails:\n\n${fence}text\n${text}\n${fence}`,
+  );
+}
+
 function validate(name, args) {
   if (!isObject(args)) return 'INVALID_INPUT: arguments must be an object';
   const allowed =
@@ -341,7 +352,7 @@ export function createTools({ root, env = process.env }) {
         );
         const extraWarning = consumeAuditWarning(status.cacheDir);
         if (extraWarning !== null) status.auditWarning = extraWarning;
-        return result(renderStatus(status));
+        return presented(env, name, renderStatus(status), 'state', status.state);
       }
       if (name === 'ei_impact') {
         const session = await impactSession();
@@ -360,8 +371,12 @@ export function createTools({ root, env = process.env }) {
           },
           { root: ws.root, cacheDir: ws.cacheDir },
         );
-        return result(
+        return presented(
+          env,
+          name,
           renderImpact(batch),
+          'answers',
+          batch.answers.length,
           batch.answers.some((answer) => answer.kind === 'failure'),
         );
       }
@@ -385,7 +400,14 @@ export function createTools({ root, env = process.env }) {
           },
           { root: ws.root, cacheDir: ws.cacheDir },
         );
-        return result(renderChangesOutcome(outcome), outcome.kind === 'failure');
+        return presented(
+          env,
+          name,
+          renderChangesOutcome(outcome),
+          'outcome',
+          outcome.kind,
+          outcome.kind === 'failure',
+        );
       }
       if (name === 'ei_search') {
         const valid = validateSearchInput(args.query, args.limit);
@@ -409,7 +431,14 @@ export function createTools({ root, env = process.env }) {
           },
           { root: ws.root, cacheDir: ws.cacheDir },
         );
-        return result(renderSearchOutcome(outcome), outcome.kind === 'failure');
+        return presented(
+          env,
+          name,
+          renderSearchOutcome(outcome),
+          outcome.kind === 'result' ? 'matches' : 'outcome',
+          outcome.kind === 'result' ? outcome.value.totalMatches : outcome.kind,
+          outcome.kind === 'failure',
+        );
       }
       const workflow = await prepareWorkflow({
         task: args.task,

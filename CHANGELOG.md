@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0 — UI polish
+
+- Added compact result trees for terminal commands and expandable OMP tool results. Non-interactive, `--plain`, and JSON output retain their existing formats.
+- Added a measured terminal HUD for `ei index`, `ei setup`, and `ei doctor`, plus themed KSD status in OMP. Neither affects engineering decisions or policy.
+- Added opt-in Markdown for AGY via `KSD_MCP_MARKDOWN=1`. Default MCP text is unchanged. The opt-in changes the text the model reads; it is not a separate display channel.
+
 ## 1.0.0 — release candidate
 
 - **M0/M1 — workflow:** ported the staged skill router to TypeScript. Owner-provided task type overrides keyword guesses. Pin skill provenance by commit and SHA-256; fail closed on unavailable or modified inputs (D05, M1).
