@@ -18,10 +18,12 @@ import { runChanges } from '../../core/changes/changes.js';
 import { renderChangesOutcome } from '../../core/changes/render.js';
 import { renderStatus, workspaceStatus } from '../../core/engine/status.js';
 import { engineVersion } from '../../core/engine/typescript.js';
-import { loadWorkspace, resolveWorkspaceCache } from '../../core/engine/workspace.js';
+import { loadWorkspace, readProjectConfigSync, resolveWorkspaceCache, } from '../../core/engine/workspace.js';
 import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { isRecord } from '../../core/kernel/guards.js';
+import { impactLearningsLine, proposeLearning, snapshot, withAnchorIndex, } from '../../core/knowledge/knowledge.js';
+import { learningsFor, quoteClaim, renderLearningList, PROPOSAL_LABEL, } from '../../core/knowledge/render.js';
 import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
 import { renderSearchOutcome } from '../../core/search/render.js';
 import { rootsFromEnv } from '../../workflow/catalog.js';
@@ -260,7 +262,13 @@ function registerEiImpact(pi, deps, env, sessions) {
                 });
                 if (signal?.aborted)
                     return errorResult('Cancelled');
-                const text = renderImpact(batch);
+                const keys = impactDetails(batch).flatMap((item) => 'target' in item && typeof item.target === 'string' ? [item.target] : []);
+                const learningsLine = await impactLearningsLine(workspace, session, keys, signal);
+                const impactText = renderImpact(batch);
+                // Appended after the V1 block, never inside it; absent when knowledge is off or empty.
+                const text = learningsLine === undefined || impactText === 'Cancelled'
+                    ? impactText
+                    : `${impactText}\n${learningsLine}`;
                 if (text === 'Cancelled')
                     return errorResult('Cancelled');
                 recordAudit(workspace.cacheDir, {
@@ -530,6 +538,67 @@ function registerEiSearch(pi, deps, env, sessions) {
         },
     });
 }
+const LEARNING_DESCRIPTION = 'Read the project decisions recorded for code you are about to change, or propose one. `action: "list"` with an optional `target` (path#name or a file path) returns recorded learnings as quoted data with their source and status; only an unchanged owner-confirmed or test-verified learning is a decision, everything else is an unconfirmed note. `action: "propose"` with `claim`, `target` and `source` ("model-inferred" or "code-observed") stores a proposal for the owner to approve; it never writes to the repository.';
+function registerEiLearning(pi, deps, sessions) {
+    const z = pi.zod;
+    pi.registerTool({
+        name: 'ei_learning',
+        label: 'KSD Project Learnings',
+        description: LEARNING_DESCRIPTION,
+        parameters: z.object({
+            action: z.enum(['list', 'propose']),
+            target: z.string().optional().describe('path#name or a repository file path'),
+            claim: z
+                .string()
+                .optional()
+                .describe('propose: the decision in one or two sentences (max 1,000 characters)'),
+            source: z.enum(['model-inferred', 'code-observed']).optional(),
+        }),
+        approval: 'read',
+        async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+            if (signal?.aborted)
+                return errorResult('Cancelled');
+            try {
+                const action = isRecord(params) ? params.action : undefined;
+                if (action !== 'list' && action !== 'propose') {
+                    return errorResult('INVALID_INPUT: action must be "list" or "propose"');
+                }
+                const workspace = await loadWorkspace(ctx?.cwd ?? process.cwd(), deps.cacheHome);
+                let session = sessions.get(workspace.cacheDir);
+                if (session === undefined) {
+                    session = new ImpactSession(workspace, deps.impactSession);
+                    sessions.set(workspace.cacheDir, session);
+                }
+                if (action === 'propose') {
+                    const outcome = await withAnchorIndex(session, (index) => proposeLearning(workspace, index, params), signal);
+                    if (outcome.kind === 'failure')
+                        return errorResult(`${outcome.code}: ${outcome.message}`);
+                    const text = [
+                        `PROPOSED ${outcome.value.id} — ${PROPOSAL_LABEL}; stored outside the repository`,
+                        `  > ${quoteClaim(outcome.value.claim)}`,
+                        'Next: tell the owner; it takes effect only after `ei learning approve`.',
+                    ].join('\n');
+                    return { content: [{ type: 'text', text }], details: outcome.value };
+                }
+                const target = isRecord(params) && typeof params.target === 'string' ? params.target.trim() : '';
+                const snap = await withAnchorIndex(session, (index) => snapshot(workspace, index), signal);
+                const scoped = target === ''
+                    ? snap
+                    : {
+                        ...snap,
+                        learnings: learningsFor(snap.learnings, [target]),
+                        proposals: learningsFor(snap.proposals, [target]),
+                    };
+                const text = renderLearningList({ scope: target === '' ? 'all' : target, ...scoped });
+                return { content: [{ type: 'text', text }], details: scoped };
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                return errorResult(`ei_learning failed: ${message}. Continue without learnings and say so.`);
+            }
+        },
+    });
+}
 // Advisory tool: every failure becomes an error result for the agent, never a crashed session.
 export default function ksdIntelligenceExtension(pi, deps = {}) {
     const env = deps.env ?? process.env;
@@ -572,5 +641,14 @@ export default function ksdIntelligenceExtension(pi, deps = {}) {
     }
     catch (error) {
         warnLoad('ei_search tool', error);
+    }
+    try {
+        const config = readProjectConfigSync(deps.cwd ?? process.cwd());
+        // Disabled (the default) means not registered: the agent's tool list stays V1's.
+        if (config?.knowledge.enabled === true)
+            registerEiLearning(pi, deps, sessions);
+    }
+    catch (error) {
+        warnLoad('ei_learning tool', error);
     }
 }

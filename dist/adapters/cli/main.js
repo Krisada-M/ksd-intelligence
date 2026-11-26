@@ -14,6 +14,9 @@ import { impactDetails, renderImpact } from '../../core/impact/render.js';
 import { ImpactSession } from '../../core/impact/session.js';
 import { runSearch, validateSearchInput } from '../../core/search/lexical.js';
 import { renderSearchOutcome } from '../../core/search/render.js';
+import { withAnchorIndex, snapshot } from '../../core/knowledge/knowledge.js';
+import { learningLabel, quoteClaim, renderLearningList } from '../../core/knowledge/render.js';
+import { approveProposal, rejectProposal, reviewLearning } from '../../core/knowledge/store.js';
 import { initProject } from '../../core/workspace/init.js';
 import { discoverAgySkills } from '../agy/skills.js';
 import { discoverOmpSkills } from '../omp/skills.js';
@@ -67,6 +70,7 @@ const USAGE = `usage:
   main.js impact  <target…> [--depth <n>] [--root <path>] [--json] (who depends on 1–5 targets)
   main.js changes [--base <ref>] [--depth <n>] [--planned <target>]... [--root <path>] [--json] (impact of uncommitted changes)
   main.js search  <query> [--limit <n>] [--root <path>] [--json] (find declarations by words or identifier)
+  main.js learning list [--status <state>] | show <id> | approve <id> | review <id> | reject <id> [--root <path>] [--json] (owner commands for .ksd/learnings)
   main.js doctor  --deep [--root <path>] [--differential <n|all>] [--json]  (cold rebuild diffed against the index)
   main.js status  [--root <path>] [--json]        (index, coverage, runtime, TypeScript, store, lock)
   main.js audit   [--since <7d|24h|30m|ISO>] [--root <path>] [--json] (summarize audit.jsonl)
@@ -88,6 +92,73 @@ async function tryResolveCacheCli(root) {
     catch {
         return null;
     }
+}
+const LEARNING_STATES = ['active', 'needs-review', 'orphaned', 'superseded'];
+// Owner commands. approve and review are the only code paths that write `.ksd/learnings/`.
+async function runLearningCommand(sub, id, root, status, json) {
+    const workspace = await loadWorkspace(root ?? process.cwd());
+    const session = new ImpactSession(workspace, {
+        waitAfterExpiry: true,
+        onProgress: (message) => console.error(`ei learning: ${message}`),
+    });
+    if (status !== undefined && !LEARNING_STATES.includes(status)) {
+        console.error(`ei learning: --status must be one of ${LEARNING_STATES.join(', ')}`);
+        return 2;
+    }
+    if (sub === 'list' || sub === 'show') {
+        const snap = await withAnchorIndex(session, (index) => snapshot(workspace, index));
+        const keep = (entry) => (status === undefined || entry.state === status) &&
+            (sub === 'list' || entry.learning.id === id);
+        const learnings = snap.learnings.filter(keep);
+        const proposals = snap.proposals.filter(keep);
+        if (sub === 'show' && learnings.length + proposals.length === 0) {
+            console.error(`ei learning: no learning or proposal "${id ?? ''}"`);
+            return 1;
+        }
+        console.log(json
+            ? JSON.stringify({ learnings, proposals, problems: snap.problems }, null, 2)
+            : renderLearningList({
+                scope: sub === 'show' ? (id ?? '') : 'all',
+                learnings,
+                proposals,
+                problems: snap.problems,
+            }));
+        return 0;
+    }
+    if (id === undefined) {
+        console.error(USAGE);
+        return 2;
+    }
+    try {
+        if (sub === 'approve') {
+            const learning = approveProposal(workspace.root, workspace.cacheDir, id);
+            console.log(`APPROVED ${learning.id} → .ksd/learnings/${learning.id}.yaml (owner-confirmed)\n  > ${quoteClaim(learning.claim)}`);
+            return 0;
+        }
+        if (sub === 'reject') {
+            rejectProposal(workspace.cacheDir, id);
+            console.log(`REJECTED ${id} (proposal removed)`);
+            return 0;
+        }
+        if (sub === 'review') {
+            const snap = await withAnchorIndex(session, (index) => snapshot(workspace, index));
+            const entry = snap.learnings.find((candidate) => candidate.learning.id === id);
+            if (entry === undefined)
+                throw new Error(`no learning "${id}" in .ksd/learnings`);
+            if (entry.currentHash === undefined) {
+                throw new Error(`${id} cannot be re-anchored: ${learningLabel(entry)}`);
+            }
+            const learning = reviewLearning(workspace.root, id, entry.currentHash);
+            console.log(`REVIEWED ${learning.id} — re-anchored to the current ${learning.anchor.key}`);
+            return 0;
+        }
+    }
+    catch (error) {
+        console.error(`ei learning: ${error instanceof Error ? error.message : String(error)}`);
+        return 1;
+    }
+    console.error(USAGE);
+    return 2;
 }
 async function run(argv) {
     const { values, positionals } = parseArgs({
@@ -123,6 +194,7 @@ async function run(argv) {
             base: { type: 'string' },
             planned: { type: 'string', multiple: true },
             since: { type: 'string' },
+            status: { type: 'string' },
             workflow: { type: 'boolean' },
         },
     });
@@ -363,6 +435,9 @@ async function run(argv) {
             console.log(rendered);
         }
         return outcome.kind === 'failure' ? 1 : 0;
+    }
+    if (command === 'learning') {
+        return runLearningCommand(sub, positionals[2], values.root, values.status, values.json === true);
     }
     if (command === 'search') {
         if (process.env.EI_DISABLED === '1') {
